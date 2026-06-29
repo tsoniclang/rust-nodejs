@@ -195,6 +195,14 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
     let mut readable =
         stream::Readable::from(vec![Buffer::from_string("web", Some("utf8")).unwrap()]);
     let mut writable = stream::Writable::new();
+    assert!(stream::is_readable(&readable));
+    assert!(stream::is_writable(&writable));
+    readable.pipe(&mut writable).unwrap();
+    readable.unpipe(&mut writable).unwrap();
+    assert_eq!(writable.chunks().len(), 1);
+    assert!(readable.is_ended());
+    let mut readable = stream::Readable::from(writable.chunks().to_vec());
+    let mut writable = stream::Writable::new();
     stream::promises::pipeline(&mut readable, &mut writable).unwrap();
     assert!(stream::promises::finished(&readable, &writable));
     assert!(stream::promises::finished_with_options(
@@ -346,6 +354,10 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     assert!(!readable.push(Buffer::from_string("c", Some("utf8")).unwrap()));
     assert_eq!(readable.to_array().len(), 2);
     assert!(readable.readable_ended());
+    let mut aborting_readable =
+        stream::Readable::from(vec![Buffer::from_string("left", Some("utf8")).unwrap()]);
+    aborting_readable.destroy_with_error("aborted");
+    assert!(!aborting_readable.readable_aborted());
     readable.destroy_with_error("boom");
     assert!(readable.destroyed());
     assert_eq!(readable.errored(), Some("boom"));
@@ -383,7 +395,8 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     assert_eq!(writable.default_encoding(), "latin1");
     assert!(!writable.write_str("y", Some("utf8")));
     assert!(!writable.writev(&[Buffer::from_string("z", Some("utf8")).unwrap()]));
-    assert_eq!(writable.writable_length(), 3);
+    assert!(!writable.add_chunk(Buffer::from_string("q", Some("utf8")).unwrap()));
+    assert_eq!(writable.writable_length(), 4);
     assert!(writable.flush());
     let finalized = Cell::new(false);
     writable.final_callback(|| finalized.set(true));
@@ -397,6 +410,7 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     assert!(constructed.get());
     writable.destroy_with_error("closed");
     assert!(writable.destroyed());
+    assert!(!writable.writable_aborted());
     assert_eq!(writable.errored(), Some("closed"));
     assert!(stream::is_destroyed(
         &stream::Readable::from(vec![]),
@@ -500,6 +514,8 @@ fn stream_readable_functional_operators_are_closed_buffer_transforms() {
         stream::Readable::from(readable.take(2))
     });
     assert_eq!(composed.to_vec().len(), 2);
+    let mut iterable = chunks();
+    assert_eq!(iterable.iterator().len(), 3);
     let mut aborted = chunks();
     stream::add_abort_signal(&mut aborted, true);
     assert_eq!(aborted.errored(), Some("aborted"));
@@ -524,6 +540,27 @@ fn web_streams_support_reader_writer_pipe_and_transform_shapes() {
     }
     assert!(!readable.locked());
     let (_left, _right) = readable.tee();
+    let mut with_options =
+        stream::web::ReadableStream::from_chunks(vec![
+            Buffer::from_string("o", Some("utf8")).unwrap()
+        ]);
+    {
+        let mut reader = with_options
+            .get_reader_with_options(stream::web::ReadableStreamGetReaderOptions::default())
+            .unwrap();
+        assert_eq!(reader.read().unwrap().to_string(Some("utf8")).unwrap(), "o");
+        reader.release_lock();
+    }
+    let mut value_stream =
+        stream::web::ReadableStream::from_chunks(vec![
+            Buffer::from_string("v", Some("utf8")).unwrap()
+        ]);
+    assert_eq!(
+        value_stream
+            .values_with_options(stream::web::ReadableStreamIteratorOptions::default())
+            .len(),
+        1
+    );
     let mut cancelable =
         stream::web::ReadableStream::from_chunks(vec![
             Buffer::from_string("x", Some("utf8")).unwrap()
@@ -553,10 +590,17 @@ fn web_streams_support_reader_writer_pipe_and_transform_shapes() {
         Buffer::from_string("q", Some("utf8")).unwrap(),
     ]);
     let mut destination = stream::web::WritableStream::new();
+    source.pipe_to(&mut destination).unwrap();
+    assert!(destination.closed());
+    assert_eq!(destination.chunks().len(), 2);
+    let mut source = stream::web::ReadableStream::from_chunks(vec![
+        Buffer::from_string("p", Some("utf8")).unwrap(),
+        Buffer::from_string("q", Some("utf8")).unwrap(),
+    ]);
+    let mut destination = stream::web::WritableStream::new();
     source
         .pipe_to_with_options(&mut destination, &stream::web::StreamPipeOptions::default())
         .unwrap();
-    assert!(destination.closed());
     assert_eq!(destination.chunks().len(), 2);
 
     let mut transform = stream::web::TransformStream::new();
@@ -649,6 +693,12 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
         dns::LookupResult::One(_)
     ));
     assert!(dns::resolve4("localhost").is_ok() || dns::resolve6("localhost").is_ok());
+    assert!(dns::promises::resolve4_now("localhost").is_ok());
+    let _ = dns::promises::resolve6_now("localhost");
+    assert!(dns::promises::resolve_cname_now("localhost").is_err());
+    assert!(dns::promises::resolve_mx_now("localhost").is_err());
+    assert!(dns::promises::resolve_txt_now("localhost").is_err());
+    assert!(dns::promises::resolve_srv_now("localhost").is_err());
     assert!(
         dns::resolve4_with_ttl("localhost").is_ok() || dns::resolve6_with_ttl("localhost").is_ok()
     );

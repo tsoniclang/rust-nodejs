@@ -131,8 +131,10 @@ fn buffer_overload_values_cover_string_number_and_byte_views() {
     assert_eq!(buffer.as_bytes(), vec![0, 255, 1, 2, 1, 2]);
     buffer.fill_value(BufferValue::byte(9), 0, Some(2)).unwrap();
     assert_eq!(buffer.as_bytes(), vec![9, 9, 1, 2, 1, 2]);
+    buffer.fill_bytes(b"xy", 0, Some(4)).unwrap();
+    assert_eq!(buffer.as_bytes(), vec![b'x', b'y', b'x', b'y', 1, 2]);
     buffer.fill_string("hi", 2, Some(6), Some("utf8")).unwrap();
-    assert_eq!(buffer.as_bytes(), vec![9, 9, b'h', b'i', b'h', b'i']);
+    assert_eq!(buffer.as_bytes(), vec![b'x', b'y', b'h', b'i', b'h', b'i']);
 
     assert!(buffer.includes_value(BufferValue::byte(b'h'), 0).unwrap());
     assert!(buffer.includes_string("ih", 0, Some("utf8")).unwrap());
@@ -140,6 +142,10 @@ fn buffer_overload_values_cover_string_number_and_byte_views() {
         buffer
             .index_of_value(BufferValue::bytes(b"hi".to_vec()), 0)
             .unwrap(),
+        Some(2)
+    );
+    assert_eq!(
+        buffer.index_of_string("hi", 0, Some("utf8")).unwrap(),
         Some(2)
     );
     assert_eq!(
@@ -152,7 +158,7 @@ fn buffer_overload_values_cover_string_number_and_byte_views() {
         buffer
             .last_index_of_value(BufferValue::byte(9), None)
             .unwrap(),
-        Some(1)
+        None
     );
 
     let mut target = [0_u8; 8];

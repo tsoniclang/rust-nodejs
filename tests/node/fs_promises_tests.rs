@@ -26,6 +26,12 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         &fs_promises::ObjectEncodingOptions::string("utf8"),
     )
     .unwrap();
+    fs_promises::write_file_buffer_with_options(
+        &file_text,
+        &Buffer::from_string("hello", Some("utf8")).unwrap(),
+        &fs_promises::ObjectEncodingOptions::buffer(),
+    )
+    .unwrap();
     fs_promises::append_file_string(&file_text, " world", "utf8").unwrap();
     fs_promises::append_file_string_with_options(
         &file_text,
@@ -339,6 +345,10 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     fs_promises::fsync(handle.fd()).unwrap();
     fs_promises::fdatasync(handle.fd()).unwrap();
     fs_promises::ftruncate(handle.fd(), 10).unwrap();
+    handle.truncate_default().unwrap();
+    assert_eq!(fs_promises::fstat(handle.fd()).unwrap().size, 0);
+    fs_promises::write_string(handle.fd(), "hello rust", Some(0), "utf8").unwrap();
+    fs_promises::ftruncate(handle.fd(), 10).unwrap();
     fs_promises::fchmod(handle.fd(), 0o600).unwrap();
     #[cfg(unix)]
     {
@@ -576,5 +586,14 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         fs_promises::lchown(&symlink_text, metadata.uid(), metadata.gid()).unwrap();
     }
 
-    fs_promises::rm(&root_text, true, false).unwrap();
+    fs_promises::rm_with_options(
+        &root_text,
+        fs_promises::RmOptions {
+            recursive: true,
+            force: false,
+            max_retries: 0,
+            retry_delay_ms: 0,
+        },
+    )
+    .unwrap();
 }

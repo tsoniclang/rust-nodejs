@@ -157,6 +157,10 @@ fn assert_and_perf_hooks_are_closed_runtime_helpers() {
     assert!(!entries.is_empty());
     assert!(entries[0].to_json().iter().any(|(name, _)| name == "name"));
     perf_hooks::set_resource_timing_buffer_size(128);
+    assert_eq!(
+        *perf_hooks::resource_timing_buffer_size().lock().unwrap(),
+        128
+    );
     perf_hooks::clear_resource_timings(None);
     let resource = perf_hooks::PerformanceResourceTiming::new(
         "https://example.test/app.js",
@@ -434,8 +438,19 @@ fn tty_is_explicitly_non_interactive_by_default() {
     assert!(output.clear_line_with_callback(|| callback_called.set(true)));
     assert!(callback_called.get());
     assert!(output.clear_screen_down());
+    let callback_called = std::cell::Cell::new(false);
+    assert!(output.clear_screen_down_with_callback(|| callback_called.set(true)));
+    assert!(callback_called.get());
     assert!(output.cursor_to(5, Some(6)));
     assert_eq!(output.cursor(), (5, 6));
+    let callback_called = std::cell::Cell::new(false);
+    assert!(output.cursor_to_with_callback(7, Some(8), || callback_called.set(true)));
+    assert!(callback_called.get());
+    assert_eq!(output.cursor(), (7, 8));
     assert!(output.move_cursor(1, -2));
-    assert_eq!(output.cursor(), (6, 4));
+    assert_eq!(output.cursor(), (8, 6));
+    let callback_called = std::cell::Cell::new(false);
+    assert!(output.move_cursor_with_callback(-3, 2, || callback_called.set(true)));
+    assert!(callback_called.get());
+    assert_eq!(output.cursor(), (5, 8));
 }

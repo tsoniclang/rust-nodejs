@@ -42,6 +42,7 @@ fn net_socket_and_http_client_use_real_local_tcp() {
     assert_eq!(socket.remote_family().unwrap(), "IPv4");
     assert_eq!(socket.remote_port().unwrap(), port);
     assert!(socket.local_port().unwrap() > 0);
+    assert_eq!(socket.local_family().unwrap(), "IPv4");
     assert_eq!(socket.address().unwrap().family, "IPv4");
     socket.set_no_delay(true).unwrap();
     socket.set_timeout(1_000).unwrap();
@@ -130,6 +131,18 @@ fn net_option_and_policy_shapes_are_closed_and_fact_backed() {
     socket.reset_and_destroy().unwrap();
     assert!(socket.destroyed());
     assert_eq!(socket.ready_state(), "closed");
+    handle.join().unwrap();
+
+    let server = net::create_server("127.0.0.1", 0).unwrap();
+    let port = server.local_port().unwrap();
+    let handle = thread::spawn(move || {
+        let mut server = server;
+        let mut socket = server.accept().unwrap();
+        socket.write(b"bye").unwrap();
+    });
+    let mut socket = net::connect("127.0.0.1", port).unwrap();
+    socket.destroy_soon().unwrap();
+    assert!(socket.destroyed());
     handle.join().unwrap();
 
     let blocked = net::connect_with_options(&net::ConnectOptions {
@@ -537,6 +550,16 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
     assert!(child_process::exec_file_sync_string(&current, &["--list"])
         .unwrap()
         .contains("network_process_tests"));
+    assert!(String::from_utf8(
+        child_process::exec_sync_with_options(
+            &current,
+            &["--list"],
+            &child_process::SpawnOptions::default(),
+        )
+        .unwrap()
+    )
+    .unwrap()
+    .contains("network_process_tests"));
     assert!(
         String::from_utf8(child_process::exec_sync(&current, &["--list"]).unwrap())
             .unwrap()
@@ -591,6 +614,15 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
         .stdout_string()
         .unwrap()
         .contains("network_process_tests"));
+    assert!(child_process::exec_file_with_options(
+        &current,
+        &["--list"],
+        &child_process::SpawnOptions::default(),
+    )
+    .unwrap()
+    .stdout_string()
+    .unwrap()
+    .contains("network_process_tests"));
     let promisified = child_process::exec_file_promisify(
         &current,
         &["--list"],

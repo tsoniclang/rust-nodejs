@@ -157,6 +157,7 @@ fn fs_extended_sync_file_lifecycle() {
     assert_eq!(stats.birthtime().get_time(), stats.birthtime_ms());
     assert!(stats.mtime_ns() >= stats.mtime_ms() as u128);
     assert!(stats.ctime_ns() >= stats.ctime_ms() as u128);
+    assert!(stats.birthtime_ns() >= stats.birthtime_ms() as u128);
 
     let fd = fs::open_sync(&file_text, "r+").unwrap();
     assert_eq!(fs::fstat_sync(fd).unwrap().size, 11);
