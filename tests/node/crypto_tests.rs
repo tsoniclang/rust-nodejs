@@ -1,4 +1,4 @@
-use tsonic_rust_node::crypto::{DigestResult, Hash};
+use tsonic_rust_node::crypto::{DigestResult, Hash, HashOptions};
 
 #[test]
 fn crypto_random_bytes_returns_requested_length() {
@@ -295,6 +295,19 @@ fn crypto_sha256_known_vector() {
         sha1.digest(Some("hex")).unwrap(),
         DigestResult::String("a9993e364706816aba3e25717850c26c9cd0d89d".to_string())
     );
+
+    let mut options_hash =
+        tsonic_rust_node::crypto::create_hash_with_options("sha256", HashOptions::default())
+            .unwrap();
+    options_hash.update(b"abc");
+    assert_eq!(options_hash.digest_buffer().unwrap().len(), 32);
+    assert!(tsonic_rust_node::crypto::create_hash_with_options(
+        "sha256",
+        HashOptions {
+            output_length: Some(16),
+        },
+    )
+    .is_err());
 
     let mut sha512 = Hash::create("sha512").unwrap();
     sha512.update_string("abc", Some("utf8")).unwrap();

@@ -54,6 +54,8 @@ fn dgram_socket_sends_udp_datagrams_over_loopback() {
     assert!(!sender.broadcast());
     assert_eq!(sender.set_ttl(32).unwrap(), 32);
     assert_eq!(sender.ttl(), 32);
+    assert_eq!(sender.set_multicast_ttl(4).unwrap(), 4);
+    assert_eq!(sender.multicast_ttl(), 4);
     assert_eq!(sender.get_send_queue_size(), 0);
     assert_eq!(sender.get_send_queue_count(), 0);
     sender.set_multicast_interface("127.0.0.1");

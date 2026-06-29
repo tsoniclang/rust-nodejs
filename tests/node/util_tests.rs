@@ -151,10 +151,18 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert!(!util::transferable_abort_controller().signal().aborted());
     assert!(util::aborted(&AbortSignal::abort(JsValue::Bool(true))));
     let sites = util::get_call_sites();
+    assert_eq!(sites[0].get_file_name(), Some("tsonic:generated"));
+    assert_eq!(
+        sites[0].get_script_name_or_source_url(),
+        Some("tsonic:generated")
+    );
     assert_eq!(sites[0].get_function_name(), Some("getCallSites"));
     assert_eq!(sites[0].get_line_number(), Some(1));
+    assert_eq!(sites[0].get_column_number(), Some(1));
     assert!(!sites[0].is_eval());
     assert!(!sites[0].is_native());
+    assert!(!sites[0].is_constructor());
+    assert!(!sites[0].is_async());
     let site_objects =
         util::get_call_sites_with_options(util::GetCallSitesOptions { source_map: true });
     assert_eq!(site_objects[0].function_name, "getCallSites");
@@ -199,6 +207,10 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert!(util::types::is_uint8_array(&typed));
     assert!(util::types::is_date(&date));
     assert!(util::types::is_reg_exp(&regexp));
+    assert!(util::types::is_object(&JsValue::Object(Default::default())));
+    assert!(util::types::is_array(&JsValue::from(Vec::<JsValue>::new())));
+    assert!(util::types::is_map(&JsValue::Object(Default::default())));
+    assert!(util::types::is_set(&JsValue::from(Vec::<JsValue>::new())));
     assert!(!util::types::is_promise(&JsValue::Null));
     assert!(!util::types::is_native_error(&JsValue::Null));
     assert!(!util::types::is_proxy(&JsValue::Null));

@@ -869,4 +869,18 @@ fn http2_exposes_exact_settings_and_session_state_aliases() {
     assert_eq!(state.outbound_queue_size, 2);
     assert_eq!(state.deflate_dynamic_table_size, 4096);
     assert_eq!(state.inflate_dynamic_table_size, 4096);
+
+    let callback_called = std::sync::Arc::new(std::sync::Mutex::new(false));
+    let callback_called_ref = std::sync::Arc::clone(&callback_called);
+    let mut session = http2::connect_session("https://example.test").unwrap();
+    session.close_with_callback(Some(move || {
+        *callback_called_ref.lock().unwrap() = true;
+    }));
+    assert!(session.closed());
+    assert!(*callback_called.lock().unwrap());
+
+    let mut session = http2::connect_session("https://example.test").unwrap();
+    session.destroy_with_code(http2::NGHTTP2_CANCEL);
+    assert!(session.destroyed());
+    assert_eq!(session.goaway_code(), Some(http2::NGHTTP2_CANCEL));
 }
