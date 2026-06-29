@@ -1,0 +1,44 @@
+[package]
+name = "tsonic_rust_node"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aes-gcm = "0.10"
+brotli = "7"
+flate2 = "1"
+filetime = "0.2"
+get_if_addrs = "0.5"
+glob = "0.3"
+libc = "0.2"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "http2"] }
+rsa = { version = "0.9", features = ["sha2"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+tsonic_rust_js = { path = "../../../rust-js/crates/tsonic_rust_js" }
+tsonic_rust_runtime = { path = "../../../rust-runtime/crates/tsonic_rust_runtime" }
+
+[[test]]
+name = "no_forbidden_shortcuts"
+path = "../../tests/architecture/no_forbidden_shortcuts.rs"
+
+[[test]]
+name = "node_integration_tests"
+path = "../../tests/node_integration_tests.rs"
+
+[[test]]
+name = "abi_ledger_tests"
+path = "../../tests/abi_ledger_tests.rs"
+
+[[test]]
+name = "generated_shape_tests"
+path = "../../tests/generated_shape_tests.rs"
+
+[[test]]
+name = "node_api_inventory_tests"
+path = "../../tests/node_api_inventory_tests.rs"
+
+[[test]]
+name = "node_full_api_inventory_tests"
+path = "../../tests/node_full_api_inventory_tests.rs"
