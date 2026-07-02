@@ -1127,3 +1127,13 @@ fn crypto_x509_extended_accessors_are_closed_and_deterministic() {
     assert_eq!(options.wildcards, Some(true));
     assert_eq!(options.single_label_subdomains, Some(true));
 }
+
+#[test]
+fn crypto_hash_update_str_matches_known_sha256_vector() {
+    let mut hash = Hash::create("sha256").unwrap();
+    hash.update_str("abc").unwrap();
+    assert_eq!(
+        hash.digest_string("hex").unwrap(),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}

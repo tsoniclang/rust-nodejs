@@ -18,6 +18,10 @@ impl UrlSearchParams {
         Ok(params)
     }
 
+    pub fn new_from(input: &str) -> NodeResult<Self> {
+        Self::new(Some(input))
+    }
+
     pub fn get(&self, name: &str) -> Option<String> {
         self.entries
             .iter()

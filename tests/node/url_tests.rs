@@ -204,3 +204,13 @@ fn url_domain_and_http_options_helpers_are_closed_runtime_apis() {
     assert_eq!(options.path, "/a?x=1");
     assert_eq!(options.auth, "user:pass");
 }
+
+#[test]
+fn url_search_params_new_from_parses_input() {
+    let params = UrlSearchParams::new_from("a=1&b=two").unwrap();
+    assert_eq!(params.get("a").as_deref(), Some("1"));
+    assert_eq!(params.get("b").as_deref(), Some("two"));
+
+    let prefixed = UrlSearchParams::new_from("?x=%20y").unwrap();
+    assert_eq!(prefixed.get("x").as_deref(), Some(" y"));
+}
