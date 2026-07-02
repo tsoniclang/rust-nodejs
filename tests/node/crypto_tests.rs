@@ -1148,3 +1148,14 @@ fn crypto_hmac_update_str_matches_free_function_digest() {
         tsonic_rust_node::crypto::hmac_digest("sha256", b"key", b"abc", Some("hex")).unwrap();
     assert_eq!(free_digest, DigestResult::String(method_digest));
 }
+
+#[test]
+fn crypto_create_hmac_str_matches_free_function_digest() {
+    let mut hmac = tsonic_rust_node::crypto::create_hmac_str("sha256", "key").unwrap();
+    hmac.update_str("abc").unwrap();
+    let method_digest = hmac.digest_string("hex").unwrap();
+
+    let free_digest =
+        tsonic_rust_node::crypto::hmac_digest("sha256", b"key", b"abc", Some("hex")).unwrap();
+    assert_eq!(free_digest, DigestResult::String(method_digest));
+}

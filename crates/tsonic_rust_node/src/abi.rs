@@ -54,7 +54,8 @@ pub use crate::cluster::{
 pub use crate::crypto::{
     aes_256_gcm_decrypt as crypto_aes_256_gcm_decrypt,
     aes_256_gcm_encrypt as crypto_aes_256_gcm_encrypt, create_hash as crypto_create_hash,
-    create_hmac as crypto_create_hmac, create_secret_key as crypto_create_secret_key,
+    create_hmac as crypto_create_hmac, create_hmac_str as crypto_create_hmac_str,
+    create_secret_key as crypto_create_secret_key,
     create_secret_key_bytes as crypto_create_secret_key_bytes, generate_rsa_key_pair,
     get_ciphers as crypto_get_ciphers, get_curves as crypto_get_curves,
     get_fips as crypto_get_fips, get_hashes as crypto_get_hashes, hash as crypto_hash,

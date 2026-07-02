@@ -177,6 +177,10 @@ pub fn create_hmac(algorithm: &str, key: &[u8]) -> NodeResult<Hmac> {
     Hmac::create(algorithm, key)
 }
 
+pub fn create_hmac_str(algorithm: &str, key: &str) -> NodeResult<Hmac> {
+    create_hmac(algorithm, key.as_bytes())
+}
+
 pub fn hmac_digest(
     algorithm: &str,
     key: &[u8],
