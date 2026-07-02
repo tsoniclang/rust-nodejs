@@ -37,6 +37,27 @@ pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> 
     }
 }
 
+pub fn btoa(value: &str) -> NodeResult<String> {
+    if let Some(invalid) = value.chars().find(|ch| u32::from(*ch) > 0xff) {
+        return Err(NodeError::new(
+            "INVALID_CHARACTER_ERR",
+            format!("btoa input contains character `{invalid}` outside of the Latin1 range"),
+        ));
+    }
+    let bytes = encode_string(value, Some("latin1"))?;
+    decode_bytes(&bytes, Some("base64"))
+}
+
+pub fn atob(value: &str) -> NodeResult<String> {
+    let bytes = encode_string(value, Some("base64")).map_err(|error| {
+        NodeError::new(
+            "INVALID_CHARACTER_ERR",
+            format!("atob input is not valid base64: {}", error.message()),
+        )
+    })?;
+    decode_bytes(&bytes, Some("latin1"))
+}
+
 pub fn transcode(buffer: &Buffer, from_encoding: &str, to_encoding: &str) -> NodeResult<Buffer> {
     let text = decode_bytes(&buffer.as_bytes(), Some(from_encoding))?;
     Buffer::from_string(&text, Some(to_encoding))

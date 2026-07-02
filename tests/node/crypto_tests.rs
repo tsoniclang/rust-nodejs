@@ -1137,3 +1137,14 @@ fn crypto_hash_update_str_matches_known_sha256_vector() {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
+
+#[test]
+fn crypto_hmac_update_str_matches_free_function_digest() {
+    let mut hmac = tsonic_rust_node::crypto::create_hmac("sha256", b"key").unwrap();
+    hmac.update_str("abc").unwrap();
+    let method_digest = hmac.digest_string("hex").unwrap();
+
+    let free_digest =
+        tsonic_rust_node::crypto::hmac_digest("sha256", b"key", b"abc", Some("hex")).unwrap();
+    assert_eq!(free_digest, DigestResult::String(method_digest));
+}

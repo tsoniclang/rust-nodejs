@@ -326,3 +326,15 @@ fn buffer_read_u8_reads_in_bounds_and_rejects_out_of_bounds() {
     let error = buffer.read_u8(3).unwrap_err();
     assert_eq!(error.code(), "ERR_OUT_OF_RANGE");
 }
+
+#[test]
+fn buffer_btoa_and_atob_round_trip_latin1_and_base64() {
+    assert_eq!(tsonic_rust_node::buffer::btoa("abc").unwrap(), "YWJj");
+    assert_eq!(tsonic_rust_node::buffer::atob("YWJj").unwrap(), "abc");
+
+    let btoa_error = tsonic_rust_node::buffer::btoa("€").unwrap_err();
+    assert_eq!(btoa_error.code(), "INVALID_CHARACTER_ERR");
+
+    let atob_error = tsonic_rust_node::buffer::atob("!!!!").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+}

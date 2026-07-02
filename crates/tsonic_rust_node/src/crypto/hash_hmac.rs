@@ -144,6 +144,10 @@ impl Hmac {
         Ok(())
     }
 
+    pub fn update_str(&mut self, value: &str) -> NodeResult<()> {
+        self.update_string(value, None)
+    }
+
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
         hmac_digest_algorithm(self.algorithm, &self.key, &self.bytes, encoding)
     }
