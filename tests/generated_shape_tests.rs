@@ -30,7 +30,7 @@ fn generated_shape_uses_unified_result_and_narrow_helpers() {
     let js::abi::JsValue::Object(object) = value else {
         panic!("expected object");
     };
-    assert_eq!(object.get("ok"), js::abi::JsValue::Bool(true));
+    assert_eq!(object.borrow().get("ok"), js::abi::JsValue::Bool(true));
     node::abi::fs_rm_sync(&root_text, true, true).unwrap();
 }
 

@@ -205,7 +205,7 @@ impl Buffer {
             .into_iter()
             .map(|byte| JsValue::Number(f64::from(byte)))
             .collect::<Vec<_>>();
-        JsValue::Object(JsObject::from_pairs([
+        JsValue::object(JsObject::from_pairs([
             ("type", JsValue::String("Buffer".to_string())),
             ("data", JsValue::from(values)),
         ]))

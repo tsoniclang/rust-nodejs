@@ -1,7 +1,8 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
 
-use tsonic_rust_js::JsValue;
+use tsonic_rust_js::equality::JsStrictEqual;
+use tsonic_rust_js::{JsArray, JsObject, JsValue};
 use tsonic_rust_node::{process, readline, worker_threads};
 
 #[test]
@@ -131,7 +132,8 @@ fn worker_broadcast_channel_is_closed_in_process_state() {
     let left = worker_threads::BroadcastChannel::new("updates");
     let right = worker_threads::BroadcastChannel::new("updates");
     assert_eq!(left.name(), "updates");
-    left.post_message(JsValue::String("payload".to_string()));
+    left.post_message(JsValue::String("payload".to_string()))
+        .unwrap();
     assert_eq!(
         right.receive_message(),
         Some(JsValue::String("payload".to_string()))
@@ -178,7 +180,7 @@ fn worker_options_environment_and_transfer_markers_are_closed_state() {
     assert!(worker.has_ref());
     assert_eq!(worker.join().unwrap(), "done");
 
-    worker_threads::set_environment_data("runtime", JsValue::String("rust".to_string()));
+    worker_threads::set_environment_data("runtime", JsValue::String("rust".to_string())).unwrap();
     assert_eq!(
         worker_threads::get_environment_data("runtime"),
         Some(JsValue::String("rust".to_string()))
@@ -192,4 +194,82 @@ fn worker_options_environment_and_transfer_markers_are_closed_state() {
     let moved = worker_threads::move_message_port_to_context(channel.port1);
     moved.post_message(JsValue::Number(1.0)).unwrap();
     assert_eq!(channel.port2.receive_message(), Some(JsValue::Number(1.0)));
+}
+
+#[test]
+fn worker_structured_clone_rejects_cyclic_values_deterministically() {
+    let value = JsValue::object(JsObject::new());
+    value
+        .as_object()
+        .unwrap()
+        .borrow_mut()
+        .set("self", value.clone());
+
+    let direct = worker_threads::ClonedValue::from_js(&value).unwrap_err();
+    assert_eq!(direct.code(), "DATA_CLONE_ERR");
+    assert_eq!(
+        direct.message(),
+        "circular structure cannot be structured-cloned"
+    );
+
+    let environment = worker_threads::set_environment_data("cyclic", value.clone()).unwrap_err();
+    assert_eq!(environment, direct);
+    assert_eq!(worker_threads::get_environment_data("cyclic"), None);
+
+    let channel = worker_threads::BroadcastChannel::new("cyclic-updates");
+    let broadcast = channel.post_message(value).unwrap_err();
+    assert_eq!(broadcast, direct);
+    assert_eq!(channel.receive_message(), None);
+}
+
+#[test]
+fn worker_environment_data_round_trips_structure_without_identity() {
+    let mut sparse = JsArray::with_length(3);
+    sparse.set(0, JsValue::Number(1.0));
+    sparse.set(2, JsValue::String("tail".to_string()));
+    let original = JsValue::object(JsObject::from_pairs([
+        ("kind", JsValue::String("payload".to_string())),
+        ("items", JsValue::array(sparse)),
+    ]));
+
+    worker_threads::set_environment_data("payload", original.clone()).unwrap();
+    let received = worker_threads::get_environment_data("payload").unwrap();
+
+    // Identity does not survive the structured-clone boundary.
+    assert!(!original.strict_equal(&received));
+    let received_again = worker_threads::get_environment_data("payload").unwrap();
+    assert!(!received.strict_equal(&received_again));
+
+    // Structural content does survive it, including sparse array holes.
+    let object = received.as_object().unwrap().borrow().clone();
+    assert_eq!(object.get("kind"), JsValue::String("payload".to_string()));
+    let items = received
+        .as_object()
+        .unwrap()
+        .borrow()
+        .get("items")
+        .as_array()
+        .unwrap()
+        .borrow()
+        .clone();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items.get(0), Some(&JsValue::Number(1.0)));
+    assert!(!items.has_index(1));
+    assert_eq!(items.get(2), Some(&JsValue::String("tail".to_string())));
+
+    // The payload rebuilds identical structure on every rebuild.
+    let payload = worker_threads::ClonedValue::from_js(&original).unwrap();
+    assert_eq!(
+        worker_threads::ClonedValue::from_js(&payload.to_js()).unwrap(),
+        payload
+    );
+
+    let channel = worker_threads::BroadcastChannel::new("structure-updates");
+    channel.post_message(original.clone()).unwrap();
+    let broadcasted = channel.receive_message().unwrap();
+    assert!(!original.strict_equal(&broadcasted));
+    assert_eq!(
+        broadcasted.as_object().unwrap().borrow().get("kind"),
+        JsValue::String("payload".to_string())
+    );
 }
