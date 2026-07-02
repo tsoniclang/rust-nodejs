@@ -376,3 +376,39 @@ pub fn watch_file(path: &str) -> NodeResult<StatWatcher> {
 pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeResult<StatWatcher> {
     fs::watch_file_with_options(path, options)
 }
+
+pub async fn read_file_string_async(path: &str, encoding: &str) -> NodeResult<String> {
+    read_file_string(path, encoding)
+}
+
+pub async fn write_file_string_async(path: &str, value: &str, encoding: &str) -> NodeResult<()> {
+    write_file_string(path, value, encoding)
+}
+
+pub async fn readdir_async(path: &str) -> NodeResult<Vec<String>> {
+    readdir(path)
+}
+
+pub async fn stat_async(path: &str) -> NodeResult<Stats> {
+    stat(path)
+}
+
+pub async fn mkdir_async(path: &str, recursive: bool) -> NodeResult<()> {
+    mkdir(path, recursive)
+}
+
+pub async fn rm_async(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
+    rm(path, recursive, force)
+}
+
+pub async fn unlink_async(path: &str) -> NodeResult<()> {
+    unlink(path)
+}
+
+pub async fn copy_file_async(from: &str, to: &str) -> NodeResult<()> {
+    copy_file(from, to)
+}
+
+pub async fn rename_async(from: &str, to: &str) -> NodeResult<()> {
+    rename(from, to)
+}

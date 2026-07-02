@@ -303,3 +303,26 @@ fn buffer_variable_width_integer_matrix() {
     assert!(buffer.write_int_be(128, 0, 1).is_err());
     assert!(buffer.write_int_be(-129, 0, 1).is_err());
 }
+
+#[test]
+fn buffer_non_option_encoding_variants_round_trip() {
+    let utf8 = Buffer::from_string_enc("hello", "utf8").unwrap();
+    assert_eq!(utf8.to_string_enc("utf8").unwrap(), "hello");
+
+    let hex = Buffer::from_string_enc("6869", "hex").unwrap();
+    assert_eq!(hex.to_string_enc("utf8").unwrap(), "hi");
+    assert_eq!(hex.to_string_enc("hex").unwrap(), "6869");
+
+    assert_eq!(Buffer::byte_length_enc("hello", "utf8").unwrap(), 5);
+    assert_eq!(Buffer::byte_length_enc("6869", "hex").unwrap(), 2);
+}
+
+#[test]
+fn buffer_read_u8_reads_in_bounds_and_rejects_out_of_bounds() {
+    let buffer = Buffer::from_bytes(vec![7, 8, 9]);
+    assert_eq!(buffer.read_u8(0).unwrap(), 7);
+    assert_eq!(buffer.read_u8(2).unwrap(), 9);
+
+    let error = buffer.read_u8(3).unwrap_err();
+    assert_eq!(error.code(), "ERR_OUT_OF_RANGE");
+}

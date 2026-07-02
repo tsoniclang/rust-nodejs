@@ -34,6 +34,10 @@ impl Buffer {
         Ok(Self::from_bytes(encode_string(value, encoding)?))
     }
 
+    pub fn from_string_enc(value: &str, encoding: &str) -> NodeResult<Self> {
+        Self::from_string(value, Some(encoding))
+    }
+
     pub fn from_array_like(values: &[u8]) -> Self {
         Self::from_bytes(values.to_vec())
     }
@@ -59,6 +63,10 @@ impl Buffer {
         Ok(encode_string(value, encoding)?.len())
     }
 
+    pub fn byte_length_enc(value: &str, encoding: &str) -> NodeResult<usize> {
+        Self::byte_length(value, Some(encoding))
+    }
+
     pub fn len(&self) -> usize {
         self.len
     }
@@ -76,6 +84,11 @@ impl Buffer {
             return None;
         }
         Some(self.storage.borrow()[self.offset + index])
+    }
+
+    pub fn read_u8(&self, index: usize) -> NodeResult<u8> {
+        self.get(index)
+            .ok_or_else(|| NodeError::new("ERR_OUT_OF_RANGE", "buffer index out of range"))
     }
 
     pub fn set(&mut self, index: usize, value: u8) -> NodeResult<()> {
@@ -197,6 +210,10 @@ impl Buffer {
 
     pub fn to_string(&self, encoding: Option<&str>) -> NodeResult<String> {
         decode_bytes(&self.to_vec(), encoding)
+    }
+
+    pub fn to_string_enc(&self, encoding: &str) -> NodeResult<String> {
+        self.to_string(Some(encoding))
     }
 
     pub fn to_json(&self) -> JsValue {

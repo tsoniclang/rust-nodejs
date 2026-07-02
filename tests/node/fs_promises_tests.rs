@@ -597,3 +597,67 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     )
     .unwrap();
 }
+
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    let waker = std::task::Waker::noop();
+    let mut context = std::task::Context::from_waker(waker);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            std::task::Poll::Ready(value) => return value,
+            std::task::Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+#[test]
+fn fs_promises_async_wrappers_match_sync_behaviour() {
+    let root = std::env::current_dir().unwrap().join(".temp").join(format!(
+        "tsonic-rust-fs-promises-async-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let root_text = root.to_string_lossy().to_string();
+
+    block_on(fs_promises::mkdir_async(&root_text, true)).unwrap();
+
+    let file = root.join("async.txt");
+    let file_text = file.to_string_lossy().to_string();
+    block_on(fs_promises::write_file_string_async(
+        &file_text,
+        "async hello",
+        "utf8",
+    ))
+    .unwrap();
+    assert_eq!(
+        block_on(fs_promises::read_file_string_async(&file_text, "utf8")).unwrap(),
+        "async hello"
+    );
+
+    assert_eq!(
+        block_on(fs_promises::readdir_async(&root_text)).unwrap(),
+        vec!["async.txt".to_string()]
+    );
+
+    let stats = block_on(fs_promises::stat_async(&file_text)).unwrap();
+    assert!(stats.is_file());
+
+    let copy = root.join("copy.txt");
+    let copy_text = copy.to_string_lossy().to_string();
+    block_on(fs_promises::copy_file_async(&file_text, &copy_text)).unwrap();
+    assert!(copy.exists());
+
+    let renamed = root.join("renamed.txt");
+    let renamed_text = renamed.to_string_lossy().to_string();
+    block_on(fs_promises::rename_async(&copy_text, &renamed_text)).unwrap();
+    assert!(renamed.exists());
+    assert!(!copy.exists());
+
+    block_on(fs_promises::unlink_async(&renamed_text)).unwrap();
+    assert!(!renamed.exists());
+
+    block_on(fs_promises::rm_async(&root_text, true, false)).unwrap();
+    assert!(!root.exists());
+}

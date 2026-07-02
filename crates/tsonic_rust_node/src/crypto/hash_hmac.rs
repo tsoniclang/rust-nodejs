@@ -60,6 +60,10 @@ impl Hash {
         Ok(())
     }
 
+    pub fn update_str(&mut self, value: &str) -> NodeResult<()> {
+        self.update_string(value, None)
+    }
+
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
         let bytes = digest_bytes(self.algorithm, &self.bytes);
         match encoding {
