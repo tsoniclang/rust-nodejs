@@ -198,6 +198,68 @@ fn decode_base64(value: &str) -> NodeResult<Vec<u8>> {
     Ok(out)
 }
 
+/// Decodes base64 with WHATWG "forgiving-base64" semantics as implemented by
+/// Node's `atob`: ASCII whitespace is stripped, unpadded input is accepted
+/// when its length is 2 or 3 mod 4, at most two `=` padding characters are
+/// allowed (only at the end), and the total significant length must not be
+/// 1 mod 4. Used by `atob` only; `Buffer.from(_, "base64")` keeps the strict
+/// `decode_base64` path.
+fn decode_base64_forgiving(value: &str) -> NodeResult<Vec<u8>> {
+    let mut digits = Vec::with_capacity(value.len());
+    let mut padding = 0_usize;
+    let mut significant = 0_usize;
+    for byte in value.bytes() {
+        if byte.is_ascii_whitespace() {
+            continue;
+        }
+        significant += 1;
+        if byte == b'=' {
+            padding += 1;
+            if padding > 2 {
+                return Err(NodeError::new(
+                    "ERR_INVALID_ARG_VALUE",
+                    "invalid base64 string: more than two padding characters",
+                ));
+            }
+        } else {
+            if padding > 0 {
+                return Err(NodeError::new(
+                    "ERR_INVALID_ARG_VALUE",
+                    "invalid base64 string: character after padding",
+                ));
+            }
+            digits.push(base64_value(byte)?);
+        }
+    }
+    if significant % 4 == 1 {
+        return Err(NodeError::new(
+            "ERR_INVALID_ARG_VALUE",
+            "invalid base64 length",
+        ));
+    }
+    let mut out = Vec::with_capacity(digits.len() / 4 * 3 + 2);
+    for chunk in digits.chunks(4) {
+        match *chunk {
+            [a, b, c, d] => {
+                out.push((a << 2) | (b >> 4));
+                out.push(((b & 0x0f) << 4) | (c >> 2));
+                out.push(((c & 0x03) << 6) | d);
+            }
+            [a, b, c] => {
+                out.push((a << 2) | (b >> 4));
+                out.push(((b & 0x0f) << 4) | (c >> 2));
+            }
+            [a, b] => {
+                out.push((a << 2) | (b >> 4));
+            }
+            // A lone trailing digit carries fewer than 8 bits; Node's lenient
+            // buffer decoder drops it, so mirror that here.
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
 fn base64_value(byte: u8) -> NodeResult<u8> {
     match byte {
         b'A'..=b'Z' => Ok(byte - b'A'),

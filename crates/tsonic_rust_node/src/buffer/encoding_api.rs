@@ -49,7 +49,7 @@ pub fn btoa(value: &str) -> NodeResult<String> {
 }
 
 pub fn atob(value: &str) -> NodeResult<String> {
-    let bytes = encode_string(value, Some("base64")).map_err(|error| {
+    let bytes = decode_base64_forgiving(value).map_err(|error| {
         NodeError::new(
             "INVALID_CHARACTER_ERR",
             format!("atob input is not valid base64: {}", error.message()),
