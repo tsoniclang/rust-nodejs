@@ -1,13 +1,114 @@
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 
-use tsonic_rust_js::JsValue;
+use tsonic_rust_js::{JsArray, JsObject, JsValue};
 
 use crate::error::{NodeError, NodeResult};
+
+/// Owned, `Send`-safe structured-clone payload for values that cross the
+/// worker boundary (broadcast channels and environment data).
+///
+/// Cloning into this representation deep-copies the value; rebuilding with
+/// [`ClonedValue::to_js`] mints fresh handles, matching HTML structured clone
+/// semantics where object identity never survives the boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClonedValue {
+    Undefined,
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Object(Vec<(String, ClonedValue)>),
+    Array {
+        length: usize,
+        entries: Vec<(usize, ClonedValue)>,
+    },
+}
+
+impl ClonedValue {
+    /// Deep-copies a [`JsValue`] into an owned payload. Circular structures
+    /// are rejected with a deterministic `DATA_CLONE_ERR` error.
+    pub fn from_js(value: &JsValue) -> NodeResult<Self> {
+        let mut visiting = BTreeSet::new();
+        Self::from_js_inner(value, &mut visiting)
+    }
+
+    fn from_js_inner(value: &JsValue, visiting: &mut BTreeSet<usize>) -> NodeResult<Self> {
+        match value {
+            JsValue::Undefined => Ok(Self::Undefined),
+            JsValue::Null => Ok(Self::Null),
+            JsValue::Bool(value) => Ok(Self::Bool(*value)),
+            JsValue::Number(value) => Ok(Self::Number(*value)),
+            JsValue::String(value) => Ok(Self::String(value.clone())),
+            JsValue::Object(object) => {
+                let address = Rc::as_ptr(object) as usize;
+                if !visiting.insert(address) {
+                    return Err(data_clone_error());
+                }
+                let mut entries = Vec::new();
+                for (key, entry) in object.borrow().entries() {
+                    entries.push((key, Self::from_js_inner(&entry, visiting)?));
+                }
+                visiting.remove(&address);
+                Ok(Self::Object(entries))
+            }
+            JsValue::Array(values) => {
+                let address = Rc::as_ptr(values) as usize;
+                if !visiting.insert(address) {
+                    return Err(data_clone_error());
+                }
+                let values = values.borrow();
+                let length = values.len();
+                let mut entries = Vec::new();
+                for index in 0..length {
+                    if let Some(entry) = values.get(index) {
+                        entries.push((index, Self::from_js_inner(entry, visiting)?));
+                    }
+                }
+                drop(values);
+                visiting.remove(&address);
+                Ok(Self::Array { length, entries })
+            }
+        }
+    }
+
+    /// Rebuilds a [`JsValue`] with fresh identity from the stored payload.
+    pub fn to_js(&self) -> JsValue {
+        match self {
+            Self::Undefined => JsValue::Undefined,
+            Self::Null => JsValue::Null,
+            Self::Bool(value) => JsValue::Bool(*value),
+            Self::Number(value) => JsValue::Number(*value),
+            Self::String(value) => JsValue::String(value.clone()),
+            Self::Object(entries) => {
+                let mut object = JsObject::new();
+                for (key, entry) in entries {
+                    object.set(key.clone(), entry.to_js());
+                }
+                JsValue::object(object)
+            }
+            Self::Array { length, entries } => {
+                let mut values = JsArray::with_length(*length);
+                for (index, entry) in entries {
+                    values.set(*index, entry.to_js());
+                }
+                JsValue::array(values)
+            }
+        }
+    }
+}
+
+fn data_clone_error() -> NodeError {
+    NodeError::new(
+        "DATA_CLONE_ERR",
+        "circular structure cannot be structured-cloned",
+    )
+}
 
 pub struct MessagePort {
     sender: Sender<JsValue>,
@@ -191,15 +292,21 @@ pub fn worker_data() -> JsValue {
     JsValue::Undefined
 }
 
-pub fn set_environment_data(key: &str, value: JsValue) {
+pub fn set_environment_data(key: &str, value: JsValue) -> NodeResult<()> {
+    let payload = ClonedValue::from_js(&value)?;
     environment_data()
         .lock()
         .unwrap()
-        .insert(key.to_string(), value);
+        .insert(key.to_string(), payload);
+    Ok(())
 }
 
 pub fn get_environment_data(key: &str) -> Option<JsValue> {
-    environment_data().lock().unwrap().get(key).cloned()
+    environment_data()
+        .lock()
+        .unwrap()
+        .get(key)
+        .map(ClonedValue::to_js)
 }
 
 pub fn mark_as_untransferable_token(token: &str) {
@@ -231,13 +338,15 @@ impl BroadcastChannel {
         &self.name
     }
 
-    pub fn post_message(&self, value: JsValue) {
+    pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
+        let payload = ClonedValue::from_js(&value)?;
         broadcast_table()
             .lock()
             .unwrap()
             .entry(self.name.clone())
             .or_default()
-            .push(value);
+            .push(payload);
+        Ok(())
     }
 
     pub fn receive_message(&self) -> Option<JsValue> {
@@ -246,7 +355,7 @@ impl BroadcastChannel {
             if values.is_empty() {
                 None
             } else {
-                Some(values.remove(0))
+                Some(values.remove(0).to_js())
             }
         })
     }
@@ -254,17 +363,17 @@ impl BroadcastChannel {
     pub fn close(&self) {}
 }
 
-static BROADCAST_TABLE: OnceLock<Mutex<std::collections::BTreeMap<String, Vec<JsValue>>>> =
+static BROADCAST_TABLE: OnceLock<Mutex<std::collections::BTreeMap<String, Vec<ClonedValue>>>> =
     OnceLock::new();
-static ENVIRONMENT_DATA: OnceLock<Mutex<BTreeMap<String, JsValue>>> = OnceLock::new();
+static ENVIRONMENT_DATA: OnceLock<Mutex<BTreeMap<String, ClonedValue>>> = OnceLock::new();
 static UNTRANSFERABLE_TOKENS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(1);
 
-fn broadcast_table() -> &'static Mutex<std::collections::BTreeMap<String, Vec<JsValue>>> {
+fn broadcast_table() -> &'static Mutex<std::collections::BTreeMap<String, Vec<ClonedValue>>> {
     BROADCAST_TABLE.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
 }
 
-fn environment_data() -> &'static Mutex<BTreeMap<String, JsValue>> {
+fn environment_data() -> &'static Mutex<BTreeMap<String, ClonedValue>> {
     ENVIRONMENT_DATA.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 

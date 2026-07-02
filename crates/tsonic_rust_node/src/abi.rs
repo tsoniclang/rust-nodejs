@@ -376,7 +376,8 @@ pub use crate::worker_threads::{
     move_message_port_to_context as worker_move_message_port_to_context,
     parent_port as worker_parent_port, receive_message_on_port as worker_receive_message_on_port,
     set_environment_data as worker_set_environment_data, worker_data, BroadcastChannel,
-    MessageChannel, MessagePort, ResourceLimits as WorkerResourceLimits, Worker, WorkerOptions,
+    ClonedValue as WorkerClonedValue, MessageChannel, MessagePort,
+    ResourceLimits as WorkerResourceLimits, Worker, WorkerOptions,
 };
 pub use crate::zlib::{
     brotli_compress_sync as zlib_brotli_compress_sync,
