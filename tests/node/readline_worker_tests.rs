@@ -106,7 +106,7 @@ fn process_next_tick_executes_without_event_loop_guessing() {
 }
 
 #[test]
-fn worker_message_channel_moves_closed_js_values() {
+fn worker_message_channel_structured_clones_js_values() {
     let channel = worker_threads::MessageChannel::new();
     channel.port1.start();
     assert!(channel.port1.has_ref());
@@ -217,9 +217,57 @@ fn worker_structured_clone_rejects_cyclic_values_deterministically() {
     assert_eq!(worker_threads::get_environment_data("cyclic"), None);
 
     let channel = worker_threads::BroadcastChannel::new("cyclic-updates");
-    let broadcast = channel.post_message(value).unwrap_err();
+    let broadcast = channel.post_message(value.clone()).unwrap_err();
     assert_eq!(broadcast, direct);
     assert_eq!(channel.receive_message(), None);
+
+    let ports = worker_threads::MessageChannel::new();
+    let posted = ports.port1.post_message(value).unwrap_err();
+    assert_eq!(posted, direct);
+    assert_eq!(worker_threads::receive_message_on_port(&ports.port2), None);
+}
+
+#[test]
+fn worker_message_port_round_trips_structure_without_identity() {
+    let mut sparse = JsArray::with_length(3);
+    sparse.set(0, JsValue::Number(1.0));
+    sparse.set(2, JsValue::String("tail".to_string()));
+    let original = JsValue::object(JsObject::from_pairs([
+        ("kind", JsValue::String("payload".to_string())),
+        ("items", JsValue::array(sparse)),
+    ]));
+
+    let channel = worker_threads::MessageChannel::new();
+    channel.port1.post_message(original.clone()).unwrap();
+    let received = worker_threads::receive_message_on_port(&channel.port2).unwrap();
+
+    // Identity does not cross the port.
+    assert!(!original.strict_equal(&received));
+
+    // Structural content does, including sparse array holes.
+    assert_eq!(
+        received.as_object().unwrap().borrow().get("kind"),
+        JsValue::String("payload".to_string())
+    );
+    let items = received
+        .as_object()
+        .unwrap()
+        .borrow()
+        .get("items")
+        .as_array()
+        .unwrap()
+        .borrow()
+        .clone();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items.get(0), Some(&JsValue::Number(1.0)));
+    assert!(!items.has_index(1));
+    assert_eq!(items.get(2), Some(&JsValue::String("tail".to_string())));
+
+    // Each delivery mints fresh handles: two posts of the same value are not
+    // strict-equal to each other after crossing the port.
+    channel.port1.post_message(original.clone()).unwrap();
+    let received_again = worker_threads::receive_message_on_port(&channel.port2).unwrap();
+    assert!(!received.strict_equal(&received_again));
 }
 
 #[test]
