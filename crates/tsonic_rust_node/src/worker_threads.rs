@@ -11,7 +11,7 @@ use tsonic_rust_js::{JsArray, JsObject, JsValue};
 use crate::error::{NodeError, NodeResult};
 
 /// Owned, `Send`-safe structured-clone payload for values that cross the
-/// worker boundary (broadcast channels and environment data).
+/// worker boundary (message ports, broadcast channels, and environment data).
 ///
 /// Cloning into this representation deep-copies the value; rebuilding with
 /// [`ClonedValue::to_js`] mints fresh handles, matching HTML structured clone
@@ -111,13 +111,16 @@ fn data_clone_error() -> NodeError {
 }
 
 pub struct MessagePort {
-    sender: Sender<JsValue>,
-    receiver: Receiver<JsValue>,
+    sender: Sender<ClonedValue>,
+    receiver: Receiver<ClonedValue>,
     closed: bool,
     refed: Cell<bool>,
 }
 
 impl MessagePort {
+    /// Structured-clones `value` at the port boundary and delivers the owned
+    /// payload. Circular structures are rejected with `DATA_CLONE_ERR` and
+    /// nothing is sent.
     pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
         if self.closed {
             return Err(NodeError::new(
@@ -125,13 +128,16 @@ impl MessagePort {
                 "message port is closed",
             ));
         }
+        let payload = ClonedValue::from_js(&value)?;
         self.sender
-            .send(value)
+            .send(payload)
             .map_err(|error| NodeError::new("ERR_CLOSED_MESSAGE_PORT", error.to_string()))
     }
 
+    /// Rebuilds the next pending payload into a fresh [`JsValue`]; object
+    /// identity never crosses the port.
     pub fn receive_message(&self) -> Option<JsValue> {
-        self.receiver.try_recv().ok()
+        self.receiver.try_recv().ok().map(|payload| payload.to_js())
     }
 
     pub fn close(&mut self) {
