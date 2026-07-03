@@ -19,30 +19,3 @@ sha2 = "0.10"
 tsonic_rust_js = { path = "../../../../rust-js/crates/tsonic_rust_js" }
 tsonic_rust_runtime = { path = "../../../../rust-runtime/crates/tsonic_rust_runtime" }
 
-[[test]]
-name = "no_forbidden_shortcuts"
-path = "../../tests/architecture/no_forbidden_shortcuts.rs"
-
-[[test]]
-name = "public_api_coverage"
-path = "../../tests/architecture/public_api_coverage.rs"
-
-[[test]]
-name = "node_integration_tests"
-path = "../../tests/node_integration_tests.rs"
-
-[[test]]
-name = "abi_ledger_tests"
-path = "../../tests/abi_ledger_tests.rs"
-
-[[test]]
-name = "generated_shape_tests"
-path = "../../tests/generated_shape_tests.rs"
-
-[[test]]
-name = "node_api_inventory_tests"
-path = "../../tests/node_api_inventory_tests.rs"
-
-[[test]]
-name = "node_full_api_inventory_tests"
-path = "../../tests/node_full_api_inventory_tests.rs"

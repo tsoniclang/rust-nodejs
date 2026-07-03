@@ -9,3 +9,12 @@ packaged_dir="$repo_root/runtimes/crates/tsonic_rust_node"
 
 mkdir -p "$packaged_dir"
 rsync -a --delete --exclude "target/" "$source_dir/" "$packaged_dir/"
+
+# The packaged crate is a lib-only dependency: strip repo-relative [[test]]
+# target sections that do not ship with the package.
+awk '
+  /^\[\[test\]\]$/ { skip = 1; next }
+  /^\[/ && !/^\[\[test\]\]$/ { skip = 0 }
+  !skip { print }
+' "$packaged_dir/Cargo.toml" | cat -s > "$packaged_dir/Cargo.toml.tmp"
+mv "$packaged_dir/Cargo.toml.tmp" "$packaged_dir/Cargo.toml"
