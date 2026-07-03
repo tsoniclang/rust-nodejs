@@ -20,6 +20,9 @@
     "build": "tsc -p nodejs/tsconfig.json && bash scripts/package-runtime.sh",
     "test": "node --test nodejs/test/*.test.mjs"
   },
+  "peerDependencies": {
+    "@tsonic/target-rust": "*"
+  },
   "devDependencies": {
     "@tsonic/target-rust": "file:../tsonic-rust",
     "@types/node": "^22.19.21",
