@@ -8,7 +8,7 @@ source_dir="$repo_root/rust/crates/tsonic_rust_node"
 packaged_dir="$repo_root/runtimes/crates/tsonic_rust_node"
 
 mkdir -p "$packaged_dir"
-rsync -a --delete --exclude "target/" "$source_dir/" "$packaged_dir/"
+rsync -a --delete --exclude "target/" --exclude ".temp/" "$source_dir/" "$packaged_dir/"
 
 # The packaged crate is a lib-only dependency: strip repo-relative [[test]]
 # target sections that do not ship with the package.

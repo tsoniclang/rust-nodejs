@@ -14,7 +14,7 @@ test("committed runtimes crate is identical to rust/crates source", () => {
       "diff",
       // Cargo.toml is transformed at packaging (lib-only: [[test]] sections
       // are stripped), so it is compared by policy below, not byte equality.
-      ["-r", "--exclude=target", "--exclude=Cargo.toml", "rust/crates/tsonic_rust_node", "runtimes/crates/tsonic_rust_node"],
+      ["-r", "--exclude=target", "--exclude=.temp", "--exclude=Cargo.toml", "rust/crates/tsonic_rust_node", "runtimes/crates/tsonic_rust_node"],
       { cwd: repoRoot, encoding: "utf8" },
     );
   } catch (error) {
