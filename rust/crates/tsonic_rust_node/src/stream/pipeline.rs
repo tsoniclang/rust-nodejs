@@ -54,4 +54,3 @@ pub fn add_abort_signal(readable: &mut Readable, signal_aborted: bool) {
         readable.destroy_with_error("aborted");
     }
 }
-

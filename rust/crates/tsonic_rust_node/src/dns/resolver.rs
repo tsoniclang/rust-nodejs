@@ -401,4 +401,3 @@ pub mod promises {
         lookup_service(address, port)
     }
 }
-

@@ -343,4 +343,3 @@ pub fn get_cipher_info(name: &str, options: Option<CipherInfoOptions>) -> Option
         None
     }
 }
-

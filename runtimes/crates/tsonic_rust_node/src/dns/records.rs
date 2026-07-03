@@ -221,4 +221,3 @@ pub enum AnyRecord {
     Naptr(NaptrRecord),
     Tlsa(TlsaRecord),
 }
-

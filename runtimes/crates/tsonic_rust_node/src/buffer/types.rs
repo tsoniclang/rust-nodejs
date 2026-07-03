@@ -86,4 +86,3 @@ impl PartialEq for Buffer {
 }
 
 impl Eq for Buffer {}
-

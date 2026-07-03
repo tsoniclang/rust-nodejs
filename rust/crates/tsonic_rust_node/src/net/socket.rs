@@ -284,4 +284,3 @@ impl Socket {
             .ok_or_else(|| NodeError::new("ENOTCONN", "socket is not connected"))
     }
 }
-

@@ -197,4 +197,3 @@ pub fn ftruncate_sync(fd: i32, len: u64) -> NodeResult<()> {
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
     file.set_len(len).map_err(map_io_error)
 }
-

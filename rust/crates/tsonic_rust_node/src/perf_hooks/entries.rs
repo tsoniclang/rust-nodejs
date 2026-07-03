@@ -166,4 +166,3 @@ pub fn node_timing() -> PerformanceNodeTiming {
         },
     }
 }
-

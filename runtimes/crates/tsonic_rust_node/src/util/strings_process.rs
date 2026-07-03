@@ -203,4 +203,3 @@ pub fn convert_process_signal_to_exit_code(signal: &str) -> Option<i32> {
 }
 
 pub fn set_trace_sigint(_enable: bool) {}
-

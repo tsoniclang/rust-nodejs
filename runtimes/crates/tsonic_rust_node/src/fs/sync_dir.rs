@@ -265,4 +265,3 @@ pub fn close_sync(fd: i32) -> NodeResult<()> {
         .map(|_| ())
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))
 }
-

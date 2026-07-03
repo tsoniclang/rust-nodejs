@@ -172,4 +172,3 @@ pub fn load_env_file(path: &str) -> NodeResult<()> {
     }
     Ok(())
 }
-

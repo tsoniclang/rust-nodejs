@@ -67,4 +67,3 @@ impl DisposableTempDir {
         rm_sync(&self.path, true, true)
     }
 }
-

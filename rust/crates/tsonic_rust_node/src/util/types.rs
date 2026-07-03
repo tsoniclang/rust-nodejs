@@ -401,4 +401,3 @@ impl CallSite {
         self.async_call
     }
 }
-

@@ -286,4 +286,3 @@ impl Drop for WritableStreamDefaultWriter<'_> {
         self.release_lock();
     }
 }
-

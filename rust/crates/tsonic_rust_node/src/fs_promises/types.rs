@@ -152,4 +152,3 @@ impl Dir {
         self.closed
     }
 }
-

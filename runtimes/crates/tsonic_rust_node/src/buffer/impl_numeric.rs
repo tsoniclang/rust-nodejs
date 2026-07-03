@@ -305,4 +305,3 @@ impl Buffer {
         Ok(self)
     }
 }
-

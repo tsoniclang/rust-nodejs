@@ -49,4 +49,3 @@ pub fn create_write_stream_with_options(
     }
     Ok(WriteStream::new(path, Writable::new()))
 }
-

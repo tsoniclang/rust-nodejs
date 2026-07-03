@@ -350,4 +350,3 @@ fn gid() -> Option<u32> {
 fn gid() -> Option<u32> {
     None
 }
-

@@ -241,4 +241,3 @@ pub fn futimes_callback(
 ) {
     callback(futimes_sync(fd, atime_seconds, mtime_seconds));
 }
-

@@ -318,4 +318,3 @@ fn statfs_impl(_path: &str) -> NodeResult<StatFs> {
         "statfs is currently implemented for Linux targets",
     ))
 }
-

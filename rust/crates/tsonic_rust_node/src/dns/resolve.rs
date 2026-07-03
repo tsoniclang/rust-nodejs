@@ -128,4 +128,3 @@ pub struct Resolver {
     cancelled: bool,
     options: ResolverOptions,
 }
-

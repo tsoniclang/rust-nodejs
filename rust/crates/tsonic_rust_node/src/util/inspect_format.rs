@@ -200,4 +200,3 @@ pub fn inspect_colors() -> Vec<InspectColorEntry> {
         },
     ]
 }
-

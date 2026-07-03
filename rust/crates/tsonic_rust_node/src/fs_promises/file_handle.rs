@@ -307,4 +307,3 @@ impl FileHandleWriter {
         Ok(written)
     }
 }
-

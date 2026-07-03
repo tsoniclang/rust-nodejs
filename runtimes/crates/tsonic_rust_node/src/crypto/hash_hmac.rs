@@ -222,4 +222,3 @@ fn hmac_digest_algorithm(
         Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),
     }
 }
-
