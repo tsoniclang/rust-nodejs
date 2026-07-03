@@ -1,0 +1,31 @@
+{
+  "name": "@tsonic/rust-nodejs",
+  "version": "0.0.1",
+  "description": "Node.js target capability for the Tsonic Rust target",
+  "type": "module",
+  "files": [
+    "dist",
+    "runtimes"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "tsonic": {
+    "kind": "plugin",
+    "contractVersion": 1,
+    "entry": "."
+  },
+  "scripts": {
+    "build": "tsc -p nodejs/tsconfig.json && bash scripts/package-runtime.sh",
+    "test": "node --test nodejs/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@tsonic/target-rust": "file:../tsonic-rust",
+    "@types/node": "^22.19.21",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

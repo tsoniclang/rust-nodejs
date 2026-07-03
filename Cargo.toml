@@ -1,3 +1,4 @@
 [workspace]
-members = ["crates/tsonic_rust_node"]
+members = ["rust/crates/tsonic_rust_node"]
+exclude = ["runtimes/crates/tsonic_rust_node"]
 resolver = "2"
