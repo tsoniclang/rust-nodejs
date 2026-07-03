@@ -24,3 +24,7 @@ target
 .temp/
 .analysis/
 /target/
+
+# npm package build outputs
+node_modules/
+/dist/
