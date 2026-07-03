@@ -326,3 +326,33 @@ fn buffer_read_u8_reads_in_bounds_and_rejects_out_of_bounds() {
     let error = buffer.read_u8(3).unwrap_err();
     assert_eq!(error.code(), "ERR_OUT_OF_RANGE");
 }
+
+#[test]
+fn buffer_btoa_and_atob_round_trip_latin1_and_base64() {
+    assert_eq!(tsonic_rust_node::buffer::btoa("abc").unwrap(), "YWJj");
+    assert_eq!(tsonic_rust_node::buffer::atob("YWJj").unwrap(), "abc");
+
+    let btoa_error = tsonic_rust_node::buffer::btoa("€").unwrap_err();
+    assert_eq!(btoa_error.code(), "INVALID_CHARACTER_ERR");
+
+    let atob_error = tsonic_rust_node::buffer::atob("!!!!").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+
+    // WHATWG forgiving-base64 semantics: unpadded input with length 2 or 3
+    // mod 4, ASCII whitespace stripping, and canonical or partial padding.
+    assert_eq!(tsonic_rust_node::buffer::atob("YQ").unwrap(), "a");
+    assert_eq!(tsonic_rust_node::buffer::atob("YWJ").unwrap(), "ab");
+    assert_eq!(tsonic_rust_node::buffer::atob(" Y Q ").unwrap(), "a");
+    assert_eq!(tsonic_rust_node::buffer::atob("YQ==").unwrap(), "a");
+    assert_eq!(tsonic_rust_node::buffer::atob("YQ=").unwrap(), "a");
+
+    // Rejected: length 1 mod 4, base64url alphabet, and excess padding.
+    let atob_error = tsonic_rust_node::buffer::atob("Y").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+    let atob_error = tsonic_rust_node::buffer::atob("YW-j").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+    let atob_error = tsonic_rust_node::buffer::atob("YQ===").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+    let atob_error = tsonic_rust_node::buffer::atob("YQ==YQ").unwrap_err();
+    assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
+}
