@@ -75,11 +75,11 @@ impl X509Certificate {
     }
 
     pub fn valid_from_date(&self) -> JsDate {
-        JsDate::parse(&self.valid_from).unwrap_or_else(|_| JsDate::from_millis(0.0))
+        parse_certificate_date(&self.valid_from)
     }
 
     pub fn valid_to_date(&self) -> JsDate {
-        JsDate::parse(&self.valid_to).unwrap_or_else(|_| JsDate::from_millis(0.0))
+        parse_certificate_date(&self.valid_to)
     }
 
     pub fn fingerprint(&self) -> &str {
@@ -226,4 +226,15 @@ pub fn random_uuid() -> NodeResult<String> {
 
 pub fn random_uuid_with_options(_options: RandomUUIDOptions) -> NodeResult<String> {
     random_uuid()
+}
+
+// Certificate validity strings fall back to the epoch when unparseable,
+// mirroring the previous fallible JsDate::parse fallback.
+fn parse_certificate_date(value: &str) -> JsDate {
+    let millis = JsDate::parse(value);
+    if millis.is_nan() {
+        JsDate::from_millis(0.0)
+    } else {
+        JsDate::from_millis(millis)
+    }
 }

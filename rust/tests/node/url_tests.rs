@@ -1,8 +1,8 @@
 use tsonic_rust_node::url::{
-    can_parse, domain_to_ascii, domain_to_unicode, file_url_to_path, format, parse,
-    path_to_file_url, resolve, url_pattern_can_parse, url_to_http_options, LegacyUrlObject, Url,
-    UrlFormatOptions, UrlPattern, UrlPatternInit, UrlPatternInput, UrlPatternOptions,
-    UrlSearchParams,
+    can_parse, domain_to_ascii, domain_to_unicode, file_url_to_path, format, format_legacy, parse,
+    parse_legacy, path_to_file_url, resolve, url_pattern_can_parse, url_to_http_options,
+    LegacyUrlObject, Url, UrlFormatOptions, UrlPattern, UrlPatternInit, UrlPatternInput,
+    UrlPatternOptions, UrlSearchParams,
 };
 
 #[test]
@@ -189,6 +189,37 @@ fn url_static_and_legacy_helpers_cover_common_node_shapes() {
         resolve("https://example.com/base/file", "child").unwrap(),
         "https://example.com/base/child"
     );
+}
+
+#[test]
+fn legacy_url_object_accessors_expose_components_and_round_trip() {
+    let legacy = parse_legacy("https://user@example.com:8443/a/b?x=1#f").unwrap();
+    assert_eq!(legacy.href(), "https://user@example.com:8443/a/b?x=1#f");
+    assert_eq!(legacy.protocol(), "https:");
+    assert_eq!(legacy.host(), "example.com:8443");
+    assert_eq!(legacy.hostname(), "example.com");
+    assert_eq!(legacy.port(), "8443");
+    assert_eq!(legacy.pathname(), "/a/b");
+    assert_eq!(legacy.search(), "?x=1");
+    assert_eq!(legacy.query(), "x=1");
+    assert_eq!(legacy.hash(), "#f");
+    assert_eq!(
+        format_legacy(&legacy),
+        "https://user@example.com:8443/a/b?x=1#f"
+    );
+
+    // Absent components are empty strings, never panics or placeholders.
+    let bare = parse_legacy("https://example.com/").unwrap();
+    assert_eq!(bare.href(), "https://example.com/");
+    assert_eq!(bare.protocol(), "https:");
+    assert_eq!(bare.host(), "example.com");
+    assert_eq!(bare.hostname(), "example.com");
+    assert_eq!(bare.port(), "");
+    assert_eq!(bare.pathname(), "/");
+    assert_eq!(bare.search(), "");
+    assert_eq!(bare.query(), "");
+    assert_eq!(bare.hash(), "");
+    assert_eq!(format_legacy(&bare), "https://example.com/");
 }
 
 #[test]

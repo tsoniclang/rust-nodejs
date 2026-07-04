@@ -38,6 +38,7 @@ const stringVecCarrier = rustVecTargetType(stringCarrier);
 const statsCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 const bufferCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
 const urlCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
+const urlObjectCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
 const searchParamsCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.UrlSearchParams" };
 const hashCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Hash" };
 const hmacCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Hmac" };
@@ -385,7 +386,7 @@ function processModule(): RustProviderModuleDefinition {
       valueExport("argv", stringArrayType),
       valueExport("pid", numberType),
       valueExport("ppid", numberType),
-      valueExport("execPath", stringType, "Unsupported: requires infallible executable-path resolution."),
+      valueExport("execPath", stringType),
       fnExport(m, "exit", [{ name: "code", type: numberType }], voidType),
     ],
   };
@@ -402,6 +403,7 @@ function processRows(): readonly RustProviderOperationRow[] {
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, castResult: "i32" },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, castResult: "i32" },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: envCarrier },
+    { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, isFallible: true },
     { exportId: `${m}::ProcessEnv`, receiverTypeId: "rust.node.ProcessEnv", operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit", argCasts: ["i32"] }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
   ];
@@ -467,6 +469,7 @@ function urlModule(): RustProviderModuleDefinition {
   const m = "node:url";
   const urlId = "node:url::URL";
   const paramsId = "node:url::URLSearchParams";
+  const urlObjectId = "node:url::UrlObject";
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.url",
@@ -501,11 +504,26 @@ function urlModule(): RustProviderModuleDefinition {
           methodMember(paramsId, "toString", [], stringType),
         ],
       },
+      {
+        id: urlObjectId,
+        name: "UrlObject",
+        kind: "class" as const,
+        members: [
+          propertyMember(urlObjectId, "href", stringType),
+          propertyMember(urlObjectId, "protocol", stringType),
+          propertyMember(urlObjectId, "host", stringType),
+          propertyMember(urlObjectId, "hostname", stringType),
+          propertyMember(urlObjectId, "port", stringType),
+          propertyMember(urlObjectId, "pathname", stringType),
+          propertyMember(urlObjectId, "search", stringType),
+          propertyMember(urlObjectId, "hash", stringType),
+        ],
+      },
       fnExport(m, "pathToFileURL", [{ name: "path", type: stringType }], providerRef(m, "URL")),
       fnExport(m, "fileURLToPath", [{ name: "url", type: providerRef(m, "URL") }], stringType),
       fnExport(m, "canParse", [{ name: "input", type: stringType }], booleanType),
-      unsupportedFn(m, "parse", "the legacy URL object shape contract"),
-      unsupportedFn(m, "format", "the legacy URL object shape contract"),
+      fnExport(m, "parse", [{ name: "input", type: stringType }], providerRef(m, "UrlObject")),
+      fnExport(m, "format", [{ name: "url", type: providerRef(m, "UrlObject") }], stringType),
     ],
   };
 }
@@ -513,9 +531,17 @@ function urlModule(): RustProviderModuleDefinition {
 function urlRows(): readonly RustProviderOperationRow[] {
   const urlId = "node:url::URL";
   const paramsId = "node:url::URLSearchParams";
+  const urlObjectId = "node:url::UrlObject";
   const urlProperty = (name: string): RustProviderOperationRow => ({
     exportId: urlId,
     memberId: `${urlId}.${name}`,
+    operationKind: "property",
+    target: { form: "receiver-method", name },
+    resultCarrier: stringCarrier,
+  });
+  const urlObjectProperty = (name: string): RustProviderOperationRow => ({
+    exportId: urlObjectId,
+    memberId: `${urlObjectId}.${name}`,
     operationKind: "property",
     target: { form: "receiver-method", name },
     resultCarrier: stringCarrier,
@@ -532,6 +558,9 @@ function urlRows(): readonly RustProviderOperationRow[] {
     { exportId: "node:url::pathToFileURL", operationKind: "method", target: { form: "call", path: "node_url::path_to_file_url", argModes: ["ref"] }, resultCarrier: urlCarrier, parameterCarriers: [stringCarrier] },
     { exportId: "node:url::canParse", operationKind: "method", target: { form: "call", path: "node_url::can_parse", argModes: ["ref"], trailingArgs: ["None"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     { exportId: "node:url::fileURLToPath", operationKind: "method", target: { form: "call", path: "node_url::file_url_to_path", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [urlCarrier], isFallible: true },
+    { exportId: "node:url::parse", operationKind: "method", target: { form: "call", path: "node_url::parse_legacy", argModes: ["ref"] }, resultCarrier: urlObjectCarrier, parameterCarriers: [stringCarrier], isFallible: true },
+    ...["href", "protocol", "host", "hostname", "port", "pathname", "search", "hash"].map(urlObjectProperty),
+    { exportId: "node:url::format", operationKind: "method", target: { form: "call", path: "node_url::format_legacy", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [urlObjectCarrier] },
   ];
 }
 
@@ -599,7 +628,7 @@ function utilModule(): RustProviderModuleDefinition {
       fnExport(m, "getSystemErrorName", [{ name: "code", type: numberType }], stringType),
       fnExport(m, "getSystemErrorMessage", [{ name: "code", type: numberType }], stringType),
       fnExport(m, "inspect", [{ name: "value", type: { kind: "any" } }], stringType),
-      unsupportedFn(m, "format", "a deterministic closed formatting subset (open reflection is out of contract)"),
+      fnExport(m, "format", [{ name: "format", type: stringType }, { name: "values", type: { kind: "array", elementType: { kind: "any" } }, rest: true }], stringType),
     ],
   };
 }
@@ -613,6 +642,7 @@ function utilRows(): readonly RustProviderOperationRow[] {
     { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [{ kind: "target-named", id: "rust.js.JsValue" }] },
     { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::format`, operationKind: "method", target: { form: "call-jsvalue-slice", path: "node_util::format" }, resultCarrier: stringCarrier },
   ];
 }
 
@@ -659,6 +689,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Stats": "node_fs::Stats",
       "rust.node.Buffer": "node_buffer::Buffer",
       "rust.node.Url": "node_url::Url",
+      "rust.node.UrlObject": "node_url::LegacyUrlObject",
       "rust.node.UrlSearchParams": "node_url::UrlSearchParams",
       "rust.node.Hash": "node_crypto::Hash",
       "rust.node.Hmac": "node_crypto::Hmac",

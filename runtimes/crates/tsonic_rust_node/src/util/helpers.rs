@@ -28,9 +28,37 @@ fn set_parsed_arg(result: &mut ParseArgsResult, name: &str, value: String, multi
     }
 }
 
-fn format_number(value: &JsValue) -> String {
+// Node %s semantics: strings are emitted verbatim; every other value is
+// rendered through inspection (which matches String() for primitives).
+fn format_string(value: &JsValue) -> String {
     match value {
-        JsValue::Number(value) => value.to_string(),
-        _ => "NaN".to_string(),
+        JsValue::String(text) => text.clone(),
+        other => other.inspect(),
     }
+}
+
+// Node %d semantics: the argument is coerced with Number() before being
+// rendered with JS number formatting (NaN for values that do not coerce).
+fn format_number(value: &JsValue) -> String {
+    let number = match value {
+        JsValue::Number(value) => *value,
+        JsValue::Bool(value) => {
+            if *value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        JsValue::Null => 0.0,
+        JsValue::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                0.0
+            } else {
+                trimmed.parse::<f64>().unwrap_or(f64::NAN)
+            }
+        }
+        _ => f64::NAN,
+    };
+    JsValue::Number(number).inspect()
 }

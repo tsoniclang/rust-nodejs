@@ -144,6 +144,58 @@ pub struct LegacyUrlObject {
     pub path: String,
 }
 
+impl LegacyUrlObject {
+    /// Returns the full serialized URL. Empty string when absent.
+    pub fn href(&self) -> String {
+        self.href.clone()
+    }
+
+    /// Returns the protocol including the trailing colon (for example
+    /// `https:`). Empty string when absent.
+    pub fn protocol(&self) -> String {
+        self.protocol.clone()
+    }
+
+    /// Returns the host including the port when present (for example
+    /// `example.com:8443`). Empty string when absent.
+    pub fn host(&self) -> String {
+        self.host.clone()
+    }
+
+    /// Returns the hostname without the port. Empty string when absent.
+    pub fn hostname(&self) -> String {
+        self.hostname.clone()
+    }
+
+    /// Returns the port as a decimal string. Empty string when absent.
+    pub fn port(&self) -> String {
+        self.port.clone()
+    }
+
+    /// Returns the pathname (for example `/a/b`). Empty string when absent.
+    pub fn pathname(&self) -> String {
+        self.pathname.clone()
+    }
+
+    /// Returns the search string including the leading `?`. Empty string
+    /// when absent.
+    pub fn search(&self) -> String {
+        self.search.clone()
+    }
+
+    /// Returns the query string without the leading `?`. Empty string when
+    /// absent.
+    pub fn query(&self) -> String {
+        self.query.clone()
+    }
+
+    /// Returns the fragment including the leading `#`. Empty string when
+    /// absent.
+    pub fn hash(&self) -> String {
+        self.hash.clone()
+    }
+}
+
 pub type UrlObject = LegacyUrlObject;
 pub type UrlWithStringQuery = LegacyUrlObject;
 pub type UrlWithParsedQuery = LegacyUrlObject;
@@ -220,6 +272,20 @@ pub fn parse(
         pathname: url.pathname.clone(),
         path: format!("{}{}", url.pathname, url.search),
     })
+}
+
+/// Parses `input` into a legacy URL object without query-string expansion
+/// and without slash-denoted host handling (`parse_query_string = false`,
+/// `slashes_denote_host = false`).
+pub fn parse_legacy(input: &str) -> NodeResult<LegacyUrlObject> {
+    parse(input, false, false)
+}
+
+/// Serializes a legacy URL object back into a URL string by composing its
+/// components exactly as [`format`] does, so `format_legacy(&parse_legacy(x)?)`
+/// round-trips the href.
+pub fn format_legacy(url: &LegacyUrlObject) -> String {
+    format(url)
 }
 
 pub fn format(value: &LegacyUrlObject) -> String {
