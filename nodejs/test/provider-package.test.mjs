@@ -25,7 +25,9 @@ test("provider package declares the expected node module specifiers", () => {
 
 test("provider package contributes a non-empty operation row set", () => {
   const plugin = createTsonicPlugin();
-  const rows = plugin.providerPackage.rustProviderOperations();
+  const [mapper] = plugin.createOperationMappers({});
+  assert.equal(mapper.kind, "rust-provider-operations");
+  const rows = mapper.operations;
   assert.ok(rows.length > 0);
   const readFileSync = rows.find((row) => row.exportId === "node:fs::readFileSync");
   assert.ok(readFileSync !== undefined, "missing node:fs::readFileSync row");
@@ -35,7 +37,9 @@ test("provider package contributes a non-empty operation row set", () => {
 
 test("provider package maps legacy url parse to a fallible UrlObject row", () => {
   const plugin = createTsonicPlugin();
-  const rows = plugin.providerPackage.rustProviderOperations();
+  const [mapper] = plugin.createOperationMappers({});
+  assert.equal(mapper.kind, "rust-provider-operations");
+  const rows = mapper.operations;
   const parse = rows.find((row) => row.exportId === "node:url::parse");
   assert.ok(parse !== undefined, "missing node:url::parse row");
   assert.equal(parse.isFallible, true);
@@ -52,12 +56,15 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
   const format = rows.find((row) => row.exportId === "node:url::format");
   assert.ok(format !== undefined, "missing node:url::format row");
   assert.equal(format.target.path, "node_url::format_legacy");
-  assert.equal(plugin.providerPackage.rustCarrierPaths()["rust.node.UrlObject"], "node_url::LegacyUrlObject");
+  const [carrierMapper] = plugin.createOperationMappers({});
+  assert.equal(carrierMapper.carrierPaths["rust.node.UrlObject"], "node_url::LegacyUrlObject");
 });
 
 test("provider package maps util format to the jsvalue-slice call form", () => {
   const plugin = createTsonicPlugin();
-  const rows = plugin.providerPackage.rustProviderOperations();
+  const [mapper] = plugin.createOperationMappers({});
+  assert.equal(mapper.kind, "rust-provider-operations");
+  const rows = mapper.operations;
   const format = rows.find((row) => row.exportId === "node:util::format");
   assert.ok(format !== undefined, "missing node:util::format row");
   assert.equal(format.target.form, "call-jsvalue-slice");
@@ -66,7 +73,9 @@ test("provider package maps util format to the jsvalue-slice call form", () => {
 
 test("provider package maps process execPath to a fallible property row", () => {
   const plugin = createTsonicPlugin();
-  const rows = plugin.providerPackage.rustProviderOperations();
+  const [mapper] = plugin.createOperationMappers({});
+  assert.equal(mapper.kind, "rust-provider-operations");
+  const rows = mapper.operations;
   const execPath = rows.find((row) => row.exportId === "node:process::execPath");
   assert.ok(execPath !== undefined, "missing node:process::execPath row");
   assert.equal(execPath.operationKind, "property");
