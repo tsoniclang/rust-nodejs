@@ -598,7 +598,7 @@ function utilModule(): RustProviderModuleDefinition {
       fnExport(m, "styleText", [{ name: "style", type: stringType }, { name: "text", type: stringType }], stringType),
       fnExport(m, "getSystemErrorName", [{ name: "code", type: numberType }], stringType),
       fnExport(m, "getSystemErrorMessage", [{ name: "code", type: numberType }], stringType),
-      unsupportedFn(m, "inspect", "a deterministic closed inspection subset (open reflection is out of contract)"),
+      fnExport(m, "inspect", [{ name: "value", type: { kind: "any" } }], stringType),
       unsupportedFn(m, "format", "a deterministic closed formatting subset (open reflection is out of contract)"),
     ],
   };
@@ -611,6 +611,7 @@ function utilRows(): readonly RustProviderOperationRow[] {
     { exportId: `${m}::toUSVString`, operationKind: "method", target: { form: "call", path: "node_util::to_usv_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::styleText`, operationKind: "method", target: { form: "call", path: "node_util::style_text", argModes: ["ref", "ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, stringCarrier] },
     { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [{ kind: "target-named", id: "rust.js.JsValue" }] },
     { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
   ];
 }
