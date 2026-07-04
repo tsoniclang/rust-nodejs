@@ -10,6 +10,11 @@ impl DebugLogger {
 }
 
 pub fn format(format: &str, args: &[JsValue]) -> String {
+    // Node returns the format string untouched when no substitution
+    // arguments are provided (placeholders and %% stay literal).
+    if args.is_empty() {
+        return format.to_string();
+    }
     let mut out = String::new();
     let mut chars = format.chars().peekable();
     let mut arg_index = 0;
@@ -20,12 +25,19 @@ pub fn format(format: &str, args: &[JsValue]) -> String {
         }
         match chars.next() {
             Some('%') => out.push('%'),
-            Some('s') => out.push_str(&next_arg(args, &mut arg_index).inspect()),
+            // Placeholders beyond the supplied arguments stay literal,
+            // matching Node (`util.format("%s %s", "a")` -> "a %s").
+            Some(directive @ ('s' | 'd' | 'j' | 'o')) if arg_index >= args.len() => {
+                out.push('%');
+                out.push(directive);
+            }
+            Some('s') => out.push_str(&format_string(next_arg(args, &mut arg_index))),
             Some('d') => out.push_str(&format_number(next_arg(args, &mut arg_index))),
             Some('j') => {
                 let value = next_arg(args, &mut arg_index);
                 out.push_str(&json::stringify(value).unwrap_or_else(|_| "[Circular]".to_string()));
             }
+            Some('o') => out.push_str(&next_arg(args, &mut arg_index).inspect()),
             Some(other) => {
                 out.push('%');
                 out.push(other);
@@ -33,11 +45,11 @@ pub fn format(format: &str, args: &[JsValue]) -> String {
             None => out.push('%'),
         }
     }
+    // Excess arguments are appended space-separated; strings verbatim and
+    // every other value through inspection, matching Node.
     for value in &args[arg_index..] {
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(&value.inspect());
+        out.push(' ');
+        out.push_str(&format_string(value));
     }
     out
 }

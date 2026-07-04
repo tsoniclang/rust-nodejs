@@ -69,7 +69,7 @@ fn node_backend_legal_abi_paths_are_emit_ready() {
                 js::abi::JsValue::Number(7.0)
             ]
         ),
-        "\"x\":7"
+        "x:7"
     );
 
     let mut hash = node::abi::Hash::create("sha256").unwrap();

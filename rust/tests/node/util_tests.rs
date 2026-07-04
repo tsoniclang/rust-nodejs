@@ -15,10 +15,10 @@ fn util_format_and_inspect_closed_values() {
             JsValue::Bool(true),
         ],
     );
-    assert_eq!(output, "\"n\":3:true:%");
+    assert_eq!(output, "n:3:true:%");
     assert_eq!(
         util::format_with_options(&JsValue::Null, "%s", &[JsValue::String("x".to_string())]),
-        "\"x\""
+        "x"
     );
     let mut options = util::InspectOptions {
         numeric_separator: true,
@@ -83,6 +83,67 @@ fn util_format_and_inspect_closed_values() {
     assert!(util::types::is_undefined(&JsValue::Undefined));
     assert!(util::types::is_null_or_undefined(&JsValue::Undefined));
     assert!(!util::types::is_any_array_buffer(&JsValue::Null));
+}
+
+#[test]
+fn util_format_placeholder_matrix_follows_node_semantics() {
+    // %s: strings verbatim, other primitives via String() coercion.
+    assert_eq!(util::format("%s", &[JsValue::String("n".to_string())]), "n");
+    assert_eq!(util::format("%s", &[JsValue::Number(5.0)]), "5");
+    assert_eq!(util::format("%s", &[JsValue::Bool(true)]), "true");
+    assert_eq!(util::format("%s", &[JsValue::Null]), "null");
+    assert_eq!(util::format("%s", &[JsValue::Undefined]), "undefined");
+
+    // %d: Number() coercion, NaN when the value does not coerce.
+    assert_eq!(util::format("%d", &[JsValue::Number(3.5)]), "3.5");
+    assert_eq!(util::format("%d", &[JsValue::String("5".to_string())]), "5");
+    assert_eq!(util::format("%d", &[JsValue::Bool(true)]), "1");
+    assert_eq!(util::format("%d", &[JsValue::Null]), "0");
+    assert_eq!(util::format("%d", &[JsValue::Undefined]), "NaN");
+    assert_eq!(
+        util::format("%d", &[JsValue::String("nope".to_string())]),
+        "NaN"
+    );
+
+    // %j: JSON serialization.
+    assert_eq!(
+        util::format("%j", &[JsValue::String("x".to_string())]),
+        "\"x\""
+    );
+    assert_eq!(util::format("%j", &[JsValue::Number(3.0)]), "3");
+    assert_eq!(util::format("%j", &[JsValue::Bool(true)]), "true");
+
+    // %o: inspection (strings stay quoted).
+    assert_eq!(
+        util::format("%o", &[JsValue::String("x".to_string())]),
+        "\"x\""
+    );
+    assert_eq!(util::format("%o", &[JsValue::Number(3.0)]), "3");
+
+    // %%: literal percent that consumes no argument.
+    assert_eq!(util::format("%d%%", &[JsValue::Number(100.0)]), "100%");
+
+    // Without substitution arguments the format string is returned as-is.
+    assert_eq!(util::format("%s", &[]), "%s");
+    assert_eq!(util::format("%%", &[]), "%%");
+
+    // Placeholders beyond the supplied arguments stay literal.
+    assert_eq!(
+        util::format("%s %s", &[JsValue::String("a".to_string())]),
+        "a %s"
+    );
+
+    // Excess arguments append space-separated: strings verbatim, other
+    // values inspected; unknown directives stay literal and keep their arg.
+    assert_eq!(
+        util::format(
+            "a",
+            &[JsValue::String("b".to_string()), JsValue::Number(2.0)]
+        ),
+        "a b 2"
+    );
+    assert_eq!(util::format("", &[JsValue::String("b".to_string())]), " b");
+    assert_eq!(util::format("%x", &[JsValue::Number(1.0)]), "%x 1");
 }
 
 #[test]
