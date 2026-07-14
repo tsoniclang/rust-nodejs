@@ -134,11 +134,11 @@ pub fn release() -> Release {
 }
 
 pub fn title() -> String {
-    process_title().lock().unwrap().clone()
+    crate::sync::lock(process_title()).clone()
 }
 
 pub fn set_title(value: &str) {
-    *process_title().lock().unwrap() = value.to_string();
+    *crate::sync::lock(process_title()) = value.to_string();
 }
 
 pub fn features() -> ProcessFeatures {

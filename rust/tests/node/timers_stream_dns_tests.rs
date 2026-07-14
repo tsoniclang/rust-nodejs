@@ -147,7 +147,7 @@ fn stream_consumers_cover_buffer_text_array_buffer_blob_and_json() {
 
     let mut readable = chunks();
     assert_eq!(
-        stream::consumers::array_buffer(&mut readable)
+        &*stream::consumers::array_buffer(&mut readable)
             .unwrap()
             .as_bytes(),
         b"{\"ok\":true}"

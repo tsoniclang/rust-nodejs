@@ -253,14 +253,12 @@ pub fn open_sync(path: &str, flags: &str) -> NodeResult<i32> {
     }
     let file = options.open(path).map_err(map_io_error)?;
     let fd = NEXT_FD.fetch_add(1, Ordering::SeqCst);
-    file_table().lock().unwrap().insert(fd, file);
+    crate::sync::lock(file_table()).insert(fd, file);
     Ok(fd)
 }
 
 pub fn close_sync(fd: i32) -> NodeResult<()> {
-    file_table()
-        .lock()
-        .unwrap()
+    crate::sync::lock(file_table())
         .remove(&fd)
         .map(|_| ())
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))

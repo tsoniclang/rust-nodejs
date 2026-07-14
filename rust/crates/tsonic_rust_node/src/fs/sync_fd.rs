@@ -11,7 +11,7 @@ pub fn read_sync(
             "buffer offset out of range",
         ));
     }
-    let mut table = file_table().lock().unwrap();
+    let mut table = crate::sync::lock(file_table());
     let file = table
         .get_mut(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -82,7 +82,7 @@ pub fn write_sync_buffer(
             "buffer offset out of range",
         ));
     }
-    let mut table = file_table().lock().unwrap();
+    let mut table = crate::sync::lock(file_table());
     let file = table
         .get_mut(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -162,7 +162,7 @@ pub fn writev_sync_result(
 }
 
 pub fn fstat_sync(fd: i32) -> NodeResult<Stats> {
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -175,7 +175,7 @@ pub fn fstat_sync_with_options(fd: i32, _options: StatOptions) -> NodeResult<Sta
 }
 
 pub fn fsync_sync(fd: i32) -> NodeResult<()> {
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -183,7 +183,7 @@ pub fn fsync_sync(fd: i32) -> NodeResult<()> {
 }
 
 pub fn fdatasync_sync(fd: i32) -> NodeResult<()> {
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -191,7 +191,7 @@ pub fn fdatasync_sync(fd: i32) -> NodeResult<()> {
 }
 
 pub fn ftruncate_sync(fd: i32, len: u64) -> NodeResult<()> {
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;

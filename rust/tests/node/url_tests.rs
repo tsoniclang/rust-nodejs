@@ -136,6 +136,20 @@ fn url_setters_and_file_url_helpers() {
     assert_eq!(file.protocol(), "file:");
     assert_eq!(file_url_to_path(&file).unwrap(), "/tmp/a.txt");
 
+    let escaped = path_to_file_url("/tmp/a file#with?unicode-λ.txt");
+    assert_eq!(
+        escaped.href(),
+        "file:///tmp/a%20file%23with%3Funicode-%CE%BB.txt"
+    );
+    assert_eq!(
+        file_url_to_path(&escaped).unwrap(),
+        "/tmp/a file#with?unicode-λ.txt"
+    );
+
+    let malformed = Url::parse("file:///tmp/%GG", None).unwrap();
+    let error = file_url_to_path(&malformed).unwrap_err();
+    assert_eq!(error.code, "ERR_INVALID_FILE_URL_PATH");
+
     let file_options = tsonic_rust_node::url::FileUrlToPathOptions {
         windows: Some(false),
     };

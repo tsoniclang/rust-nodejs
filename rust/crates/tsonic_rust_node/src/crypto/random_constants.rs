@@ -3,6 +3,7 @@ use crate::error::{NodeError, NodeResult};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rngs::OsRng;
+use rand::RngCore;
 use rsa::pkcs1v15::{Signature as RsaSignature, SigningKey, VerifyingKey};
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
@@ -11,26 +12,10 @@ use tsonic_rust_js::date::JsDate;
 
 pub fn random_bytes(size: usize) -> NodeResult<Buffer> {
     let mut bytes = vec![0_u8; size];
-    #[cfg(unix)]
-    {
-        use std::io::Read;
-        let mut file = std::fs::File::open("/dev/urandom")
-            .map_err(|error| NodeError::new("ERR_CRYPTO_RANDOM_FAILED", error.to_string()))?;
-        file.read_exact(&mut bytes)
-            .map_err(|error| NodeError::new("ERR_CRYPTO_RANDOM_FAILED", error.to_string()))?;
-        Ok(Buffer::from_bytes(bytes))
-    }
-    #[cfg(not(unix))]
-    {
-        let mut state = seed();
-        for byte in &mut bytes {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            *byte = state as u8;
-        }
-        Ok(Buffer::from_bytes(bytes))
-    }
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|error| NodeError::new("ERR_CRYPTO_RANDOM_FAILED", error.to_string()))?;
+    Ok(Buffer::from_bytes(bytes))
 }
 
 pub fn random_fill(buffer: &mut Buffer, offset: usize, size: usize) -> NodeResult<()> {
@@ -40,9 +25,9 @@ pub fn random_fill(buffer: &mut Buffer, offset: usize, size: usize) -> NodeResul
             "randomFill range is outside buffer",
         ));
     }
-    let bytes = random_bytes(size)?;
-    for index in 0..size {
-        buffer.set(offset + index, bytes.get(index).unwrap())?;
+    let bytes = random_bytes(size)?.as_bytes();
+    for (index, byte) in bytes.into_iter().enumerate() {
+        buffer.set(offset + index, byte)?;
     }
     Ok(())
 }
@@ -59,9 +44,47 @@ pub fn random_int_range(min: u64, max: u64) -> NodeResult<u64> {
         ));
     }
     let range = max - min;
-    let bytes = random_bytes(8)?.as_bytes();
-    let value = u64::from_le_bytes(bytes.try_into().unwrap());
-    Ok(min + value % range)
+    sample_uniform_below(range, || {
+        let mut bytes = [0_u8; 8];
+        OsRng
+            .try_fill_bytes(&mut bytes)
+            .map_err(|error| NodeError::new("ERR_CRYPTO_RANDOM_FAILED", error.to_string()))?;
+        Ok(u64::from_le_bytes(bytes))
+    })
+    .map(|value| min + value)
+}
+
+fn sample_uniform_below(
+    range: u64,
+    mut next: impl FnMut() -> NodeResult<u64>,
+) -> NodeResult<u64> {
+    let rejection_threshold = range.wrapping_neg() % range;
+    loop {
+        let value = next()?;
+        if value >= rejection_threshold {
+            return Ok(value % range);
+        }
+    }
+}
+
+#[cfg(test)]
+mod random_tests {
+    use super::sample_uniform_below;
+
+    #[test]
+    fn uniform_sampling_rejects_the_biased_prefix() {
+        let mut values = [0_u64, 4_u64].into_iter();
+        let selected = sample_uniform_below(3, || Ok(values.next().expect("test entropy")))
+            .expect("sampling succeeds");
+        assert_eq!(selected, 1);
+        assert_eq!(values.next(), None);
+    }
+
+    #[test]
+    fn power_of_two_ranges_accept_every_machine_word() {
+        let selected = sample_uniform_below(1_u64 << 63, || Ok(0)).expect("sampling succeeds");
+        assert_eq!(selected, 0);
+    }
 }
 
 pub fn timing_safe_equal(left: &Buffer, right: &Buffer) -> NodeResult<bool> {

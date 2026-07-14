@@ -231,7 +231,7 @@ pub fn find_package_json(specifier: &str, base: Option<&str>) -> Option<String> 
 }
 
 pub fn get_source_maps_support() -> SourceMapsSupport {
-    *source_maps_support().lock().unwrap()
+    *crate::sync::lock(source_maps_support())
 }
 
 pub fn set_source_maps_support(enabled: bool, node_modules: bool) -> SourceMapsSupport {
@@ -240,7 +240,7 @@ pub fn set_source_maps_support(enabled: bool, node_modules: bool) -> SourceMapsS
         node_modules,
         generated_code: enabled,
     };
-    *source_maps_support().lock().unwrap() = support;
+    *crate::sync::lock(source_maps_support()) = support;
     support
 }
 
@@ -257,7 +257,7 @@ pub fn set_source_maps_support_with_options(
         node_modules: options.node_modules,
         generated_code: options.generated_code,
     };
-    *source_maps_support().lock().unwrap() = support;
+    *crate::sync::lock(source_maps_support()) = support;
     support
 }
 

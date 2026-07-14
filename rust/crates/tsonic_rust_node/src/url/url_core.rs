@@ -336,7 +336,19 @@ pub fn path_to_file_url(path: &str) -> Url {
     if !pathname.starts_with('/') {
         pathname = format!("/{pathname}");
     }
-    Url::parse(&format!("file://{pathname}"), None).unwrap()
+    let pathname = percent_encode_file_path(&pathname);
+    Url {
+        href: format!("file://{pathname}"),
+        protocol: "file:".to_string(),
+        username: String::new(),
+        password: String::new(),
+        host: String::new(),
+        hostname: String::new(),
+        port: String::new(),
+        pathname,
+        search: String::new(),
+        hash: String::new(),
+    }
 }
 
 pub fn file_url_to_path(url: &Url) -> NodeResult<String> {
@@ -346,5 +358,61 @@ pub fn file_url_to_path(url: &Url) -> NodeResult<String> {
             "expected file: URL",
         ));
     }
-    Ok(url.pathname())
+    percent_decode_file_path(&url.pathname)
+}
+
+fn percent_encode_file_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
+            encoded.push(char::from(b"0123456789ABCDEF"[(byte & 0x0f) as usize]));
+        }
+    }
+    encoded
+}
+
+fn percent_decode_file_path(path: &str) -> NodeResult<String> {
+    let bytes = path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let Some(high) = bytes.get(index + 1).and_then(|value| hex_digit(*value)) else {
+            return Err(NodeError::new(
+                "ERR_INVALID_FILE_URL_PATH",
+                "file URL pathname contains an incomplete percent escape",
+            ));
+        };
+        let Some(low) = bytes.get(index + 2).and_then(|value| hex_digit(*value)) else {
+            return Err(NodeError::new(
+                "ERR_INVALID_FILE_URL_PATH",
+                "file URL pathname contains an invalid percent escape",
+            ));
+        };
+        decoded.push((high << 4) | low);
+        index += 3;
+    }
+    String::from_utf8(decoded).map_err(|_| {
+        NodeError::new(
+            "ERR_INVALID_FILE_URL_PATH",
+            "file URL pathname is not valid UTF-8",
+        )
+    })
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }

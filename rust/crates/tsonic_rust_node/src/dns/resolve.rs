@@ -106,11 +106,11 @@ impl DefaultResultOrder {
 }
 
 pub fn set_default_result_order(order: DefaultResultOrder) {
-    *default_order().lock().unwrap() = order;
+    *crate::sync::lock(default_order()) = order;
 }
 
 pub fn get_default_result_order() -> DefaultResultOrder {
-    *default_order().lock().unwrap()
+    *crate::sync::lock(default_order())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

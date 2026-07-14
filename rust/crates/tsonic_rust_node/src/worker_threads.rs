@@ -300,30 +300,22 @@ pub fn worker_data() -> JsValue {
 
 pub fn set_environment_data(key: &str, value: JsValue) -> NodeResult<()> {
     let payload = ClonedValue::from_js(&value)?;
-    environment_data()
-        .lock()
-        .unwrap()
-        .insert(key.to_string(), payload);
+    crate::sync::lock(environment_data()).insert(key.to_string(), payload);
     Ok(())
 }
 
 pub fn get_environment_data(key: &str) -> Option<JsValue> {
-    environment_data()
-        .lock()
-        .unwrap()
+    crate::sync::lock(environment_data())
         .get(key)
         .map(ClonedValue::to_js)
 }
 
 pub fn mark_as_untransferable_token(token: &str) {
-    untransferable_tokens()
-        .lock()
-        .unwrap()
-        .insert(token.to_string());
+    crate::sync::lock(untransferable_tokens()).insert(token.to_string());
 }
 
 pub fn is_marked_as_untransferable_token(token: &str) -> bool {
-    untransferable_tokens().lock().unwrap().contains(token)
+    crate::sync::lock(untransferable_tokens()).contains(token)
 }
 
 pub fn move_message_port_to_context(port: MessagePort) -> MessagePort {
@@ -346,9 +338,7 @@ impl BroadcastChannel {
 
     pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
         let payload = ClonedValue::from_js(&value)?;
-        broadcast_table()
-            .lock()
-            .unwrap()
+        crate::sync::lock(broadcast_table())
             .entry(self.name.clone())
             .or_default()
             .push(payload);
@@ -356,7 +346,7 @@ impl BroadcastChannel {
     }
 
     pub fn receive_message(&self) -> Option<JsValue> {
-        let mut table = broadcast_table().lock().unwrap();
+        let mut table = crate::sync::lock(broadcast_table());
         table.get_mut(&self.name).and_then(|values| {
             if values.is_empty() {
                 None

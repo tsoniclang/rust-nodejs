@@ -16,15 +16,15 @@ pub fn next_tick(callback: impl FnOnce()) {
 }
 
 pub fn connected() -> bool {
-    ipc_state().lock().unwrap().connected
+    crate::sync::lock(ipc_state()).connected
 }
 
 pub fn channel() -> Option<String> {
-    ipc_state().lock().unwrap().channel.clone()
+    crate::sync::lock(ipc_state()).channel.clone()
 }
 
 pub fn main_module() -> Option<String> {
-    ipc_state().lock().unwrap().main_module.clone()
+    crate::sync::lock(ipc_state()).main_module.clone()
 }
 
 pub fn disconnect() -> NodeResult<()> {
@@ -34,7 +34,7 @@ pub fn disconnect() -> NodeResult<()> {
             "process IPC channel is not connected",
         ));
     }
-    ipc_state().lock().unwrap().connected = false;
+    crate::sync::lock(ipc_state()).connected = false;
     Ok(())
 }
 

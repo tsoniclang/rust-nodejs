@@ -2,7 +2,7 @@ use tsonic_rust_js::date::JsDate;
 use tsonic_rust_js::regexp::JsRegExp;
 use tsonic_rust_js::web::{AbortController, AbortSignal};
 use tsonic_rust_js::JsValue;
-use tsonic_rust_js::{ArrayBuffer, Uint8Array};
+use tsonic_rust_js::{ArrayBuffer, JsObject, Uint8Array};
 use tsonic_rust_node::util;
 
 #[test]
@@ -112,6 +112,14 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
     );
     assert_eq!(util::format("%j", &[JsValue::Number(3.0)]), "3");
     assert_eq!(util::format("%j", &[JsValue::Bool(true)]), "true");
+    assert_eq!(util::format("%j", &[JsValue::Undefined]), "undefined");
+    let cycle = JsValue::object(JsObject::new());
+    cycle
+        .as_object()
+        .unwrap()
+        .borrow_mut()
+        .set("self", cycle.clone());
+    assert_eq!(util::format("%j", &[cycle]), "[Circular]");
 
     // %o: inspection (strings stay quoted).
     assert_eq!(
@@ -144,6 +152,48 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
     );
     assert_eq!(util::format("", &[JsValue::String("b".to_string())]), " b");
     assert_eq!(util::format("%x", &[JsValue::Number(1.0)]), "%x 1");
+}
+
+#[test]
+fn util_inspect_is_cycle_depth_and_borrow_safe() {
+    let cycle = JsValue::object(JsObject::new());
+    cycle
+        .as_object()
+        .unwrap()
+        .borrow_mut()
+        .set("self", cycle.clone());
+    assert_eq!(util::inspect(&cycle), "{self: [Circular]}");
+
+    let deep = JsValue::object(JsObject::from_pairs([(
+        "a",
+        JsValue::object(JsObject::from_pairs([(
+            "b",
+            JsValue::object(JsObject::from_pairs([(
+                "c",
+                JsValue::object(JsObject::from_pairs([("d", JsValue::Number(1.0))])),
+            )])),
+        )])),
+    )]));
+    assert_eq!(util::inspect(&deep), "{a: {b: {c: [Object]}}}");
+
+    let borrowed = JsValue::object(JsObject::new());
+    let guard = borrowed.as_object().unwrap().borrow_mut();
+    assert_eq!(util::inspect(&borrowed), "[Uninspectable]");
+    drop(guard);
+
+    let values = JsValue::from(vec![
+        JsValue::Number(1.0),
+        JsValue::Number(2.0),
+        JsValue::Number(3.0),
+    ]);
+    let options = util::InspectOptions {
+        max_array_length: Some(2),
+        ..util::InspectOptions::default()
+    };
+    assert_eq!(
+        util::inspect_with_struct_options(&values, &options),
+        "[1, 2, ... 1 more items]"
+    );
 }
 
 #[test]

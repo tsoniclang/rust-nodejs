@@ -229,7 +229,7 @@ fn buffer_blob_file_and_constants_are_closed_carriers() {
     assert_eq!(tsonic_rust_node::buffer::blob_type(&blob), "text/plain");
     assert_eq!(tsonic_rust_node::buffer::blob_text(&blob).unwrap(), "blob");
     assert_eq!(
-        tsonic_rust_node::buffer::blob_array_buffer(&blob).as_bytes(),
+        &*tsonic_rust_node::buffer::blob_array_buffer(&blob).as_bytes(),
         b"blob"
     );
     assert_eq!(tsonic_rust_node::buffer::blob_bytes(&blob), b"blob");
@@ -270,7 +270,7 @@ fn buffer_blob_file_and_constants_are_closed_carriers() {
     assert_eq!(tsonic_rust_node::buffer::file_type(&file), "text/plain");
     assert_eq!(tsonic_rust_node::buffer::file_text(&file).unwrap(), "file");
     assert_eq!(
-        tsonic_rust_node::buffer::file_array_buffer(&file).as_bytes(),
+        &*tsonic_rust_node::buffer::file_array_buffer(&file).as_bytes(),
         b"file"
     );
 }

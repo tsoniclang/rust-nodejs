@@ -16,7 +16,7 @@ pub fn get_active_resources_info() -> Vec<&'static str> {
 }
 
 pub fn emit_warning(message: &str, name: Option<&str>, code: Option<&str>, detail: Option<&str>) {
-    warnings().lock().unwrap().push(ProcessWarning {
+    crate::sync::lock(warnings()).push(ProcessWarning {
         name: name.unwrap_or("Warning").to_string(),
         message: message.to_string(),
         code: code.map(str::to_string),
@@ -34,11 +34,11 @@ pub fn emit_warning_with_options(message: &str, options: EmitWarningOptions) {
 }
 
 pub fn emitted_warnings() -> Vec<ProcessWarning> {
-    warnings().lock().unwrap().clone()
+    crate::sync::lock(warnings()).clone()
 }
 
 pub fn clear_warnings() {
-    warnings().lock().unwrap().clear();
+    crate::sync::lock(warnings()).clear();
 }
 
 pub fn uptime() -> f64 {
