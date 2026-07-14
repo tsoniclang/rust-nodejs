@@ -23,7 +23,7 @@ pub fn mark_with_options(name: &str, options: Option<PerformanceMarkOptions>) ->
         start_time: options.start_time.unwrap_or_else(performance_now),
         detail: options.detail,
     };
-    marks().lock().unwrap().push(mark.clone());
+    crate::sync::lock(marks()).push(mark.clone());
     mark
 }
 
@@ -43,7 +43,7 @@ pub fn measure(name: &str, start_mark: Option<&str>, end_mark: Option<&str>) -> 
         duration: (end_time - start_time).max(0.0),
         detail: None,
     };
-    measures().lock().unwrap().push(measure.clone());
+    crate::sync::lock(measures()).push(measure.clone());
     measure
 }
 
@@ -60,12 +60,12 @@ pub fn measure_with_options(name: &str, options: PerformanceMeasureOptions) -> P
         duration,
         detail: options.detail,
     };
-    measures().lock().unwrap().push(measure.clone());
+    crate::sync::lock(measures()).push(measure.clone());
     measure
 }
 
 pub fn get_entries() -> Vec<PerformanceEntry> {
-    let marks = marks().lock().unwrap();
+    let marks = crate::sync::lock(marks());
     let mut entries = marks
         .iter()
         .map(|mark| PerformanceEntry {
@@ -76,7 +76,7 @@ pub fn get_entries() -> Vec<PerformanceEntry> {
         })
         .collect::<Vec<_>>();
     drop(marks);
-    let measures = measures().lock().unwrap();
+    let measures = crate::sync::lock(measures());
     entries.extend(measures.iter().map(|measure| PerformanceEntry {
         name: measure.name.clone(),
         entry_type: measure.entry_type.to_string(),
@@ -84,7 +84,7 @@ pub fn get_entries() -> Vec<PerformanceEntry> {
         duration: measure.duration,
     }));
     drop(measures);
-    let resources = resources().lock().unwrap();
+    let resources = crate::sync::lock(resources());
     entries.extend(resources.iter().map(PerformanceResourceTiming::to_entry));
     entries.sort_by(|left, right| {
         left.start_time
@@ -95,14 +95,14 @@ pub fn get_entries() -> Vec<PerformanceEntry> {
 }
 
 pub fn get_entries_by_name(name: &str) -> Vec<String> {
-    let marks = marks().lock().unwrap();
+    let marks = crate::sync::lock(marks());
     let mark_names = marks
         .iter()
         .filter(|mark| mark.name == name)
         .map(|mark| mark.name.clone())
         .collect::<Vec<_>>();
     drop(marks);
-    let measures = measures().lock().unwrap();
+    let measures = crate::sync::lock(measures());
     let measure_names = measures
         .iter()
         .filter(|measure| measure.name == name)
@@ -127,7 +127,7 @@ pub fn get_entries_by_type(entry_type: &str) -> Vec<PerformanceEntry> {
 }
 
 pub fn clear_marks(name: Option<&str>) {
-    let mut marks = marks().lock().unwrap();
+    let mut marks = crate::sync::lock(marks());
     if let Some(name) = name {
         marks.retain(|mark| mark.name != name);
     } else {
@@ -136,7 +136,7 @@ pub fn clear_marks(name: Option<&str>) {
 }
 
 pub fn clear_measures(name: Option<&str>) {
-    let mut measures = measures().lock().unwrap();
+    let mut measures = crate::sync::lock(measures());
     if let Some(name) = name {
         measures.retain(|measure| measure.name != name);
     } else {
@@ -145,7 +145,7 @@ pub fn clear_measures(name: Option<&str>) {
 }
 
 pub fn clear_resource_timings(name: Option<&str>) {
-    let mut resources = resources().lock().unwrap();
+    let mut resources = crate::sync::lock(resources());
     if let Some(name) = name {
         resources.retain(|resource| resource.name != name);
     } else {
@@ -154,8 +154,8 @@ pub fn clear_resource_timings(name: Option<&str>) {
 }
 
 pub fn add_resource_timing(resource: PerformanceResourceTiming) -> PerformanceResourceTiming {
-    let max_size = *resource_timing_buffer_size().lock().unwrap();
-    let mut resources = resources().lock().unwrap();
+    let max_size = *crate::sync::lock(resource_timing_buffer_size());
+    let mut resources = crate::sync::lock(resources());
     if resources.len() < max_size {
         resources.push(resource.clone());
     }
@@ -163,7 +163,7 @@ pub fn add_resource_timing(resource: PerformanceResourceTiming) -> PerformanceRe
 }
 
 pub fn set_resource_timing_buffer_size(size: usize) {
-    *resource_timing_buffer_size().lock().unwrap() = size;
+    *crate::sync::lock(resource_timing_buffer_size()) = size;
 }
 
 pub fn resource_timing_buffer_size() -> &'static Mutex<usize> {

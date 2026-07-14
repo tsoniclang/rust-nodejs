@@ -125,7 +125,7 @@ pub fn lchmod_sync(path: &str, mode: u32) -> NodeResult<()> {
 }
 
 pub fn fchmod_sync(fd: i32, mode: u32) -> NodeResult<()> {
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -169,7 +169,7 @@ pub fn lutimes_sync(path: &str, atime_seconds: f64, mtime_seconds: f64) -> NodeR
 pub fn futimes_sync(fd: i32, atime_seconds: f64, mtime_seconds: f64) -> NodeResult<()> {
     let atime = file_time_from_seconds(atime_seconds)?;
     let mtime = file_time_from_seconds(mtime_seconds)?;
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
@@ -256,7 +256,7 @@ fn lchown_impl(_path: &str, _uid: u32, _gid: u32) -> NodeResult<()> {
 fn fchown_impl(fd: i32, uid: u32, gid: u32) -> NodeResult<()> {
     use std::os::fd::AsRawFd;
 
-    let table = file_table().lock().unwrap();
+    let table = crate::sync::lock(file_table());
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;

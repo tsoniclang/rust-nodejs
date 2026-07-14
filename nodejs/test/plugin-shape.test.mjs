@@ -8,7 +8,20 @@ test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
   assert.equal(plugin.id, "@tsonic/rust-nodejs");
   assert.equal(plugin.targetId, "rust");
   assert.equal(plugin.displayName, "Node.js for Rust");
-  assert.deepEqual(plugin.moduleOwnership, [{ specifierPrefix: "node:" }]);
+  assert.deepEqual(plugin.moduleOwnership, [
+    "node:path",
+    "node:os",
+    "node:fs",
+    "node:fs/promises",
+    "node:process",
+    "node:buffer",
+    "node:url",
+    "node:crypto",
+    "node:util",
+  ].map((specifierPrefix) => ({
+    specifierPrefix,
+    providerId: "tsonic.rust.provider-package.@tsonic/rust-nodejs.binding",
+  })));
   assert.deepEqual(plugin.requiredSurfaces, ["js"]);
 });
 

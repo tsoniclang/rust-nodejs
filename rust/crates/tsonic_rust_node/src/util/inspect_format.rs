@@ -35,7 +35,12 @@ pub fn format(format: &str, args: &[JsValue]) -> String {
             Some('d') => out.push_str(&format_number(next_arg(args, &mut arg_index))),
             Some('j') => {
                 let value = next_arg(args, &mut arg_index);
-                out.push_str(&json::stringify(value).unwrap_or_else(|_| "[Circular]".to_string()));
+                let rendered = match json::stringify(value) {
+                    Ok(Some(text)) => text,
+                    Ok(None) => "undefined".to_string(),
+                    Err(_) => "[Circular]".to_string(),
+                };
+                out.push_str(&rendered);
             }
             Some('o') => out.push_str(&next_arg(args, &mut arg_index).inspect()),
             Some(other) => {
@@ -83,7 +88,7 @@ pub fn default_inspect_options() -> InspectOptions {
 }
 
 pub fn inspect_with_struct_options(value: &JsValue, options: &InspectOptions) -> String {
-    let mut text = inspect(value);
+    let mut text = value.inspect_with_limits(options.depth, options.max_array_length);
     if let Some(max) = options.max_string_length {
         if text.chars().count() > max {
             text = text.chars().take(max).collect::<String>();

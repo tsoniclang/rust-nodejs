@@ -32,6 +32,7 @@ pub mod readline;
 pub mod sqlite;
 pub mod stream;
 pub mod string_decoder;
+mod sync;
 pub mod timers;
 pub mod tls;
 pub mod tty;

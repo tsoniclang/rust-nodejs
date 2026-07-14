@@ -29,11 +29,11 @@ export function createRustNodejsCapability(): RustNodejsCapabilityPlugin {
   const providerPackage = createRustNodejsProviderPackage();
   return {
     kind: "target-capability",
-    id: "@tsonic/rust-nodejs",
+    id: providerPackage.id,
     targetId: "rust",
-    displayName: "Node.js for Rust",
-    requiredSurfaces: ["js"],
-    moduleOwnership: [{ specifierPrefix: "node:" }],
+    displayName: providerPackage.displayName,
+    requiredSurfaces: providerPackage.requiredSurfaces ?? [],
+    moduleOwnership: providerPackage.moduleOwnership,
     createExtensions(context: CapabilityContext): CapabilityExtensions {
       return providerPackage.createExtensions(context);
     },

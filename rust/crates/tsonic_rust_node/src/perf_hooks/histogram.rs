@@ -156,9 +156,7 @@ pub type RecordableHistogram = Histogram;
 pub type IntervalHistogram = Histogram;
 
 fn find_mark(name: &str) -> Option<PerformanceMark> {
-    marks()
-        .lock()
-        .unwrap()
+    crate::sync::lock(marks())
         .iter()
         .rev()
         .find(|mark| mark.name == name)

@@ -16,7 +16,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(String::from_utf8(out).unwrap(), "\"ok\"\n");
 
     let parsed = js::abi::json_parse(r#"{"ok":true}"#).unwrap();
-    let text = js::abi::json_stringify(&parsed).unwrap();
+    let text = js::abi::json_stringify(&parsed).unwrap().unwrap();
     assert_eq!(text, r#"{"ok":true}"#);
 
     let mut map = js::abi::JsMap::<f64, &str>::new();
@@ -31,7 +31,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    assert!(js::abi::JsRegExp::new("abc", "").unwrap().test("abc"));
+    assert!(js::abi::JsRegExp::new("abc", "")
+        .unwrap()
+        .test("abc")
+        .unwrap());
 
     let buffer = js::abi::ArrayBuffer::new(4);
     assert_eq!(buffer.byte_length(), 4);

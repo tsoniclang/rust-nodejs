@@ -16,8 +16,8 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 rsa = { version = "0.9", features = ["sha2"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
-tsonic_rust_js = { path = "../../../../rust-js/crates/tsonic_rust_js" }
-tsonic_rust_runtime = { path = "../../../../rust-runtime/crates/tsonic_rust_runtime" }
+tsonic_rust_js = "=0.1.0"
+tsonic_rust_runtime = "=0.1.0"
 
 [[test]]
 name = "no_forbidden_shortcuts"

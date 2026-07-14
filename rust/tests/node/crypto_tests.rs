@@ -5,9 +5,17 @@ fn crypto_random_bytes_returns_requested_length() {
     assert_eq!(tsonic_rust_node::crypto::random_bytes(8).unwrap().len(), 8);
     let mut buffer = tsonic_rust_node::buffer::Buffer::alloc(4);
     tsonic_rust_node::crypto::random_fill(&mut buffer, 1, 2).unwrap();
+    assert_eq!(buffer.get(0), Some(0));
+    assert_eq!(buffer.get(3), Some(0));
     assert!(tsonic_rust_node::crypto::random_int(10).unwrap() < 10);
     let ranged = tsonic_rust_node::crypto::random_int_range(10, 20).unwrap();
     assert!((10..20).contains(&ranged));
+    assert_eq!(
+        tsonic_rust_node::crypto::random_int_range(4, 4)
+            .unwrap_err()
+            .code(),
+        "ERR_OUT_OF_RANGE"
+    );
 }
 
 #[test]

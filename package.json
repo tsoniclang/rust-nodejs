@@ -5,7 +5,10 @@
   "type": "module",
   "files": [
     "dist",
-    "runtimes"
+    "rust/crates",
+    "rust/tests",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": "./dist/index.js",
@@ -17,14 +20,19 @@
     "entry": "."
   },
   "scripts": {
-    "build": "tsc -p nodejs/tsconfig.json && bash scripts/package-runtime.sh",
-    "test": "node --test nodejs/test/*.test.mjs"
+    "build": "node scripts/clean-dist.mjs && tsc -p nodejs/tsconfig.json",
+    "test": "npm run build && node --test nodejs/test/*.test.mjs && cargo test --workspace",
+    "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@tsonic/target-rust": "*"
+    "@tsonic/target-rust": "*",
+    "@tsonic/rust-runtime": "0.0.1",
+    "@tsonic/rust-js": "0.0.1"
   },
   "devDependencies": {
     "@tsonic/target-rust": "file:../tsonic-rust",
+    "@tsonic/rust-runtime": "file:../rust-runtime",
+    "@tsonic/rust-js": "file:../rust-js",
     "@types/node": "^22.19.21",
     "typescript": "^5.6.0"
   },

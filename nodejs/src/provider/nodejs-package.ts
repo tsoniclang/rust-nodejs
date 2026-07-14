@@ -2,12 +2,19 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createRustProviderPackage,
+  rustInt32ToUint8ValueConversion,
+  rustInt32ToUsizeValueConversion,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
+  rustUint32ToInt32ValueConversion,
+  rustUint64ToFloat64ValueConversion,
+  rustUint8ToInt32ValueConversion,
+  rustUsizeToInt32ValueConversion,
 } from "@tsonic/target-rust";
 import type {
+  RustProviderConstantArgument,
   RustProviderModuleDefinition,
-  RustProviderOperationRow,
+  RustProviderOperationDefinition,
   RustProviderPackageImplementation,
 } from "@tsonic/target-rust";
 
@@ -17,7 +24,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 // Carrier type used by provider operation rows. Derived from the row type so
 // this package does not need a direct @tsonic/tsts dependency.
-type TargetTypeRef = RustProviderOperationRow["resultCarrier"];
+type TargetTypeRef = RustProviderOperationDefinition["resultCarrier"];
 
 // @tsonic/target-rust does not export its Option/Vec carrier helpers from the
 // package root, so the carrier shapes are replicated here 1:1
@@ -42,6 +49,9 @@ const urlObjectCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.U
 const searchParamsCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.UrlSearchParams" };
 const hashCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Hash" };
 const hmacCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.Hmac" };
+const trueArgument = { kind: "boolean", value: true } as const;
+const noneArgument = { kind: "none" } as const;
+const toStringStep = { kind: "method", name: "to_string" } as const;
 
 const stringType = { kind: "string" } as const;
 const numberType = { kind: "number" } as const;
@@ -164,8 +174,8 @@ function pathModule(): RustProviderModuleDefinition {
   };
 }
 
-function pathRows(): readonly RustProviderOperationRow[] {
-  const simple = (name: string, rustPath: string, resultCarrier = stringCarrier): RustProviderOperationRow => ({
+function pathRows(): readonly RustProviderOperationDefinition[] {
+  const simple = (name: string, rustPath: string, resultCarrier = stringCarrier): RustProviderOperationDefinition => ({
     exportId: `node:path::${name}`,
     operationKind: "method",
     target: { form: "call", path: rustPath, argModes: ["ref"] },
@@ -182,7 +192,7 @@ function pathRows(): readonly RustProviderOperationRow[] {
     {
       exportId: "node:path::basename",
       operationKind: "method",
-      target: { form: "call", path: "node_path::basename", argModes: ["ref"], trailingArgs: ["None"] },
+      target: { form: "call", path: "node_path::basename", argModes: ["ref"], trailingArguments: [noneArgument] },
       resultCarrier: stringCarrier,
       parameterCarriers: [stringCarrier],
     },
@@ -207,8 +217,8 @@ function osModule(): RustProviderModuleDefinition {
   };
 }
 
-function osRows(): readonly RustProviderOperationRow[] {
-  const call = (name: string, path: string, extra?: Partial<RustProviderOperationRow>): RustProviderOperationRow => ({
+function osRows(): readonly RustProviderOperationDefinition[] {
+  const call = (name: string, path: string, extra?: Partial<RustProviderOperationDefinition>): RustProviderOperationDefinition => ({
     exportId: `node:os::${name}`,
     operationKind: "method",
     target: { form: "call", path },
@@ -218,7 +228,7 @@ function osRows(): readonly RustProviderOperationRow[] {
   return [
     call("platform", "node_os::platform"),
     call("arch", "node_os::arch"),
-    { exportId: "node:os::eol", operationKind: "method", target: { form: "call", path: "node_os::eol", chain: ["to_string"] }, resultCarrier: stringCarrier },
+    { exportId: "node:os::eol", operationKind: "method", target: { form: "call", path: "node_os::eol", chain: [toStringStep] }, resultCarrier: stringCarrier },
     call("hostname", "node_os::hostname"),
     call("tmpdir", "node_os::tmpdir", { isFallible: true }),
     { exportId: "node:os::homedir", operationKind: "method", target: { form: "call", path: "node_os::homedir" }, resultCarrier: rustOptionTargetType(stringCarrier) },
@@ -251,6 +261,7 @@ function fsModule(): RustProviderModuleDefinition {
         id: statsId,
         name: "Stats",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.Stats" },
         members: [
           methodMember(statsId, "isFile", [], booleanType),
           methodMember(statsId, "isDirectory", [], booleanType),
@@ -264,12 +275,12 @@ function fsModule(): RustProviderModuleDefinition {
   };
 }
 
-function fsRows(): readonly RustProviderOperationRow[] {
+function fsRows(): readonly RustProviderOperationDefinition[] {
   const statsId = "node:fs::Stats";
-  const fallible = (name: string, path: string, resultCarrier: TargetTypeRef, parameterCarriers: readonly TargetTypeRef[], trailingArgs?: readonly string[]): RustProviderOperationRow => ({
+  const fallible = (name: string, path: string, resultCarrier: TargetTypeRef, parameterCarriers: readonly TargetTypeRef[], trailingArguments?: readonly RustProviderConstantArgument[]): RustProviderOperationDefinition => ({
     exportId: `node:fs::${name}`,
     operationKind: "method",
-    target: { form: "call", path, argModes: parameterCarriers.map(() => "ref"), ...(trailingArgs === undefined ? {} : { trailingArgs }) },
+    target: { form: "call", path, argModes: parameterCarriers.map(() => "ref"), ...(trailingArguments === undefined ? {} : { trailingArguments }) },
     resultCarrier,
     parameterCarriers,
     isFallible: true,
@@ -280,15 +291,15 @@ function fsRows(): readonly RustProviderOperationRow[] {
     fallible("writeFileSync", "node_fs::write_file_sync_string", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier, stringCarrier]),
     fallible("readdirSync", "node_fs::readdir_sync", stringVecCarrier, [stringCarrier]),
     fallible("statSync", "node_fs::stat_sync", statsCarrier, [stringCarrier]),
-    fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier], ["true"]),
-    fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier], ["true", "true"]),
+    fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier], [trueArgument]),
+    fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier], [trueArgument, trueArgument]),
     fallible("unlinkSync", "node_fs::unlink_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
     fallible("copyFileSync", "node_fs::copy_file_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("renameSync", "node_fs::rename_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("realpathSync", "node_fs::realpath_sync", stringCarrier, [stringCarrier]),
     { exportId: statsId, memberId: `${statsId}.isFile`, operationKind: "method", target: { form: "receiver-method", name: "is_file" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.isDirectory`, operationKind: "method", target: { form: "receiver-method", name: "is_directory" }, resultCarrier: boolCarrier },
-    { exportId: statsId, memberId: `${statsId}.size`, operationKind: "property", target: { form: "field", name: "size" }, resultCarrier: float64Carrier, castResult: "f64" },
+    { exportId: statsId, memberId: `${statsId}.size`, operationKind: "property", target: { form: "field", name: "size" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
   ];
 }
 
@@ -316,15 +327,15 @@ function fsPromisesModule(): RustProviderModuleDefinition {
   };
 }
 
-function fsPromisesRows(): readonly RustProviderOperationRow[] {
-  const row = (name: string, path: string, resultCarrier: TargetTypeRef, parameterCount: number, trailingArgs?: readonly string[]): RustProviderOperationRow => ({
+function fsPromisesRows(): readonly RustProviderOperationDefinition[] {
+  const row = (name: string, path: string, resultCarrier: TargetTypeRef, parameterCount: number, trailingArguments?: readonly RustProviderConstantArgument[]): RustProviderOperationDefinition => ({
     exportId: `node:fs/promises::${name}`,
     operationKind: "method",
     target: {
       form: "call",
       path,
       argModes: Array.from({ length: parameterCount }, () => "ref" as const),
-      ...(trailingArgs === undefined ? {} : { trailingArgs }),
+      ...(trailingArguments === undefined ? {} : { trailingArguments }),
     },
     resultCarrier,
     parameterCarriers: Array.from({ length: parameterCount }, () => stringCarrier),
@@ -337,8 +348,8 @@ function fsPromisesRows(): readonly RustProviderOperationRow[] {
     row("writeFile", "node_fs_promises::write_file_string_async", unit, 3),
     row("readdir", "node_fs_promises::readdir_async", stringVecCarrier, 1),
     row("stat", "node_fs_promises::stat_async", statsCarrier, 1),
-    row("mkdir", "node_fs_promises::mkdir_async", unit, 1, ["true"]),
-    row("rm", "node_fs_promises::rm_async", unit, 1, ["true", "true"]),
+    row("mkdir", "node_fs_promises::mkdir_async", unit, 1, [trueArgument]),
+    row("rm", "node_fs_promises::rm_async", unit, 1, [trueArgument, trueArgument]),
     row("unlink", "node_fs_promises::unlink_async", unit, 1),
     row("copyFile", "node_fs_promises::copy_file_async", unit, 2),
     row("rename", "node_fs_promises::rename_async", unit, 2),
@@ -369,6 +380,7 @@ function processModule(): RustProviderModuleDefinition {
         id: envId,
         name: "ProcessEnv",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.ProcessEnv" },
         members: [{
           id: `${envId}.indexer`,
           name: "indexer",
@@ -392,7 +404,7 @@ function processModule(): RustProviderModuleDefinition {
   };
 }
 
-function processRows(): readonly RustProviderOperationRow[] {
+function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
   const envCarrier: TargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
   return [
@@ -400,12 +412,12 @@ function processRows(): readonly RustProviderOperationRow[] {
     { exportId: `${m}::platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
     { exportId: `${m}::arch`, operationKind: "property", target: { form: "call", path: "node_process::arch" }, resultCarrier: stringCarrier },
     { exportId: `${m}::argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringVecCarrier },
-    { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, castResult: "i32" },
-    { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, castResult: "i32" },
+    { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
+    { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: envCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, isFallible: true },
-    { exportId: `${m}::ProcessEnv`, receiverTypeId: "rust.node.ProcessEnv", operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
-    { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit", argCasts: ["i32"] }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::ProcessEnv`, memberId: `${m}::ProcessEnv.indexer`, operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
+    { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
   ];
 }
 
@@ -422,6 +434,7 @@ function bufferModule(): RustProviderModuleDefinition {
         id: bufferId,
         name: "Buffer",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.Buffer" },
         members: [
           methodMember(bufferId, "from", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], providerRef(m, "Buffer"), { static: true }),
           methodMember(bufferId, "alloc", [{ name: "size", type: numberType }], providerRef(m, "Buffer"), { static: true }),
@@ -443,19 +456,19 @@ function bufferModule(): RustProviderModuleDefinition {
   };
 }
 
-function bufferRows(): readonly RustProviderOperationRow[] {
+function bufferRows(): readonly RustProviderOperationDefinition[] {
   const bufferId = "node:buffer::Buffer";
   return [
     { exportId: bufferId, memberId: `${bufferId}.from`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], isFallible: true },
-    { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc", argCasts: ["usize"] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier] },
-    { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], isFallible: true, castResult: "i32" },
-    { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier },
+    { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], isFallible: true, resultConversion: rustUsizeToInt32ValueConversion },
+    { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustVecTargetType(bufferCarrier)] },
     { exportId: bufferId, memberId: `${bufferId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], isFallible: true },
-    { exportId: bufferId, memberId: `${bufferId}.readUInt8`, operationKind: "method", target: { form: "receiver-method", name: "read_u8", argCasts: ["usize"] }, resultCarrier: int32Carrier, parameterCarriers: [int32Carrier], isFallible: true, castResult: "i32" },
-    { exportId: bufferId, memberId: `${bufferId}.writeUInt8`, operationKind: "method", target: { form: "receiver-method", name: "set", argOrder: [1, 0], argCasts: ["usize", "u8"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier, int32Carrier], isFallible: true },
+    { exportId: bufferId, memberId: `${bufferId}.readUInt8`, operationKind: "method", target: { form: "receiver-method", name: "read_u8", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: int32Carrier, parameterCarriers: [int32Carrier], isFallible: true, resultConversion: rustUint8ToInt32ValueConversion },
+    { exportId: bufferId, memberId: `${bufferId}.writeUInt8`, operationKind: "method", target: { form: "receiver-method", name: "set", argOrder: [1, 0], argConversions: [rustInt32ToUsizeValueConversion, rustInt32ToUint8ValueConversion], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier, int32Carrier], isFallible: true },
     { exportId: bufferId, memberId: `${bufferId}.equals`, operationKind: "method", target: { form: "receiver-method", name: "equals", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.compare`, operationKind: "method", target: { form: "receiver-method", name: "compare", argModes: ["ref"] }, resultCarrier: int32Carrier, parameterCarriers: [bufferCarrier] },
-    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: int32Carrier, castResult: "i32" },
+    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: int32Carrier, resultConversion: rustUsizeToInt32ValueConversion },
     { exportId: "node:buffer::btoa", operationKind: "method", target: { form: "call", path: "node_buffer::btoa", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     { exportId: "node:buffer::atob", operationKind: "method", target: { form: "call", path: "node_buffer::atob", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     { exportId: "node:buffer::isEncoding", operationKind: "method", target: { form: "call", path: "node_buffer::is_encoding", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
@@ -478,6 +491,7 @@ function urlModule(): RustProviderModuleDefinition {
         id: urlId,
         name: "URL",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.Url" },
         members: [
           constructorMember(urlId, [{ name: "input", type: stringType }]),
           propertyMember(urlId, "href", stringType),
@@ -495,6 +509,7 @@ function urlModule(): RustProviderModuleDefinition {
         id: paramsId,
         name: "URLSearchParams",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.UrlSearchParams" },
         members: [
           constructorMember(paramsId, [{ name: "init", type: stringType }]),
           methodMember(paramsId, "get", [{ name: "name", type: stringType }], { kind: "union", types: [stringType, nullType] }),
@@ -508,6 +523,7 @@ function urlModule(): RustProviderModuleDefinition {
         id: urlObjectId,
         name: "UrlObject",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.UrlObject" },
         members: [
           propertyMember(urlObjectId, "href", stringType),
           propertyMember(urlObjectId, "protocol", stringType),
@@ -528,18 +544,18 @@ function urlModule(): RustProviderModuleDefinition {
   };
 }
 
-function urlRows(): readonly RustProviderOperationRow[] {
+function urlRows(): readonly RustProviderOperationDefinition[] {
   const urlId = "node:url::URL";
   const paramsId = "node:url::URLSearchParams";
   const urlObjectId = "node:url::UrlObject";
-  const urlProperty = (name: string): RustProviderOperationRow => ({
+  const urlProperty = (name: string): RustProviderOperationDefinition => ({
     exportId: urlId,
     memberId: `${urlId}.${name}`,
     operationKind: "property",
     target: { form: "receiver-method", name },
     resultCarrier: stringCarrier,
   });
-  const urlObjectProperty = (name: string): RustProviderOperationRow => ({
+  const urlObjectProperty = (name: string): RustProviderOperationDefinition => ({
     exportId: urlObjectId,
     memberId: `${urlObjectId}.${name}`,
     operationKind: "property",
@@ -547,16 +563,16 @@ function urlRows(): readonly RustProviderOperationRow[] {
     resultCarrier: stringCarrier,
   });
   return [
-    { exportId: urlId, operationKind: "constructor", target: { form: "call", path: "node_url::Url::parse", argModes: ["ref"], trailingArgs: ["None"] }, resultCarrier: urlCarrier, parameterCarriers: [stringCarrier], isFallible: true },
+    { exportId: urlId, memberId: `${urlId}.constructor`, operationKind: "constructor", target: { form: "call", path: "node_url::Url::parse", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: urlCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     ...["href", "protocol", "host", "hostname", "port", "pathname", "search", "hash", "origin"].map(urlProperty),
-    { exportId: paramsId, operationKind: "constructor", target: { form: "call", path: "node_url::UrlSearchParams::new_from", argModes: ["ref"] }, resultCarrier: searchParamsCarrier, parameterCarriers: [stringCarrier], isFallible: true },
+    { exportId: paramsId, memberId: `${paramsId}.constructor`, operationKind: "constructor", target: { form: "call", path: "node_url::UrlSearchParams::new_from", argModes: ["ref"] }, resultCarrier: searchParamsCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     { exportId: paramsId, memberId: `${paramsId}.get`, operationKind: "method", target: { form: "receiver-method", name: "get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
     { exportId: paramsId, memberId: `${paramsId}.set`, operationKind: "method", target: { form: "receiver-method", name: "set", argModes: ["ref", "ref"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [stringCarrier, stringCarrier] },
     { exportId: paramsId, memberId: `${paramsId}.append`, operationKind: "method", target: { form: "receiver-method", name: "append", argModes: ["ref", "ref"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [stringCarrier, stringCarrier] },
     { exportId: paramsId, memberId: `${paramsId}.has`, operationKind: "method", target: { form: "receiver-method", name: "has", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     { exportId: paramsId, memberId: `${paramsId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string" }, resultCarrier: stringCarrier },
     { exportId: "node:url::pathToFileURL", operationKind: "method", target: { form: "call", path: "node_url::path_to_file_url", argModes: ["ref"] }, resultCarrier: urlCarrier, parameterCarriers: [stringCarrier] },
-    { exportId: "node:url::canParse", operationKind: "method", target: { form: "call", path: "node_url::can_parse", argModes: ["ref"], trailingArgs: ["None"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
+    { exportId: "node:url::canParse", operationKind: "method", target: { form: "call", path: "node_url::can_parse", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     { exportId: "node:url::fileURLToPath", operationKind: "method", target: { form: "call", path: "node_url::file_url_to_path", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [urlCarrier], isFallible: true },
     { exportId: "node:url::parse", operationKind: "method", target: { form: "call", path: "node_url::parse_legacy", argModes: ["ref"] }, resultCarrier: urlObjectCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     ...["href", "protocol", "host", "hostname", "port", "pathname", "search", "hash"].map(urlObjectProperty),
@@ -580,6 +596,7 @@ function cryptoModule(): RustProviderModuleDefinition {
         id: hashId,
         name: "Hash",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.Hash" },
         members: [
           methodMember(hashId, "update", [{ name: "value", type: stringType }], voidType),
           methodMember(hashId, "digest", [{ name: "encoding", type: stringType }], stringType),
@@ -590,6 +607,7 @@ function cryptoModule(): RustProviderModuleDefinition {
         id: "node:crypto::Hmac",
         name: "Hmac",
         kind: "class" as const,
+        targetIdentity: { target: "rust", id: "rust.node.Hmac" },
         members: [
           methodMember("node:crypto::Hmac", "update", [{ name: "value", type: stringType }], voidType),
           methodMember("node:crypto::Hmac", "digest", [{ name: "encoding", type: stringType }], stringType),
@@ -600,7 +618,7 @@ function cryptoModule(): RustProviderModuleDefinition {
   };
 }
 
-function cryptoRows(): readonly RustProviderOperationRow[] {
+function cryptoRows(): readonly RustProviderOperationDefinition[] {
   const hashId = "node:crypto::Hash";
   return [
     { exportId: "node:crypto::randomUUID", operationKind: "method", target: { form: "call", path: "node_crypto::random_uuid" }, resultCarrier: stringCarrier, isFallible: true },
@@ -610,7 +628,7 @@ function cryptoRows(): readonly RustProviderOperationRow[] {
     { exportId: "node:crypto::createHmac", operationKind: "method", target: { form: "call", path: "node_crypto::create_hmac_str", argModes: ["ref", "ref"] }, resultCarrier: hmacCarrier, parameterCarriers: [stringCarrier, stringCarrier], isFallible: true },
     { exportId: "node:crypto::Hmac", memberId: "node:crypto::Hmac.update", operationKind: "method", target: { form: "receiver-method", name: "update_str", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [stringCarrier], isFallible: true },
     { exportId: "node:crypto::Hmac", memberId: "node:crypto::Hmac.digest", operationKind: "method", target: { form: "receiver-method", name: "digest_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], isFallible: true },
-    { exportId: "node:crypto::randomBytes", operationKind: "method", target: { form: "call", path: "node_crypto::random_bytes", argCasts: ["usize"] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier], isFallible: true },
+    { exportId: "node:crypto::randomBytes", operationKind: "method", target: { form: "call", path: "node_crypto::random_bytes", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier], isFallible: true },
   ];
 }
 
@@ -633,23 +651,23 @@ function utilModule(): RustProviderModuleDefinition {
   };
 }
 
-function utilRows(): readonly RustProviderOperationRow[] {
+function utilRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:util";
   return [
     { exportId: `${m}::stripVTControlCharacters`, operationKind: "method", target: { form: "call", path: "node_util::strip_vt_control_characters", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::toUSVString`, operationKind: "method", target: { form: "call", path: "node_util::to_usv_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::styleText`, operationKind: "method", target: { form: "call", path: "node_util::style_text", argModes: ["ref", "ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, stringCarrier] },
-    { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [{ kind: "target-named", id: "rust.js.JsValue" }] },
-    { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: ["to_string"] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::format`, operationKind: "method", target: { form: "call-jsvalue-slice", path: "node_util::format" }, resultCarrier: stringCarrier },
   ];
 }
 
 export function createRustNodejsProviderPackage(): RustProviderPackageImplementation {
   return createRustProviderPackage({
-    id: "nodejs",
-    displayName: "Node.js provider package",
+    id: "@tsonic/rust-nodejs",
+    displayName: "Node.js for Rust",
     version: "0.0.1",
     requiredSurfaces: ["js"],
     modules: [
@@ -697,7 +715,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     },
     crates: [{
       crateName: "tsonic_rust_node",
-      cargoPath: resolve(packageRoot, "runtimes/crates/tsonic_rust_node"),
+      cargoPath: resolve(packageRoot, "rust/crates/tsonic_rust_node"),
+      registryPatch: "crates-io",
     }],
   });
 }
