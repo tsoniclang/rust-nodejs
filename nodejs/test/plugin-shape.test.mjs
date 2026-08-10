@@ -25,12 +25,15 @@ test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
   assert.deepEqual(plugin.requiredSurfaces, ["js"]);
 });
 
-test("plugin exposes delegating extension and runtime hooks", () => {
+test("plugin exposes source, target-policy, and runtime contributions", () => {
   const plugin = createRustNodejsCapability();
-  assert.equal(typeof plugin.createExtensions, "function");
+  assert.equal(typeof plugin.sourceCompilerContributions, "function");
+  assert.equal(typeof plugin.createTargetContributions, "function");
   assert.equal(typeof plugin.runtimeContributions, "function");
-  assert.equal(typeof plugin.providerPackage, "object");
-  const extensions = plugin.createExtensions({});
-  assert.ok(Array.isArray(extensions));
-  assert.ok(extensions.length > 0);
+  const source = plugin.sourceCompilerContributions({});
+  assert.equal(source.extensions.length, 1);
+  assert.equal(source.extensions[0].identity.id, "tsonic.rust.provider-package.@tsonic/rust-nodejs");
+  const [policy] = plugin.createTargetContributions({});
+  assert.equal(policy.kind, "rust-provider-policy");
+  assert.equal(policy.definition.id, plugin.id);
 });

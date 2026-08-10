@@ -156,15 +156,16 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     ...jsSurface.runtimeContributions(contributionContext).references,
     ...nodeCapability.runtimeContributions(contributionContext).references,
   ];
-  const backend = targetPack.createBackend({ project, target });
+  const backend = targetPack.createBackend({
+    project,
+    projectDirectory: projectRoot,
+    target,
+    targetPack,
+    selectedCapabilities: [nodeCapability],
+    selectedSurfaces: [jsSurface],
+  });
   const result = backend.compile({
-    program: {},
-    ast: {},
-    types: {},
-    sourceFiles: [],
-    facts: {},
-    analysis: {},
-    targetFacts: {},
+    source: createEmptyTargetSourceProgram(),
     project,
     target,
     runtimeReferences,
@@ -179,6 +180,49 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     writeFileSync(path, artifact.text);
   }
   return { projectRoot, result };
+}
+
+function createEmptyTargetSourceProgram() {
+  const unavailable = () => {
+    throw new Error("The installed-layout proof has no source nodes.");
+  };
+  return Object.freeze({
+    ast: Object.freeze({ isDeclarationFile: () => false }),
+    sourceFiles: Object.freeze([]),
+    sourceFacts: Object.freeze({ getFact: () => undefined }),
+    navigation: Object.freeze({
+      sourceFiles: Object.freeze([]),
+      sourceReferenceFor: () => undefined,
+      referenceFor: () => undefined,
+      declarationFor: () => undefined,
+      moduleDependencies: () => Object.freeze([]),
+      moduleReferences: () => Object.freeze([]),
+      moduleHasTopLevelAwait: () => false,
+      memberDispatch: () => undefined,
+      classConstructors: () => Object.freeze({ kind: "resolved", constructors: Object.freeze([]) }),
+      declaredHeritage: () => Object.freeze({ kind: "resolved", edges: Object.freeze([]) }),
+      declaredHeritagePath: () => Object.freeze({ kind: "unrelated" }),
+      bindingWritesWithin: () => Object.freeze([]),
+      hasReferenceOutside: () => false,
+      isProjectShape: () => false,
+      isProjectConstructibleObject: () => false,
+      isProjectDeclaration: () => false,
+    }),
+    semantics: Object.freeze({
+      includes: () => false,
+      forFile: unavailable,
+      forNode: unavailable,
+      selectValueTypeRefinement: () => Object.freeze({ kind: "not-project-reference" }),
+    }),
+    documents: Object.freeze({
+      all: Object.freeze([]),
+      includes: () => false,
+      forFile: unavailable,
+      forNode: unavailable,
+      occurrenceFor: unavailable,
+      lookupAuthored: () => Object.freeze({ kind: "missing" }),
+    }),
+  });
 }
 
 function validateCargoProject(projectRoot, installationRoot, { check }) {
