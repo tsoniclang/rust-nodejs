@@ -9,6 +9,7 @@ test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
   assert.equal(plugin.targetId, "rust");
   assert.equal(plugin.displayName, "Node.js for Rust");
   assert.deepEqual(plugin.moduleOwnership, [
+    "node:assert",
     "node:path",
     "node:os",
     "node:fs",

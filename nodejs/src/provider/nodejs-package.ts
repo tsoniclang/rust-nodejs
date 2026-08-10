@@ -143,6 +143,71 @@ function unsupportedFn(moduleSpecifier: string, name: string, requires: string) 
   };
 }
 
+// --- node:assert -------------------------------------------------------------
+
+function assertModule(): RustProviderModuleDefinition {
+  const moduleSpecifier = "node:assert";
+  const exportId = `${moduleSpecifier}::ok`;
+  return {
+    moduleSpecifier,
+    providerModuleId: "tsonic.rust.node.assert",
+    exports: [{
+      id: exportId,
+      name: "ok",
+      kind: "function" as const,
+      signatures: [
+        {
+          id: `${exportId}(value)`,
+          name: "ok",
+          parameters: [{ name: "value", type: booleanType }],
+          returnType: voidType,
+        },
+        {
+          id: `${exportId}(value,message)`,
+          name: "ok",
+          parameters: [
+            { name: "value", type: booleanType },
+            { name: "message", type: stringType },
+          ],
+          returnType: voidType,
+        },
+      ],
+    }],
+  };
+}
+
+function assertRows(): readonly RustProviderOperationDefinition[] {
+  const exportId = "node:assert::ok";
+  return [
+    {
+      exportId,
+      signatureId: `${exportId}(value)`,
+      operationKind: "method",
+      target: {
+        form: "call",
+        path: "node_assert::ok",
+        trailingArguments: [noneArgument],
+      },
+      resultCarrier: { kind: "tuple", elements: [] },
+      parameterCarriers: [boolCarrier],
+      isFallible: true,
+    },
+    {
+      exportId,
+      signatureId: `${exportId}(value,message)`,
+      operationKind: "method",
+      target: {
+        form: "call",
+        path: "node_assert::ok_with_message",
+        argModes: ["value", "ref"],
+      },
+      resultCarrier: { kind: "tuple", elements: [] },
+      parameterCarriers: [boolCarrier, stringCarrier],
+      isFallible: true,
+    },
+  ];
+}
+
 // --- node:path ---------------------------------------------------------------
 
 function pathModule(): RustProviderModuleDefinition {
@@ -651,6 +716,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     version: "0.0.1",
     requiredSurfaces: ["js"],
     modules: [
+      assertModule(),
       pathModule(),
       osModule(),
       fsModule(),
@@ -672,6 +738,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:crypto::Hmac", targetTypeId: "rust.node.Hmac" },
     ],
     operations: [
+      ...assertRows(),
       ...pathRows(),
       ...osRows(),
       ...fsRows(),
@@ -683,6 +750,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       ...utilRows(),
     ],
     aliasImports: [
+      { alias: "node_assert", path: "tsonic_rust_node::assert" },
       { alias: "node_path", path: "tsonic_rust_node::path" },
       { alias: "node_os", path: "tsonic_rust_node::os" },
       { alias: "node_fs", path: "tsonic_rust_node::fs" },

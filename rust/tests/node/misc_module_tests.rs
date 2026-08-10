@@ -7,6 +7,7 @@ use tsonic_rust_node::{assert, module, perf_hooks, querystring, string_decoder, 
 #[test]
 fn assert_and_perf_hooks_are_closed_runtime_helpers() {
     assert::ok(true, None).unwrap();
+    assert::ok_with_message(true, "explicit").unwrap();
     assert::equal(&1, &1, None).unwrap();
     assert::not_equal(&1, &2, None).unwrap();
     assert::strict_equal(&1, &1, None).unwrap();
@@ -32,6 +33,7 @@ fn assert_and_perf_hooks_are_closed_runtime_helpers() {
     assert::if_error(None).unwrap();
     assert!(assert::fail(Some("explicit")).is_err());
     assert!(assert::ok(false, Some("no")).is_err());
+    assert!(assert::ok_with_message(false, "no").is_err());
     let assertion_error = assert::AssertionError::new(assert::AssertionErrorOptions {
         message: None,
         actual: Some(JsValue::Number(1.0)),

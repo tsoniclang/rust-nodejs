@@ -45,6 +45,8 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
 
 #[test]
 fn node_backend_legal_abi_paths_are_emit_ready() {
+    node::abi::assert_ok(true, None).unwrap();
+    node::abi::assert_ok_with_message(true, "explicit").unwrap();
     assert_eq!(node::abi::path_join(&["a", "b"]), "a/b");
     assert_eq!(
         node::abi::path_basename("/tmp/file.txt", Some(".txt")),

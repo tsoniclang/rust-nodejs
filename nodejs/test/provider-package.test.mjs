@@ -3,6 +3,7 @@ import test from "node:test";
 import { createTsonicPlugin } from "../../dist/index.js";
 
 const expectedModules = [
+  "node:assert",
   "node:path",
   "node:os",
   "node:fs",
@@ -34,6 +35,23 @@ test("provider package contributes a non-empty operation row set", () => {
   assert.ok(readFileSync !== undefined, "missing node:fs::readFileSync row");
   assert.equal(readFileSync.isFallible, true);
   assert.equal(readFileSync.operationKind, "method");
+});
+
+test("provider package maps exact assert.ok overloads", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  assert.equal(contribution.kind, "rust-provider-policy");
+  const rows = contribution.definition.operations.filter((row) => row.exportId === "node:assert::ok");
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => row.signatureId), [
+    "node:assert::ok(value)",
+    "node:assert::ok(value,message)",
+  ]);
+  assert.deepEqual(rows.map((row) => row.target.path), [
+    "node_assert::ok",
+    "node_assert::ok_with_message",
+  ]);
+  assert.equal(rows.every((row) => row.isFallible === true), true);
 });
 
 test("provider package maps legacy url parse to a fallible UrlObject row", () => {
