@@ -78,15 +78,19 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
   assert.equal(contribution.definition.carrierPaths["rust.node.UrlObject"], "node_url::LegacyUrlObject");
 });
 
-test("provider package maps util format to the jsvalue-slice call form", () => {
+test("provider package maps util format to the generic value-slice call form", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   const rows = contribution.definition.operations;
   const format = rows.find((row) => row.exportId === "node:util::format");
   assert.ok(format !== undefined, "missing node:util::format row");
-  assert.equal(format.target.form, "call-jsvalue-slice");
-  assert.equal(format.target.path, "node_util::format");
+  assert.deepEqual(format.target, {
+    form: "call-value-slice",
+    path: "node_util::format",
+    leadingArguments: [{ carrier: { kind: "target-named", id: "rust.std.String" }, mode: "ref" }],
+    elementCarrier: { kind: "target-named", id: "rust.js.JsValue" },
+  });
 });
 
 test("provider package maps process execPath to a fallible property row", () => {

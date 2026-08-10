@@ -29,6 +29,7 @@ const stringCarrier = rustStringTargetType();
 const boolCarrier = rustSourcePrimitiveTargetType("bool");
 const int32Carrier = rustSourcePrimitiveTargetType("int32");
 const float64Carrier = rustSourcePrimitiveTargetType("float64");
+const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
 const stringVecCarrier = rustVecTargetType(stringCarrier);
 const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
@@ -703,9 +704,9 @@ function utilRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::toUSVString`, operationKind: "method", target: { form: "call", path: "node_util::to_usv_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::styleText`, operationKind: "method", target: { form: "call", path: "node_util::style_text", argModes: ["ref", "ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, stringCarrier] },
     { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
-    { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [{ kind: "target-named", id: "rust.js.JsValue" }] },
+    { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [jsValueCarrier] },
     { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
-    { exportId: `${m}::format`, operationKind: "method", target: { form: "call-jsvalue-slice", path: "node_util::format" }, resultCarrier: stringCarrier },
+    { exportId: `${m}::format`, operationKind: "method", target: { form: "call-value-slice", path: "node_util::format", leadingArguments: [{ carrier: stringCarrier, mode: "ref" }], elementCarrier: jsValueCarrier }, resultCarrier: stringCarrier },
   ];
 }
 
