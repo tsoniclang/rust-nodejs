@@ -58,19 +58,17 @@ impl ClonedValue {
                 Ok(Self::Object(entries))
             }
             JsValue::Array(values) => {
-                let address = Rc::as_ptr(values) as usize;
+                let address = values.identity();
                 if !visiting.insert(address) {
                     return Err(data_clone_error());
                 }
-                let values = values.borrow();
                 let length = values.len();
                 let mut entries = Vec::new();
                 for index in 0..length {
                     if let Some(entry) = values.get(index) {
-                        entries.push((index, Self::from_js_inner(entry, visiting)?));
+                        entries.push((index, Self::from_js_inner(&entry, visiting)?));
                     }
                 }
-                drop(values);
                 visiting.remove(&address);
                 Ok(Self::Array { length, entries })
             }
@@ -93,7 +91,7 @@ impl ClonedValue {
                 JsValue::object(object)
             }
             Self::Array { length, entries } => {
-                let mut values = JsArray::with_length(*length);
+                let values = JsArray::with_length(*length);
                 for (index, entry) in entries {
                     values.set(*index, entry.to_js());
                 }

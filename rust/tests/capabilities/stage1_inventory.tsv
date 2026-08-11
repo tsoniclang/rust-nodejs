@@ -53,30 +53,30 @@ JS-BUILTIN-035	implemented	M	tsonic_rust_js::string::raw	JS-GLOBALS-005	String.r
 JS-BUILTIN-036	hard-reject	I/M	n/a	REJECT-JS-RESIZABLE-BUFFER	resizable/detached buffer semantics need explicit carrier (closed as principled non-runtime surface)
 JS-BUILTIN-037	hard-reject	I/M	n/a	REJECT-JS-DETACHED-BUFFER	requires explicit detached state in buffer carrier (closed as principled non-runtime surface)
 JS-BUILTIN-038	hard-reject	A/M	n/a	REJECT-JS-ERROR-STACK	stack/runtime integration not in first wave (closed as principled non-runtime surface)
-JS-ARRAY-001	implemented	D	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-001	future backend selects dense lane
-JS-ARRAY-002	implemented	E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-004, JS-ARR-005	`JsArray<T>`
-JS-ARRAY-003	implemented	D	tsonic_rust_js::abi::{array_dense_*,JsArray}	array statics tests	dense helper
-JS-ARRAY-004	implemented	D	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-009	closed string/array inputs; arbitrary iterable/callback policy is represented by dedicated callback helpers
-JS-ARRAY-005	implemented	D/F	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-016	closed array carrier check
-JS-ARRAY-006	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-001, JS-ARR-002	dense and sparse variants
-JS-ARRAY-007	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	packet tests	dense and sparse variants
-JS-ARRAY-008	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-006	negative index normalization
-JS-ARRAY-009	implemented	B/D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-007	`JsSameValueZero`, not `PartialEq`
-JS-ARRAY-010	implemented	B/D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-008	`JsStrictEqual`, NaN not found
-JS-ARRAY-011	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	array tests	copy result
-JS-ARRAY-012	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-010	holes stringify as empty in sparse lane
-JS-ARRAY-013	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-003, JS-ARR-004	dense clear/truncate; sparse holes
-JS-ARRAY-014	implemented	E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-005	sparse lane only
-JS-ARRAY-015	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-011	holes become present in sparse lane
-JS-ARRAY-016	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-012	overlap and JS index normalization
-JS-ARRAY-017	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-013	sparse holes preserved
-JS-ARRAY-018	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-014	dense and sparse APIs
-JS-ARRAY-019	implemented	D/E	tsonic_rust_js::abi::{array_dense_*,JsArray}	JS-ARR-015	snapshot or explicit iterator
-JS-ARRAY-020	implemented	M	tsonic_rust_js::abi::array_dense_sort	JS-ARR-017	string conversion/order complexity (completed in full-completion branch)
-JS-ARRAY-021	implemented	M	tsonic_rust_js::abi::array_dense_sort_by_js_string and sort_by	JS-ARR-017	callback ABI missing (completed in full-completion branch)
-JS-ARRAY-022	implemented	M	tsonic_rust_js::abi::{array_dense_map/filter/reduce/some/every/find/for_each}	JS-ARR-017	generated callback ABI missing (completed in full-completion branch)
-JS-ARRAY-023	implemented	M	tsonic_rust_js::abi::{array_dense_flat_one,array_dense_flat_map_one}	JS-ARR-017	nested value/callback policy (completed in full-completion branch)
-JS-ARRAY-024	implemented	M	tsonic_rust_js::abi::{array_dense_to_sorted,array_dense_to_reversed,array_dense_to_spliced,array_dense_with}	JS-ARR-017	modern copy APIs after base (completed in full-completion branch)
+JS-ARRAY-001	implemented	D	tsonic_rust_js::abi::JsArray	JS-ARR-001	canonical identity-preserving array carrier
+JS-ARRAY-002	implemented	E	tsonic_rust_js::abi::JsArray	JS-ARR-004, JS-ARR-005	`JsArray<T>`
+JS-ARRAY-003	implemented	D	tsonic_rust_js::abi::JsArray	array statics tests	static construction returns the canonical carrier
+JS-ARRAY-004	implemented	D	tsonic_rust_js::abi::JsArray	JS-ARR-009	closed string/array inputs; callback helpers consume the same carrier
+JS-ARRAY-005	implemented	D/F	tsonic_rust_js::abi::JsArray	JS-ARR-016	closed array carrier check
+JS-ARRAY-006	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-001, JS-ARR-002	one carrier preserves dense values and holes
+JS-ARRAY-007	implemented	D/E	tsonic_rust_js::abi::JsArray	packet tests	one carrier preserves reference identity
+JS-ARRAY-008	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-006	negative index normalization
+JS-ARRAY-009	implemented	B/D/E	tsonic_rust_js::abi::JsArray	JS-ARR-007	`JsSameValueZero`, not `PartialEq`
+JS-ARRAY-010	implemented	B/D/E	tsonic_rust_js::abi::JsArray	JS-ARR-008	`JsStrictEqual`, NaN not found
+JS-ARRAY-011	implemented	D/E	tsonic_rust_js::abi::JsArray	array tests	copy result
+JS-ARRAY-012	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-010	holes stringify as empty slots
+JS-ARRAY-013	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-003, JS-ARR-004	length truncation and holes share one state
+JS-ARRAY-014	implemented	E	tsonic_rust_js::abi::JsArray	JS-ARR-005	hole deletion on the canonical carrier
+JS-ARRAY-015	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-011	writes turn holes into present values
+JS-ARRAY-016	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-012	overlap and JS index normalization
+JS-ARRAY-017	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-013	holes are preserved
+JS-ARRAY-018	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-014	one canonical API
+JS-ARRAY-019	implemented	D/E	tsonic_rust_js::abi::JsArray	JS-ARR-015	explicit identity-preserving iterator
+JS-ARRAY-020	implemented	M	tsonic_rust_js::abi::JsArray	JS-ARR-017	in-place string-order sort
+JS-ARRAY-021	implemented	M	tsonic_rust_js::abi::JsArray	JS-ARR-017	callback and JS-string ordering
+JS-ARRAY-022	implemented	M	tsonic_rust_js::abi::JsArray	JS-ARR-017	map/filter/reduce/some/every/find/forEach callbacks
+JS-ARRAY-023	implemented	M	tsonic_rust_js::abi::JsArray	JS-ARR-017	flat and flatMap over the canonical carrier
+JS-ARRAY-024	implemented	M	tsonic_rust_js::abi::JsArray	JS-ARR-017	modern copy APIs over the canonical carrier
 JS-ARRAY-025	hard-reject	M	n/a	REJECT-JS-ARRAY-PROTOTYPE	dynamic prototype model out
 JS-STRING-001	implemented	C	tsonic_rust_js::string::*	JS-STR-001, JS-STR-002	UTF-16 code units
 JS-STRING-002	implemented	C	tsonic_rust_js::string::*	JS-STR-003 through JS-STR-005	UTF-16 indexes

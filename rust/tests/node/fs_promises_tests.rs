@@ -140,7 +140,10 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .ends_with("hardlink.txt"));
     fs_promises::unlink(&link_text).unwrap();
 
-    assert_eq!(fs_promises::readdir(&root_text).unwrap(), vec!["a.txt"]);
+    assert_eq!(
+        fs_promises::readdir(&root_text).unwrap().values(),
+        vec![Some("a.txt".to_string())]
+    );
     assert_eq!(fs_promises::opendir(&root_text).unwrap()[0].name, "a.txt");
     assert!(
         fs_promises::opendir_with_options(&root_text, fs_promises::OpenDirOptions::default())
@@ -637,8 +640,10 @@ fn fs_promises_async_wrappers_match_sync_behaviour() {
     );
 
     assert_eq!(
-        block_on(fs_promises::readdir_async(&root_text)).unwrap(),
-        vec!["async.txt".to_string()]
+        block_on(fs_promises::readdir_async(&root_text))
+            .unwrap()
+            .values(),
+        vec![Some("async.txt".to_string())]
     );
 
     let stats = block_on(fs_promises::stat_async(&file_text)).unwrap();

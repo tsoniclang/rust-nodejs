@@ -1,6 +1,7 @@
 use crate::buffer::Buffer;
 use crate::error::NodeResult;
 use crate::fs::{self, FsWriteData};
+use tsonic_rust_js::JsArray;
 
 pub use crate::fs::{
     BigIntOptions, BufferEncoding, CopyFilter, CopyOptions, CopyOptionsBase, CopySyncOptions,

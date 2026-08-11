@@ -1,3 +1,4 @@
+use tsonic_rust_js::JsArray;
 use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
@@ -21,10 +22,16 @@ fn buffer_encodings_and_views() {
 fn buffer_compare_equals_concat_and_json() {
     let one = Buffer::from_bytes(vec![1, 2]);
     let two = Buffer::from_bytes(vec![3]);
-    let concat = Buffer::concat(&[one.clone(), two.clone()]);
+    let buffers = JsArray::from_dense(vec![one.clone(), two.clone()]);
+    let concat = Buffer::concat(&buffers).unwrap();
     assert_eq!(concat.as_bytes(), vec![1, 2, 3]);
-    let padded = Buffer::concat_with_total_length(&[one.clone(), two.clone()], 5);
+    let padded = Buffer::concat_with_total_length(&buffers, 5).unwrap();
     assert_eq!(padded.as_bytes(), vec![1, 2, 3, 0, 0]);
+    let sparse = JsArray::from_sparse(2, vec![(0, one.clone())]);
+    assert_eq!(
+        Buffer::concat(&sparse).unwrap_err().code,
+        "ERR_INVALID_ARG_TYPE"
+    );
     assert!(one.equals(&Buffer::from_bytes(vec![1, 2])));
     assert_eq!(one.compare(&two), -1);
     assert_eq!(tsonic_rust_node::buffer::compare(&one, &two), -1);

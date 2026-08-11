@@ -10,7 +10,7 @@ pub fn buffer(readable: &mut Readable) -> NodeResult<Buffer> {
     while let Some(chunk) = readable.read() {
         chunks.push(chunk);
     }
-    Ok(Buffer::concat(&chunks))
+    Ok(Buffer::concat_dense(&chunks))
 }
 
 pub fn text(readable: &mut Readable, encoding: Option<&str>) -> NodeResult<String> {

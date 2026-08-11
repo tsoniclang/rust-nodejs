@@ -25,7 +25,7 @@ fn fs_sync_file_lifecycle() {
         FsReadResult::String("hello".to_string())
     );
     let names = fs::readdir_sync(&root_text).unwrap();
-    assert_eq!(names, vec!["a.txt"]);
+    assert_eq!(names.values(), vec![Some("a.txt".to_string())]);
     let dirents = fs::opendir_sync(&root_text).unwrap();
     assert_eq!(dirents[0].name, "a.txt");
     assert_eq!(dirents[0].parent_path(), root_text);

@@ -7,7 +7,8 @@ pub use crate::assert::{
     equal as assert_equal, fail as assert_fail, if_error as assert_if_error,
     match_string as assert_match_string, not_deep_equal as assert_not_deep_equal,
     not_deep_strict_equal as assert_not_deep_strict_equal, not_equal as assert_not_equal,
-    not_strict_equal as assert_not_strict_equal, ok as assert_ok, rejects as assert_rejects,
+    not_strict_equal as assert_not_strict_equal, ok as assert_ok,
+    ok_with_message as assert_ok_with_message, rejects as assert_rejects,
     strict_equal as assert_strict_equal, throws as assert_throws, throws_with_predicate,
     AssertOptions, AssertPredicate, AssertionDiff, AssertionError, AssertionErrorOptions,
 };

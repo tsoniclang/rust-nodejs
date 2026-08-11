@@ -8,16 +8,16 @@ pub fn chdir(path: &str) -> NodeResult<()> {
     std::env::set_current_dir(path).map_err(|error| NodeError::new("ENOENT", error.to_string()))
 }
 
-pub fn argv() -> Vec<String> {
-    std::env::args().collect()
+pub fn argv() -> JsArray<String> {
+    JsArray::from_dense(std::env::args().collect())
 }
 
 pub fn argv0() -> String {
-    argv().first().cloned().unwrap_or_default()
+    argv().get(0).unwrap_or_default()
 }
 
-pub fn exec_argv() -> Vec<String> {
-    Vec::new()
+pub fn exec_argv() -> JsArray<String> {
+    JsArray::new()
 }
 
 pub fn pid() -> u32 {

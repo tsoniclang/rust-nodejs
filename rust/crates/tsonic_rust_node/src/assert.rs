@@ -89,6 +89,10 @@ pub fn ok(value: bool, message: Option<&str>) -> NodeResult<()> {
     }
 }
 
+pub fn ok_with_message(value: bool, message: &str) -> NodeResult<()> {
+    ok(value, Some(message))
+}
+
 pub fn equal<T>(left: &T, right: &T, message: Option<&str>) -> NodeResult<()>
 where
     T: PartialEq + std::fmt::Debug,

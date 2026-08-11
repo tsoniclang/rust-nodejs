@@ -65,7 +65,10 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     append_result.unwrap().unwrap();
     let mut names = None;
     fs::readdir_callback(&root_text, |result| names = Some(result));
-    assert_eq!(names.unwrap().unwrap(), vec!["copy.txt", "stream.txt"]);
+    assert_eq!(
+        names.unwrap().unwrap().values(),
+        vec![Some("copy.txt".to_string()), Some("stream.txt".to_string())]
+    );
 
     let renamed = root.join("renamed.txt");
     let renamed_text = renamed.to_string_lossy().to_string();

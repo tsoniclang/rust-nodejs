@@ -347,7 +347,7 @@ impl ServerResponse {
             status_code: self.status_code,
             status_message: self.status_message.clone(),
             headers: self.headers.clone(),
-            body: Buffer::concat(self.body.chunks()).as_bytes().to_vec(),
+            body: Buffer::concat_dense(self.body.chunks()).as_bytes().to_vec(),
         }
     }
 

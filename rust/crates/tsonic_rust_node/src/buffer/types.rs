@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use tsonic_rust_js::object::JsObject;
 use tsonic_rust_js::value::JsValue;
+use tsonic_rust_js::JsArray;
 pub use tsonic_rust_js::web::{Blob, BlobPart, File};
 
 use crate::error::{NodeError, NodeResult};

@@ -321,7 +321,20 @@ impl Buffer {
         self.last_index_of_value(BufferValue::text(needle, encoding), byte_offset)
     }
 
-    pub fn concat(buffers: &[Buffer]) -> Buffer {
+    pub fn concat(buffers: &JsArray<Buffer>) -> NodeResult<Buffer> {
+        let buffers = buffers.values();
+        if buffers.iter().any(Option::is_none) {
+            return Err(NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "Buffer.concat list must not contain array holes",
+            ));
+        }
+        Ok(Self::concat_dense(
+            &buffers.into_iter().flatten().collect::<Vec<_>>(),
+        ))
+    }
+
+    pub(crate) fn concat_dense(buffers: &[Buffer]) -> Buffer {
         let mut out = Vec::new();
         for buffer in buffers {
             out.extend_from_slice(&buffer.to_vec());
@@ -329,7 +342,24 @@ impl Buffer {
         Buffer::from_bytes(out)
     }
 
-    pub fn concat_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
+    pub fn concat_with_total_length(
+        buffers: &JsArray<Buffer>,
+        total_length: usize,
+    ) -> NodeResult<Buffer> {
+        let buffers = buffers.values();
+        if buffers.iter().any(Option::is_none) {
+            return Err(NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "Buffer.concat list must not contain array holes",
+            ));
+        }
+        Ok(Self::concat_dense_with_total_length(
+            &buffers.into_iter().flatten().collect::<Vec<_>>(),
+            total_length,
+        ))
+    }
+
+    fn concat_dense_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
         let mut out = Vec::with_capacity(total_length);
         for buffer in buffers {
             out.extend_from_slice(&buffer.to_vec());
