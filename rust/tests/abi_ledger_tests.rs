@@ -7,8 +7,8 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let dense = js::abi::JsArray::from_dense(vec![1_i32, 2_i32]);
     assert_eq!(dense.push(3), 3);
     assert_eq!(dense.at(-1.0), Some(3));
-    assert!(dense.includes(&2, 0));
-    assert_eq!(dense.index_of(&3, 0), 2);
+    assert!(dense.includes(&2, 0.0));
+    assert_eq!(dense.index_of(&3, 0.0), 2);
     assert_eq!(dense.join(","), "1,2,3");
 
     let mut out = Vec::new();
