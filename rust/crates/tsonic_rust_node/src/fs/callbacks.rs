@@ -90,7 +90,7 @@ pub fn lutimes_callback(
     callback(lutimes_sync(path, atime_seconds, mtime_seconds));
 }
 
-pub fn readdir_callback(path: &str, callback: impl FnOnce(NodeResult<Vec<String>>)) {
+pub fn readdir_callback(path: &str, callback: impl FnOnce(NodeResult<JsArray<String>>)) {
     callback(readdir_sync(path));
 }
 

@@ -50,14 +50,14 @@ pub fn rm_sync_with_options(path: &str, options: RmOptions) -> NodeResult<()> {
     }
 }
 
-pub fn readdir_sync(path: &str) -> NodeResult<Vec<String>> {
+pub fn readdir_sync(path: &str) -> NodeResult<JsArray<String>> {
     let mut names = Vec::new();
     for entry in fs::read_dir(path).map_err(map_io_error)? {
         let entry = entry.map_err(map_io_error)?;
         names.push(entry.file_name().to_string_lossy().to_string());
     }
     names.sort();
-    Ok(names)
+    Ok(JsArray::from_dense(names))
 }
 
 pub fn unlink_sync(path: &str) -> NodeResult<()> {

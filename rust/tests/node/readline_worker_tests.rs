@@ -229,7 +229,7 @@ fn worker_structured_clone_rejects_cyclic_values_deterministically() {
 
 #[test]
 fn worker_message_port_round_trips_structure_without_identity() {
-    let mut sparse = JsArray::with_length(3);
+    let sparse = JsArray::with_length(3);
     sparse.set(0, JsValue::Number(1.0));
     sparse.set(2, JsValue::String("tail".to_string()));
     let original = JsValue::object(JsObject::from_pairs([
@@ -256,12 +256,11 @@ fn worker_message_port_round_trips_structure_without_identity() {
         .get("items")
         .as_array()
         .unwrap()
-        .borrow()
         .clone();
     assert_eq!(items.len(), 3);
-    assert_eq!(items.get(0), Some(&JsValue::Number(1.0)));
+    assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(!items.has_index(1));
-    assert_eq!(items.get(2), Some(&JsValue::String("tail".to_string())));
+    assert_eq!(items.get(2), Some(JsValue::String("tail".to_string())));
 
     // Each delivery mints fresh handles: two posts of the same value are not
     // strict-equal to each other after crossing the port.
@@ -272,7 +271,7 @@ fn worker_message_port_round_trips_structure_without_identity() {
 
 #[test]
 fn worker_environment_data_round_trips_structure_without_identity() {
-    let mut sparse = JsArray::with_length(3);
+    let sparse = JsArray::with_length(3);
     sparse.set(0, JsValue::Number(1.0));
     sparse.set(2, JsValue::String("tail".to_string()));
     let original = JsValue::object(JsObject::from_pairs([
@@ -298,12 +297,11 @@ fn worker_environment_data_round_trips_structure_without_identity() {
         .get("items")
         .as_array()
         .unwrap()
-        .borrow()
         .clone();
     assert_eq!(items.len(), 3);
-    assert_eq!(items.get(0), Some(&JsValue::Number(1.0)));
+    assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(!items.has_index(1));
-    assert_eq!(items.get(2), Some(&JsValue::String("tail".to_string())));
+    assert_eq!(items.get(2), Some(JsValue::String("tail".to_string())));
 
     // The payload rebuilds identical structure on every rebuild.
     let payload = worker_threads::ClonedValue::from_js(&original).unwrap();

@@ -4,12 +4,12 @@ use tsonic_rust_runtime as rt;
 
 #[test]
 fn js_backend_legal_abi_paths_are_emit_ready() {
-    let mut dense = vec![1_i32, 2_i32];
-    assert_eq!(js::abi::array_dense_push(&mut dense, 3), 3);
-    assert_eq!(js::abi::array_dense_at(&dense, -1), Some(&3));
-    assert!(js::abi::array_dense_includes(&dense, &2, 0));
-    assert_eq!(js::abi::array_dense_index_of(&dense, &3, 0), 2);
-    assert_eq!(js::abi::array_dense_join(&dense, ","), "1,2,3");
+    let dense = js::abi::JsArray::from_dense(vec![1_i32, 2_i32]);
+    assert_eq!(dense.push(3), 3);
+    assert_eq!(dense.at(-1.0), Some(3));
+    assert!(dense.includes(&2, 0));
+    assert_eq!(dense.index_of(&3, 0), 2);
+    assert_eq!(dense.join(","), "1,2,3");
 
     let mut out = Vec::new();
     js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();
@@ -19,11 +19,11 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     let text = js::abi::json_stringify(&parsed).unwrap().unwrap();
     assert_eq!(text, r#"{"ok":true}"#);
 
-    let mut map = js::abi::JsMap::<f64, &str>::new();
+    let map = js::abi::JsMap::<f64, &str>::new();
     map.set(f64::NAN, "nan");
-    assert_eq!(map.get(&f64::NAN), Some(&"nan"));
+    assert_eq!(map.get(&f64::NAN), Some("nan"));
 
-    let mut set = js::abi::JsSet::<f64>::new();
+    let set = js::abi::JsSet::<f64>::new();
     set.add(f64::NAN);
     assert!(set.has(&f64::NAN));
 

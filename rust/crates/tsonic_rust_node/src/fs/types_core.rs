@@ -9,6 +9,7 @@ use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
 use crate::stream::{Readable, Writable};
 use filetime::FileTime;
+use tsonic_rust_js::JsArray;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatFs {

@@ -6,7 +6,7 @@ use crate::error::{NodeError, NodeResult};
 use crate::events::EventEmitter;
 use crate::os;
 use crate::stream::Writable;
-use tsonic_rust_js::JsValue;
+use tsonic_rust_js::{JsArray, JsValue};
 
 static EXIT_CODE: AtomicI32 = AtomicI32::new(i32::MIN);
 static START: OnceLock<Instant> = OnceLock::new();

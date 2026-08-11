@@ -204,7 +204,7 @@ pub fn realpath_sync_native(path: &str) -> NodeResult<String> {
     fs::realpath_sync_native(path)
 }
 
-pub fn readdir(path: &str) -> NodeResult<Vec<String>> {
+pub fn readdir(path: &str) -> NodeResult<JsArray<String>> {
     fs::readdir_sync(path)
 }
 
@@ -385,7 +385,7 @@ pub async fn write_file_string_async(path: &str, value: &str, encoding: &str) ->
     write_file_string(path, value, encoding)
 }
 
-pub async fn readdir_async(path: &str) -> NodeResult<Vec<String>> {
+pub async fn readdir_async(path: &str) -> NodeResult<JsArray<String>> {
     readdir(path)
 }
 
