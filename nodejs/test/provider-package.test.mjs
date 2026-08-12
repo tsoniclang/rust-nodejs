@@ -37,6 +37,25 @@ test("provider package contributes a non-empty operation row set", () => {
   assert.equal(readFileSync.operationKind, "method");
 });
 
+test("provider type relations carry exact closed target carriers", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  assert.equal(contribution.kind, "rust-provider-policy");
+  assert.deepEqual(contribution.definition.types, [
+    ["node:fs::Stats", "rust.node.Stats"],
+    ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
+    ["node:buffer::Buffer", "rust.node.Buffer"],
+    ["node:url::URL", "rust.node.Url"],
+    ["node:url::UrlObject", "rust.node.UrlObject"],
+    ["node:url::URLSearchParams", "rust.node.UrlSearchParams"],
+    ["node:crypto::Hash", "rust.node.Hash"],
+    ["node:crypto::Hmac", "rust.node.Hmac"],
+  ].map(([exportId, id]) => ({
+    exportId,
+    targetCarrier: { kind: "target-named", id },
+  })));
+});
+
 test("provider package maps exact assert.ok overloads", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});

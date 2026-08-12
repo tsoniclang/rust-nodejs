@@ -32,6 +32,7 @@ const float64Carrier = rustSourcePrimitiveTargetType("float64");
 const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
 const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
 const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
+const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
 const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
 const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
@@ -458,7 +459,6 @@ function processModule(): RustProviderModuleDefinition {
 
 function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
-  const envCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
   return [
     { exportId: `${m}::cwd`, operationKind: "method", target: { form: "call", path: "node_process::cwd" }, resultCarrier: stringCarrier, isFallible: true },
     { exportId: `${m}::platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
@@ -466,7 +466,7 @@ function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringArrayCarrier },
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
-    { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: envCarrier },
+    { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, isFallible: true },
     { exportId: `${m}::ProcessEnv`, memberId: `${m}::ProcessEnv.indexer`, operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
@@ -729,14 +729,14 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       utilModule(),
     ],
     types: [
-      { exportId: "node:fs::Stats", targetTypeId: "rust.node.Stats" },
-      { exportId: "node:process::ProcessEnv", targetTypeId: "rust.node.ProcessEnv" },
-      { exportId: "node:buffer::Buffer", targetTypeId: "rust.node.Buffer" },
-      { exportId: "node:url::URL", targetTypeId: "rust.node.Url" },
-      { exportId: "node:url::UrlObject", targetTypeId: "rust.node.UrlObject" },
-      { exportId: "node:url::URLSearchParams", targetTypeId: "rust.node.UrlSearchParams" },
-      { exportId: "node:crypto::Hash", targetTypeId: "rust.node.Hash" },
-      { exportId: "node:crypto::Hmac", targetTypeId: "rust.node.Hmac" },
+      { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
+      { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
+      { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
+      { exportId: "node:url::URL", targetCarrier: urlCarrier },
+      { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
+      { exportId: "node:url::URLSearchParams", targetCarrier: searchParamsCarrier },
+      { exportId: "node:crypto::Hash", targetCarrier: hashCarrier },
+      { exportId: "node:crypto::Hmac", targetCarrier: hmacCarrier },
     ],
     operations: [
       ...assertRows(),
