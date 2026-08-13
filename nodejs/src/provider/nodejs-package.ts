@@ -260,10 +260,6 @@ function httpRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_http::create_server_callable" },
       resultCarrier: httpServerCarrier,
       parameterCarriers: [httpRequestCallbackCarrier],
-      callback: {
-        sourceArgumentIndex: 0,
-        fallibleTarget: { form: "call", path: "node_http::create_server_fallible_callable" },
-      },
     },
     {
       exportId: incomingId,
@@ -335,14 +331,6 @@ function httpRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: httpServerCarrier,
       parameterCarriers: [int32Carrier, emptyCallbackCarrier],
       isFallible: true,
-      callback: {
-        sourceArgumentIndex: 1,
-        fallibleTarget: {
-          form: "receiver-method",
-          name: "listen_default_host_fallible",
-          argModes: ["value", "value"],
-        },
-      },
     },
     {
       exportId: serverId,
@@ -357,14 +345,6 @@ function httpRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: httpServerCarrier,
       parameterCarriers: [int32Carrier, stringCarrier, emptyCallbackCarrier],
       isFallible: true,
-      callback: {
-        sourceArgumentIndex: 2,
-        fallibleTarget: {
-          form: "receiver-method",
-          name: "listen_fallible",
-          argModes: ["value", "ref", "value"],
-        },
-      },
     },
   ];
 }
@@ -406,10 +386,6 @@ function timersRows(): readonly RustProviderOperationDefinition[] {
     target: { form: "call", path: "node_timers::set_interval_callable" },
     resultCarrier: timeoutCarrier,
     parameterCarriers: [emptyCallbackCarrier, int32Carrier],
-    callback: {
-      sourceArgumentIndex: 0,
-      fallibleTarget: { form: "call", path: "node_timers::set_interval_fallible_callable" },
-    },
   }];
 }
 

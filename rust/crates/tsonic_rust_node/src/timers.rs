@@ -159,22 +159,14 @@ pub fn set_interval_with_options(
     )
 }
 
-pub fn set_interval_callable(callback: Callable<(), ()>, delay_ms: i32) -> Timeout {
+pub fn set_interval_callable(callback: Callable<(), TsonicResult<()>>, delay_ms: i32) -> Timeout {
     let delay_ms = u64::try_from(delay_ms).unwrap_or(0).max(1);
-    set_interval(move || callback.call(()), delay_ms)
-}
-
-pub fn set_interval_fallible_callable(
-    callback: Callable<(), TsonicResult<()>>,
-    delay_ms: i32,
-) -> TsonicResult<Timeout> {
-    let delay_ms = u64::try_from(delay_ms).unwrap_or(0).max(1);
-    Ok(schedule(
+    schedule(
         Box::new(move || callback.call(())),
         delay_ms,
         true,
         TimerOptions::default(),
-    ))
+    )
 }
 
 pub fn clear_timeout(timeout: &mut Timeout) {

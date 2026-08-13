@@ -29,6 +29,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
                 .unwrap();
             response.end_buffer(Buffer::from_bytes(vec![0, 255, 1]));
             callback_server.borrow().as_ref().unwrap().close();
+            Ok(())
         },
     ));
     *server_slot.borrow_mut() = Some(server.clone());
@@ -37,7 +38,10 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
     server
         .listen_default_host(
             0,
-            Callable::new(move |_| listen_thread.set(thread::current().id() == event_thread)),
+            Callable::new(move |_| {
+                listen_thread.set(thread::current().id() == event_thread);
+                Ok(())
+            }),
         )
         .unwrap();
     let port = server.local_port().unwrap();
@@ -71,16 +75,15 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
 fn translated_http_server_propagates_fallible_callback_errors() {
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle>));
     let callback_server = Rc::clone(&server_slot);
-    let server = http::create_server_fallible_callable(Callable::new(
+    let server = http::create_server_callable(Callable::new(
         move |(_request, _response): (http::IncomingMessage, http::ServerResponseHandle)| {
             callback_server.borrow().as_ref().unwrap().close();
             Err(tsonic_rust_node::NodeError::new("ERR_CALLBACK", "request callback failed").into())
         },
-    ))
-    .unwrap();
+    ));
     *server_slot.borrow_mut() = Some(server.clone());
     server
-        .listen_default_host_fallible(0, Callable::new(|()| Ok(())))
+        .listen_default_host(0, Callable::new(|()| Ok(())))
         .unwrap();
     let port = server.local_port().unwrap();
     let client = thread::spawn(move || {
@@ -116,11 +119,12 @@ fn round_trip_single_response(finish: impl Fn(http::ServerResponseHandle) + 'sta
         move |(_request, response): (http::IncomingMessage, http::ServerResponseHandle)| {
             finish(response);
             callback_server.borrow().as_ref().unwrap().close();
+            Ok(())
         },
     ));
     *server_slot.borrow_mut() = Some(server.clone());
     server
-        .listen_default_host(0, Callable::new(|_| {}))
+        .listen_default_host(0, Callable::new(|_| Ok(())))
         .unwrap();
     let port = server.local_port().unwrap();
     let client = thread::spawn(move || {

@@ -198,29 +198,9 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   const listenRows = operations.filter((row) => row.memberId === "node:http::Server.listen");
   assert.deepEqual(listenRows.map((row) => row.target.name), ["listen_default_host", "listen"]);
   assert.equal(listenRows.every((row) => row.isFallible === true), true);
-  assert.deepEqual(listenRows.map((row) => row.callback), [
-    {
-      sourceArgumentIndex: 1,
-      fallibleTarget: {
-        form: "receiver-method",
-        name: "listen_default_host_fallible",
-        argModes: ["value", "value"],
-      },
-    },
-    {
-      sourceArgumentIndex: 2,
-      fallibleTarget: {
-        form: "receiver-method",
-        name: "listen_fallible",
-        argModes: ["value", "ref", "value"],
-      },
-    },
-  ]);
+  assert.deepEqual(listenRows.map((row) => row.immediateCallback), [undefined, undefined]);
   const createServer = operations.find((row) => row.exportId === "node:http::createServer");
-  assert.deepEqual(createServer?.callback, {
-    sourceArgumentIndex: 0,
-    fallibleTarget: { form: "call", path: "node_http::create_server_fallible_callable" },
-  });
+  assert.equal(createServer?.immediateCallback, undefined);
   assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
     "tsonic_rust_node::http::ServerResponseHandle");
   assert.deepEqual(binaryEpilogues, [{
@@ -239,9 +219,6 @@ test("provider package maps timers to the shared Node event loop", () => {
   assert.ok(row !== undefined);
   assert.equal(row.operationKind, "method");
   assert.deepEqual(row.target, { form: "call", path: "node_timers::set_interval_callable" });
-  assert.deepEqual(row.callback, {
-    sourceArgumentIndex: 0,
-    fallibleTarget: { form: "call", path: "node_timers::set_interval_fallible_callable" },
-  });
+  assert.equal(row.immediateCallback, undefined);
   assert.deepEqual(row.resultCarrier, { kind: "target-named", id: "rust.node.Timeout" });
 });

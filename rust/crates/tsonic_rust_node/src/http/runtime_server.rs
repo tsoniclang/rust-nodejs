@@ -9,9 +9,6 @@ type RuntimeRequestHandler =
     tsonic_rust_runtime::Callable<RuntimeRequestArguments, tsonic_rust_runtime::TsonicResult<()>>;
 type RuntimeListenCallback =
     tsonic_rust_runtime::Callable<(), tsonic_rust_runtime::TsonicResult<()>>;
-type InfallibleRuntimeRequestHandler =
-    tsonic_rust_runtime::Callable<RuntimeRequestArguments, ()>;
-type InfallibleRuntimeListenCallback = tsonic_rust_runtime::Callable<(), ()>;
 
 struct RuntimeServer {
     listener: std::net::TcpListener,
@@ -48,22 +45,6 @@ impl ServerHandle {
         &self,
         port: i32,
         host: &str,
-        callback: InfallibleRuntimeListenCallback,
-    ) -> NodeResult<Self> {
-        self.listen_fallible(
-            port,
-            host,
-            tsonic_rust_runtime::Callable::new(move |()| {
-                callback.call(());
-                Ok(())
-            }),
-        )
-    }
-
-    pub fn listen_fallible(
-        &self,
-        port: i32,
-        host: &str,
         callback: RuntimeListenCallback,
     ) -> NodeResult<Self> {
         let port = u16::try_from(port)
@@ -95,17 +76,9 @@ impl ServerHandle {
     pub fn listen_default_host(
         &self,
         port: i32,
-        callback: InfallibleRuntimeListenCallback,
-    ) -> NodeResult<Self> {
-        self.listen(port, "0.0.0.0", callback)
-    }
-
-    pub fn listen_default_host_fallible(
-        &self,
-        port: i32,
         callback: RuntimeListenCallback,
     ) -> NodeResult<Self> {
-        self.listen_fallible(port, "0.0.0.0", callback)
+        self.listen(port, "0.0.0.0", callback)
     }
 
     pub fn close(&self) {
@@ -192,17 +165,8 @@ impl ServerResponseHandle {
     }
 }
 
-pub fn create_server_callable(handler: InfallibleRuntimeRequestHandler) -> ServerHandle {
-    create_runtime_server(tsonic_rust_runtime::Callable::new(move |arguments| {
-        handler.call(arguments);
-        Ok(())
-    }))
-}
-
-pub fn create_server_fallible_callable(
-    handler: RuntimeRequestHandler,
-) -> tsonic_rust_runtime::TsonicResult<ServerHandle> {
-    Ok(create_runtime_server(handler))
+pub fn create_server_callable(handler: RuntimeRequestHandler) -> ServerHandle {
+    create_runtime_server(handler)
 }
 
 fn create_runtime_server(handler: RuntimeRequestHandler) -> ServerHandle {
