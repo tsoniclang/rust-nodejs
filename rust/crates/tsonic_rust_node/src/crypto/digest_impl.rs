@@ -1,5 +1,6 @@
 fn parse_algorithm(algorithm: &str) -> NodeResult<DigestAlgorithm> {
     match algorithm.to_ascii_lowercase().as_str() {
+        "md5" => Ok(DigestAlgorithm::Md5),
         "sha256" | "sha-256" => Ok(DigestAlgorithm::Sha256),
         "sha1" | "sha-1" => Ok(DigestAlgorithm::Sha1),
         "sha384" | "sha-384" => Ok(DigestAlgorithm::Sha384),
@@ -13,6 +14,7 @@ fn parse_algorithm(algorithm: &str) -> NodeResult<DigestAlgorithm> {
 
 fn digest_bytes(algorithm: DigestAlgorithm, input: &[u8]) -> Vec<u8> {
     match algorithm {
+        DigestAlgorithm::Md5 => Md5::digest(input).to_vec(),
         DigestAlgorithm::Sha1 => sha1(input).to_vec(),
         DigestAlgorithm::Sha256 => sha256(input).to_vec(),
         DigestAlgorithm::Sha384 => Sha384::digest(input).to_vec(),
@@ -29,6 +31,7 @@ fn hmac_digest_buffer(algorithm: DigestAlgorithm, key: &[u8], data: &[u8]) -> Ve
 
 fn digest_len(algorithm: DigestAlgorithm) -> usize {
     match algorithm {
+        DigestAlgorithm::Md5 => 16,
         DigestAlgorithm::Sha1 => 20,
         DigestAlgorithm::Sha256 => 32,
         DigestAlgorithm::Sha384 => 48,
@@ -38,7 +41,7 @@ fn digest_len(algorithm: DigestAlgorithm) -> usize {
 
 fn hmac_block_size(algorithm: DigestAlgorithm) -> usize {
     match algorithm {
-        DigestAlgorithm::Sha1 | DigestAlgorithm::Sha256 => 64,
+        DigestAlgorithm::Md5 | DigestAlgorithm::Sha1 | DigestAlgorithm::Sha256 => 64,
         DigestAlgorithm::Sha384 | DigestAlgorithm::Sha512 => 128,
     }
 }

@@ -61,7 +61,13 @@ type ProviderTypeExpr =
   | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
   | { readonly kind: "union"; readonly types: readonly ProviderTypeExpr[] }
   | typeof nullType
-  | { readonly kind: "any" };
+  | { readonly kind: "any" }
+  | {
+      readonly kind: "function";
+      readonly id: string;
+      readonly parameters: readonly { readonly name: string; readonly type: ProviderTypeExpr }[];
+      readonly returnType: ProviderTypeExpr;
+    };
 
 // Node is a provider package, not a compiler surface. Supported rows map to
 // closed tsonic_rust_node APIs with exact declaration identities; every
@@ -88,6 +94,15 @@ function fnExport(moduleSpecifier: string, name: string, parameters: readonly { 
       })),
       returnType,
     }],
+  };
+}
+
+function valueExport(moduleSpecifier: string, name: string, type: ProviderTypeExpr) {
+  return {
+    id: `${moduleSpecifier}::${name}`,
+    name,
+    kind: "value" as const,
+    type,
   };
 }
 
@@ -225,6 +240,8 @@ function pathModule(): RustProviderModuleDefinition {
       fnExport(m, "basename", [{ name: "path", type: stringType }], stringType),
       fnExport(m, "extname", [{ name: "path", type: stringType }], stringType),
       fnExport(m, "isAbsolute", [{ name: "path", type: stringType }], booleanType),
+      fnExport(m, "relative", [{ name: "from", type: stringType }, { name: "to", type: stringType }], stringType),
+      valueExport(m, "sep", stringType),
     ],
   };
 }
@@ -244,6 +261,19 @@ function pathRows(): readonly RustProviderOperationDefinition[] {
     simple("dirname", "node_path::dirname"),
     simple("extname", "node_path::extname"),
     simple("isAbsolute", "node_path::is_absolute", boolCarrier),
+    {
+      exportId: "node:path::relative",
+      operationKind: "method",
+      target: { form: "call", path: "node_path::relative", argModes: ["ref", "ref"] },
+      resultCarrier: stringCarrier,
+      parameterCarriers: [stringCarrier, stringCarrier],
+    },
+    {
+      exportId: "node:path::sep",
+      operationKind: "property",
+      target: { form: "call", path: "node_path::sep", chain: [toStringStep] },
+      resultCarrier: stringCarrier,
+    },
     {
       exportId: "node:path::basename",
       operationKind: "method",
@@ -298,16 +328,76 @@ function fsModule(): RustProviderModuleDefinition {
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.fs",
+    imports: [{ moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] }],
     exports: [
       fnExport(m, "existsSync", [{ name: "path", type: stringType }], booleanType),
-      fnExport(m, "readFileSync", [{ name: "path", type: stringType }, { name: "encoding", type: stringType }], stringType),
-      fnExport(m, "writeFileSync", [{ name: "path", type: stringType }, { name: "data", type: stringType }, { name: "encoding", type: stringType }], voidType),
+      {
+        id: `${m}::readFileSync`,
+        name: "readFileSync",
+        kind: "function" as const,
+        signatures: [
+          {
+            id: `${m}::readFileSync(path)`,
+            name: "readFileSync",
+            parameters: [{ name: "path", type: stringType }],
+            returnType: providerRef("node:buffer", "Buffer"),
+          },
+          {
+            id: `${m}::readFileSync(path,encoding)`,
+            name: "readFileSync",
+            parameters: [{ name: "path", type: stringType }, { name: "encoding", type: stringType }],
+            returnType: stringType,
+          },
+        ],
+      },
+      {
+        id: `${m}::writeFileSync`,
+        name: "writeFileSync",
+        kind: "function" as const,
+        signatures: [
+          {
+            id: `${m}::writeFileSync(path,data,encoding)`,
+            name: "writeFileSync",
+            parameters: [
+              { name: "path", type: stringType },
+              { name: "data", type: stringType },
+              { name: "encoding", type: stringType },
+            ],
+            returnType: voidType,
+          },
+          {
+            id: `${m}::writeFileSync(path,buffer)`,
+            name: "writeFileSync",
+            parameters: [
+              { name: "path", type: stringType },
+              { name: "data", type: providerRef("node:buffer", "Buffer") },
+            ],
+            returnType: voidType,
+          },
+        ],
+      },
       fnExport(m, "readdirSync", [{ name: "path", type: stringType }], stringArrayType),
       fnExport(m, "statSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
-      // Contract: recursive.
-      fnExport(m, "mkdirSync", [{ name: "path", type: stringType }], voidType),
-      // Contract: recursive and force.
-      fnExport(m, "rmSync", [{ name: "path", type: stringType }], voidType),
+      fnExport(m, "lstatSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
+      {
+        id: `${m}::mkdirSync`,
+        name: "mkdirSync",
+        kind: "function" as const,
+        signatures: [
+          { id: `${m}::mkdirSync(path)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
+          { id: `${m}::mkdirSync(path,recursive)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }, { name: "recursive", type: booleanType }], returnType: voidType },
+        ],
+      },
+      {
+        id: `${m}::rmSync`,
+        name: "rmSync",
+        kind: "function" as const,
+        signatures: [
+          { id: `${m}::rmSync(path)`, name: "rmSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
+          { id: `${m}::rmSync(path,recursive)`, name: "rmSync", parameters: [{ name: "path", type: stringType }, { name: "recursive", type: booleanType }], returnType: voidType },
+        ],
+      },
+      fnExport(m, "mkdtempSync", [{ name: "prefix", type: stringType }], stringType),
       fnExport(m, "unlinkSync", [{ name: "path", type: stringType }], voidType),
       fnExport(m, "copyFileSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
       fnExport(m, "renameSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
@@ -319,7 +409,9 @@ function fsModule(): RustProviderModuleDefinition {
         members: [
           methodMember(statsId, "isFile", [], booleanType),
           methodMember(statsId, "isDirectory", [], booleanType),
+          methodMember(statsId, "isSymbolicLink", [], booleanType),
           propertyMember(statsId, "size", numberType),
+          propertyMember(statsId, "mtimeMs", numberType),
         ],
       },
       unsupportedFn(m, "watch", "a filesystem event subscription contract"),
@@ -341,19 +433,61 @@ function fsRows(): readonly RustProviderOperationDefinition[] {
   });
   return [
     { exportId: "node:fs::existsSync", operationKind: "method", target: { form: "call", path: "node_fs::exists_sync", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
-    fallible("readFileSync", "node_fs::read_file_sync_string", stringCarrier, [stringCarrier, stringCarrier]),
-    fallible("writeFileSync", "node_fs::write_file_sync_string", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier, stringCarrier]),
+    {
+      ...fallible("readFileSync", "node_fs::read_file_sync_buffer", bufferCarrier, [stringCarrier]),
+      signatureId: "node:fs::readFileSync(path)",
+    },
+    {
+      ...fallible("readFileSync", "node_fs::read_file_sync_string", stringCarrier, [stringCarrier, stringCarrier]),
+      signatureId: "node:fs::readFileSync(path,encoding)",
+    },
+    {
+      ...fallible("writeFileSync", "node_fs::write_file_sync_string", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier, stringCarrier]),
+      signatureId: "node:fs::writeFileSync(path,data,encoding)",
+    },
+    {
+      ...fallible("writeFileSync", "node_fs::write_file_sync_buffer", { kind: "tuple", elements: [] }, [stringCarrier, bufferCarrier]),
+      signatureId: "node:fs::writeFileSync(path,buffer)",
+    },
     fallible("readdirSync", "node_fs::readdir_sync", stringArrayCarrier, [stringCarrier]),
     fallible("statSync", "node_fs::stat_sync", statsCarrier, [stringCarrier]),
-    fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier], [trueArgument]),
-    fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier], [trueArgument, trueArgument]),
+    fallible("lstatSync", "node_fs::lstat_sync", statsCarrier, [stringCarrier]),
+    {
+      ...fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier], [{ kind: "boolean", value: false }]),
+      signatureId: "node:fs::mkdirSync(path)",
+    },
+    {
+      exportId: "node:fs::mkdirSync",
+      signatureId: "node:fs::mkdirSync(path,recursive)",
+      operationKind: "method",
+      target: { form: "call", path: "node_fs::mkdir_sync", argModes: ["ref", "value"] },
+      resultCarrier: { kind: "tuple", elements: [] },
+      parameterCarriers: [stringCarrier, boolCarrier],
+      isFallible: true,
+    },
+    {
+      ...fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier], [{ kind: "boolean", value: false }, trueArgument]),
+      signatureId: "node:fs::rmSync(path)",
+    },
+    {
+      exportId: "node:fs::rmSync",
+      signatureId: "node:fs::rmSync(path,recursive)",
+      operationKind: "method",
+      target: { form: "call", path: "node_fs::rm_sync", argModes: ["ref", "value"], trailingArguments: [trueArgument] },
+      resultCarrier: { kind: "tuple", elements: [] },
+      parameterCarriers: [stringCarrier, boolCarrier],
+      isFallible: true,
+    },
+    fallible("mkdtempSync", "node_fs::mkdtemp_sync", stringCarrier, [stringCarrier]),
     fallible("unlinkSync", "node_fs::unlink_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
     fallible("copyFileSync", "node_fs::copy_file_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("renameSync", "node_fs::rename_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("realpathSync", "node_fs::realpath_sync", stringCarrier, [stringCarrier]),
     { exportId: statsId, memberId: `${statsId}.isFile`, operationKind: "method", target: { form: "receiver-method", name: "is_file" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.isDirectory`, operationKind: "method", target: { form: "receiver-method", name: "is_directory" }, resultCarrier: boolCarrier },
+    { exportId: statsId, memberId: `${statsId}.isSymbolicLink`, operationKind: "method", target: { form: "receiver-method", name: "is_symbolic_link" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.size`, operationKind: "property", target: { form: "field", name: "size" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: statsId, memberId: `${statsId}.mtimeMs`, operationKind: "property", target: { form: "receiver-method", name: "mtime_ms" }, resultCarrier: float64Carrier },
   ];
 }
 
@@ -645,7 +779,23 @@ function cryptoModule(): RustProviderModuleDefinition {
         name: "Hash",
         kind: "class" as const,
         members: [
-          methodMember(hashId, "update", [{ name: "value", type: stringType }], voidType),
+          {
+            id: `${hashId}.update`,
+            name: "update",
+            kind: "method" as const,
+            signatures: [
+              {
+                id: `${hashId}.update(string)`,
+                parameters: [{ name: "value", type: stringType }],
+                returnType: providerRef(m, "Hash"),
+              },
+              {
+                id: `${hashId}.update(buffer)`,
+                parameters: [{ name: "value", type: providerRef("node:buffer", "Buffer") }],
+                returnType: providerRef(m, "Hash"),
+              },
+            ],
+          },
           methodMember(hashId, "digest", [{ name: "encoding", type: stringType }], stringType),
         ],
       },
@@ -669,7 +819,26 @@ function cryptoRows(): readonly RustProviderOperationDefinition[] {
   return [
     { exportId: "node:crypto::randomUUID", operationKind: "method", target: { form: "call", path: "node_crypto::random_uuid" }, resultCarrier: stringCarrier, isFallible: true },
     { exportId: "node:crypto::createHash", operationKind: "method", target: { form: "call", path: "node_crypto::create_hash", argModes: ["ref"] }, resultCarrier: hashCarrier, parameterCarriers: [stringCarrier], isFallible: true },
-    { exportId: hashId, memberId: `${hashId}.update`, operationKind: "method", target: { form: "receiver-method", name: "update_str", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [stringCarrier], isFallible: true },
+    {
+      exportId: hashId,
+      memberId: `${hashId}.update`,
+      signatureId: `${hashId}.update(string)`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "update_str_owned", argModes: ["ref"], mutatesReceiver: true },
+      resultCarrier: hashCarrier,
+      parameterCarriers: [stringCarrier],
+      isFallible: true,
+    },
+    {
+      exportId: hashId,
+      memberId: `${hashId}.update`,
+      signatureId: `${hashId}.update(buffer)`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "update_buffer_owned", argModes: ["ref"], mutatesReceiver: true },
+      resultCarrier: hashCarrier,
+      parameterCarriers: [bufferCarrier],
+      isFallible: true,
+    },
     { exportId: hashId, memberId: `${hashId}.digest`, operationKind: "method", target: { form: "receiver-method", name: "digest_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], isFallible: true },
     { exportId: "node:crypto::createHmac", operationKind: "method", target: { form: "call", path: "node_crypto::create_hmac_str", argModes: ["ref", "ref"] }, resultCarrier: hmacCarrier, parameterCarriers: [stringCarrier, stringCarrier], isFallible: true },
     { exportId: "node:crypto::Hmac", memberId: "node:crypto::Hmac.update", operationKind: "method", target: { form: "receiver-method", name: "update_str", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [stringCarrier], isFallible: true },
@@ -763,14 +932,14 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { alias: "node_util", path: "tsonic_rust_node::util" },
     ],
     carrierPaths: {
-      "rust.node.Stats": "node_fs::Stats",
-      "rust.node.Buffer": "node_buffer::Buffer",
-      "rust.node.Url": "node_url::Url",
-      "rust.node.UrlObject": "node_url::LegacyUrlObject",
-      "rust.node.UrlSearchParams": "node_url::UrlSearchParams",
-      "rust.node.Hash": "node_crypto::Hash",
-      "rust.node.Hmac": "node_crypto::Hmac",
-      "rust.node.ProcessEnv": "node_process::ProcessEnv",
+      "rust.node.Stats": "tsonic_rust_node::fs::Stats",
+      "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
+      "rust.node.Url": "tsonic_rust_node::url::Url",
+      "rust.node.UrlObject": "tsonic_rust_node::url::LegacyUrlObject",
+      "rust.node.UrlSearchParams": "tsonic_rust_node::url::UrlSearchParams",
+      "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
+      "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
+      "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
     },
     crates: [{
       crateName: "tsonic_rust_node",

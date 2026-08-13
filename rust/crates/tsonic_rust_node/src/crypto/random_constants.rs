@@ -2,6 +2,7 @@ use crate::buffer::{decode_bytes, Buffer};
 use crate::error::{NodeError, NodeResult};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
+use md5::Md5;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use rsa::pkcs1v15::{Signature as RsaSignature, SigningKey, VerifyingKey};

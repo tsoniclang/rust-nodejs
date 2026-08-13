@@ -94,7 +94,10 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
   const format = rows.find((row) => row.exportId === "node:url::format");
   assert.ok(format !== undefined, "missing node:url::format row");
   assert.equal(format.target.path, "node_url::format_legacy");
-  assert.equal(contribution.definition.carrierPaths["rust.node.UrlObject"], "node_url::LegacyUrlObject");
+  assert.equal(
+    contribution.definition.carrierPaths["rust.node.UrlObject"],
+    "tsonic_rust_node::url::LegacyUrlObject",
+  );
 });
 
 test("provider package maps util format to the generic value-slice call form", () => {
@@ -122,4 +125,45 @@ test("provider package maps process execPath to a fallible property row", () => 
   assert.equal(execPath.operationKind, "property");
   assert.equal(execPath.isFallible, true);
   assert.equal(execPath.target.path, "node_process::exec_path");
+});
+
+test("provider package exposes exact filesystem and path contracts required by portable applications", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const path = modules.find((module) => module.moduleSpecifier === "node:path");
+  const fs = modules.find((module) => module.moduleSpecifier === "node:fs");
+  assert.ok(path !== undefined);
+  assert.ok(fs !== undefined);
+  assert.ok(path.exports.some((entry) => entry.id === "node:path::relative"));
+  assert.ok(path.exports.some((entry) => entry.id === "node:path::sep" && entry.kind === "value"));
+  assert.ok(fs.exports.some((entry) => entry.id === "node:fs::mkdtempSync"));
+  const stats = fs.exports.find((entry) => entry.id === "node:fs::Stats");
+  assert.ok(stats !== undefined && stats.kind === "class");
+  assert.ok(stats.members.some((member) => member.id === "node:fs::Stats.isSymbolicLink"));
+  assert.ok(stats.members.some((member) => member.id === "node:fs::Stats.mtimeMs"));
+  assert.deepEqual(
+    operations.filter((row) => row.exportId === "node:fs::readFileSync").map((row) => row.signatureId),
+    ["node:fs::readFileSync(path)", "node:fs::readFileSync(path,encoding)"],
+  );
+  assert.deepEqual(
+    operations.filter((row) => row.exportId === "node:fs::writeFileSync").map((row) => row.signatureId),
+    ["node:fs::writeFileSync(path,data,encoding)", "node:fs::writeFileSync(path,buffer)"],
+  );
+});
+
+test("provider package preserves fluent hash identity for string and buffer updates", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const rows = contribution.definition.operations.filter((row) =>
+    row.memberId === "node:crypto::Hash.update");
+  assert.deepEqual(rows.map((row) => row.signatureId), [
+    "node:crypto::Hash.update(string)",
+    "node:crypto::Hash.update(buffer)",
+  ]);
+  assert.deepEqual(rows.map((row) => row.resultCarrier), [
+    { kind: "target-named", id: "rust.node.Hash" },
+    { kind: "target-named", id: "rust.node.Hash" },
+  ]);
+  assert.deepEqual(rows.map((row) => row.target.name), ["update_str_owned", "update_buffer_owned"]);
 });
