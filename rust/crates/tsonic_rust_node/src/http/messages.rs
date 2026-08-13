@@ -75,6 +75,10 @@ impl IncomingMessage {
         self.headers.get(&name.to_ascii_lowercase()).cloned()
     }
 
+    pub fn url(&self) -> String {
+        self.url.clone()
+    }
+
     pub fn read(&mut self) -> Option<Buffer> {
         self.body.read()
     }

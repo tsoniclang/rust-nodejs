@@ -1149,7 +1149,12 @@ fn crypto_hash_update_str_matches_known_sha256_vector() {
 #[test]
 fn crypto_hash_fluent_updates_share_identity_and_finalize_once() {
     let mut hash = Hash::create("sha256").unwrap();
-    let returned = hash.update_str_owned("ab").unwrap();
+    let mut returned = hash.update_str_owned("a").unwrap();
+    let returned = returned
+        .update_buffer_owned(&tsonic_rust_node::buffer::Buffer::from_bytes(
+            b"b".to_vec(),
+        ))
+        .unwrap();
     hash.update_str("c").unwrap();
     assert_eq!(
         returned.digest_string("hex").unwrap(),

@@ -19,6 +19,8 @@ test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
     "node:url",
     "node:crypto",
     "node:util",
+    "node:http",
+    "node:timers",
   ].map((specifierPrefix) => ({
     specifierPrefix,
     providerId: "tsonic.rust.provider-package.@tsonic/rust-nodejs.binding",

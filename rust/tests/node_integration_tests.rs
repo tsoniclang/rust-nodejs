@@ -18,6 +18,8 @@ mod fs_promises_tests;
 mod fs_tests;
 #[path = "node/http2_tests.rs"]
 mod http2_tests;
+#[path = "node/http_runtime_tests.rs"]
+mod http_runtime_tests;
 #[path = "node/misc_module_tests.rs"]
 mod misc_module_tests;
 #[path = "node/network_process_tests.rs"]

@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createRustProviderPackage,
+  rustCallableTargetType,
   rustInt32ToUint8ValueConversion,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
@@ -39,6 +40,16 @@ const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.no
 const searchParamsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlSearchParams" };
 const hashCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Hash" };
 const hmacCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Hmac" };
+const httpIncomingMessageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpIncomingMessage" };
+const httpServerResponseCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServerResponse" };
+const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
+const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
+const unitCarrier: RustTargetTypeRef = { kind: "tuple", elements: [] };
+const emptyCallbackCarrier = rustCallableTargetType([], unitCarrier);
+const httpRequestCallbackCarrier = rustCallableTargetType(
+  [httpIncomingMessageCarrier, httpServerResponseCarrier],
+  unitCarrier,
+);
 const trueArgument = { kind: "boolean", value: true } as const;
 const noneArgument = { kind: "none" } as const;
 const toStringStep = { kind: "method", name: "to_string" } as const;
@@ -47,6 +58,7 @@ const stringType = { kind: "string" } as const;
 const numberType = { kind: "number" } as const;
 const booleanType = { kind: "boolean" } as const;
 const voidType = { kind: "void" } as const;
+const int32Type = { kind: "source-primitive", name: "int32" } as const;
 const stringArrayType = { kind: "array", elementType: stringType } as const;
 
 const nullType = { kind: "literal", value: null } as const;
@@ -56,6 +68,7 @@ type ProviderTypeExpr =
   | typeof numberType
   | typeof booleanType
   | typeof voidType
+  | typeof int32Type
   | typeof stringArrayType
   | { readonly kind: "provider-ref"; readonly moduleSpecifier: string; readonly exportName: string }
   | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
@@ -120,14 +133,284 @@ function methodMember(classId: string, name: string, parameters: readonly { name
   };
 }
 
-function propertyMember(classId: string, name: string, type: ProviderTypeExpr) {
+function propertyMember(
+  classId: string,
+  name: string,
+  type: ProviderTypeExpr,
+  options?: { readonly readonly?: boolean },
+) {
   return {
     id: `${classId}.${name}`,
     name,
     kind: "property" as const,
-    readonly: true,
+    ...(options?.readonly === false ? {} : { readonly: true }),
     type,
   };
+}
+
+// --- node:http ---------------------------------------------------------------
+
+function httpModule(): RustProviderModuleDefinition {
+  const m = "node:http";
+  const incomingId = `${m}::IncomingMessage`;
+  const responseId = `${m}::ServerResponse`;
+  const serverId = `${m}::Server`;
+  const emptyCallbackType = (id: string): ProviderTypeExpr => ({
+    kind: "function",
+    id,
+    parameters: [],
+    returnType: voidType,
+  });
+  const requestCallbackType: ProviderTypeExpr = {
+    kind: "function",
+    id: `${m}.RequestCallback`,
+    parameters: [
+      { name: "request", type: providerRef(m, "IncomingMessage") },
+      { name: "response", type: providerRef(m, "ServerResponse") },
+    ],
+    returnType: voidType,
+  };
+  return {
+    moduleSpecifier: m,
+    providerModuleId: "tsonic.rust.node.http",
+    imports: [{
+      moduleSpecifier: "node:buffer",
+      namedImports: [{ exportedName: "Buffer" }],
+    }],
+    exports: [
+      {
+        id: incomingId,
+        name: "IncomingMessage",
+        kind: "class",
+        members: [propertyMember(incomingId, "url", stringType)],
+      },
+      {
+        id: responseId,
+        name: "ServerResponse",
+        kind: "class",
+        members: [
+          propertyMember(responseId, "statusCode", int32Type, { readonly: false }),
+          methodMember(responseId, "setHeader", [
+            { name: "name", type: stringType },
+            { name: "value", type: stringType },
+          ], voidType),
+          {
+            id: `${responseId}.end`,
+            name: "end",
+            kind: "method",
+            signatures: [
+              { id: `${responseId}.end()`, parameters: [], returnType: voidType },
+              {
+                id: `${responseId}.end(string)`,
+                parameters: [{ name: "chunk", type: stringType }],
+                returnType: voidType,
+              },
+              {
+                id: `${responseId}.end(buffer)`,
+                parameters: [{ name: "chunk", type: providerRef("node:buffer", "Buffer") }],
+                returnType: voidType,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: serverId,
+        name: "Server",
+        kind: "class",
+        members: [{
+          id: `${serverId}.listen`,
+          name: "listen",
+          kind: "method",
+          signatures: [
+            {
+              id: `${serverId}.listen(port,callback)`,
+              parameters: [
+                { name: "port", type: int32Type },
+                { name: "callback", type: emptyCallbackType(`${serverId}.listen(port,callback).callback`) },
+              ],
+              returnType: providerRef(m, "Server"),
+            },
+            {
+              id: `${serverId}.listen(port,host,callback)`,
+              parameters: [
+                { name: "port", type: int32Type },
+                { name: "host", type: stringType },
+                { name: "callback", type: emptyCallbackType(`${serverId}.listen(port,host,callback).callback`) },
+              ],
+              returnType: providerRef(m, "Server"),
+            },
+          ],
+        }],
+      },
+      fnExport(m, "createServer", [{ name: "handler", type: requestCallbackType }], providerRef(m, "Server")),
+    ],
+  };
+}
+
+function httpRows(): readonly RustProviderOperationDefinition[] {
+  const m = "node:http";
+  const incomingId = `${m}::IncomingMessage`;
+  const responseId = `${m}::ServerResponse`;
+  const serverId = `${m}::Server`;
+  return [
+    {
+      exportId: `${m}::createServer`,
+      operationKind: "method",
+      target: { form: "call", path: "node_http::create_server_callable" },
+      resultCarrier: httpServerCarrier,
+      parameterCarriers: [httpRequestCallbackCarrier],
+      callback: {
+        sourceArgumentIndex: 0,
+        fallibleTarget: { form: "call", path: "node_http::create_server_fallible_callable" },
+      },
+    },
+    {
+      exportId: incomingId,
+      memberId: `${incomingId}.url`,
+      operationKind: "property",
+      target: { form: "receiver-method", name: "url" },
+      resultCarrier: stringCarrier,
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.statusCode`,
+      operationKind: "property",
+      target: { form: "receiver-method", name: "status_code" },
+      resultCarrier: int32Carrier,
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.statusCode`,
+      operationKind: "property-set",
+      target: { form: "receiver-method", name: "set_status_code" },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [int32Carrier],
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.setHeader`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "set_header", argModes: ["ref", "ref"] },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [stringCarrier, stringCarrier],
+      isFallible: true,
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.end`,
+      signatureId: `${responseId}.end()`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "end_empty" },
+      resultCarrier: unitCarrier,
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.end`,
+      signatureId: `${responseId}.end(string)`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "end_string", argModes: ["ref"] },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [stringCarrier],
+    },
+    {
+      exportId: responseId,
+      memberId: `${responseId}.end`,
+      signatureId: `${responseId}.end(buffer)`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "end_buffer" },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [bufferCarrier],
+    },
+    {
+      exportId: serverId,
+      memberId: `${serverId}.listen`,
+      signatureId: `${serverId}.listen(port,callback)`,
+      operationKind: "method",
+      target: {
+        form: "receiver-method",
+        name: "listen_default_host",
+        argModes: ["value", "value"],
+      },
+      resultCarrier: httpServerCarrier,
+      parameterCarriers: [int32Carrier, emptyCallbackCarrier],
+      isFallible: true,
+      callback: {
+        sourceArgumentIndex: 1,
+        fallibleTarget: {
+          form: "receiver-method",
+          name: "listen_default_host_fallible",
+          argModes: ["value", "value"],
+        },
+      },
+    },
+    {
+      exportId: serverId,
+      memberId: `${serverId}.listen`,
+      signatureId: `${serverId}.listen(port,host,callback)`,
+      operationKind: "method",
+      target: {
+        form: "receiver-method",
+        name: "listen",
+        argModes: ["value", "ref", "value"],
+      },
+      resultCarrier: httpServerCarrier,
+      parameterCarriers: [int32Carrier, stringCarrier, emptyCallbackCarrier],
+      isFallible: true,
+      callback: {
+        sourceArgumentIndex: 2,
+        fallibleTarget: {
+          form: "receiver-method",
+          name: "listen_fallible",
+          argModes: ["value", "ref", "value"],
+        },
+      },
+    },
+  ];
+}
+
+// --- node:timers -------------------------------------------------------------
+
+function timersModule(): RustProviderModuleDefinition {
+  const m = "node:timers";
+  return {
+    moduleSpecifier: m,
+    providerModuleId: "tsonic.rust.node.timers",
+    exports: [
+      {
+        id: `${m}::Timeout`,
+        name: "Timeout",
+        kind: "class",
+        members: [],
+      },
+      fnExport(m, "setInterval", [
+        {
+          name: "callback",
+          type: {
+            kind: "function",
+            id: `${m}.IntervalCallback`,
+            parameters: [],
+            returnType: voidType,
+          },
+        },
+        { name: "delay", type: int32Type },
+      ], providerRef(m, "Timeout")),
+    ],
+  };
+}
+
+function timersRows(): readonly RustProviderOperationDefinition[] {
+  return [{
+    exportId: "node:timers::setInterval",
+    operationKind: "method",
+    target: { form: "call", path: "node_timers::set_interval_callable" },
+    resultCarrier: timeoutCarrier,
+    parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+    callback: {
+      sourceArgumentIndex: 0,
+      fallibleTarget: { form: "call", path: "node_timers::set_interval_fallible_callable" },
+    },
+  }];
 }
 
 function constructorMember(classId: string, parameters: readonly { name: string; type: ProviderTypeExpr }[]) {
@@ -896,6 +1179,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       urlModule(),
       cryptoModule(),
       utilModule(),
+      httpModule(),
+      timersModule(),
     ],
     types: [
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
@@ -906,6 +1191,10 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:url::URLSearchParams", targetCarrier: searchParamsCarrier },
       { exportId: "node:crypto::Hash", targetCarrier: hashCarrier },
       { exportId: "node:crypto::Hmac", targetCarrier: hmacCarrier },
+      { exportId: "node:http::IncomingMessage", targetCarrier: httpIncomingMessageCarrier },
+      { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
+      { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
+      { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
     ],
     operations: [
       ...assertRows(),
@@ -918,6 +1207,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       ...urlRows(),
       ...cryptoRows(),
       ...utilRows(),
+      ...httpRows(),
+      ...timersRows(),
     ],
     aliasImports: [
       { alias: "node_assert", path: "tsonic_rust_node::assert" },
@@ -930,6 +1221,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { alias: "node_url", path: "tsonic_rust_node::url" },
       { alias: "node_crypto", path: "tsonic_rust_node::crypto" },
       { alias: "node_util", path: "tsonic_rust_node::util" },
+      { alias: "node_http", path: "tsonic_rust_node::http" },
+      { alias: "node_timers", path: "tsonic_rust_node::timers" },
     ],
     carrierPaths: {
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
@@ -940,7 +1233,17 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
+      "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
+      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
+      "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
+      "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
     },
+    binaryEpilogues: [{
+      id: "node-event-loop",
+      path: "tsonic_rust_node::run_event_loop",
+      requiredCrate: "tsonic_rust_node",
+      isFallible: true,
+    }],
     crates: [{
       crateName: "tsonic_rust_node",
       cargoPath: resolve(packageRoot, "rust/crates/tsonic_rust_node"),

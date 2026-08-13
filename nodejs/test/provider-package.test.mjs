@@ -13,6 +13,8 @@ const expectedModules = [
   "node:url",
   "node:crypto",
   "node:util",
+  "node:http",
+  "node:timers",
 ];
 
 test("provider package declares the expected node module specifiers", () => {
@@ -50,6 +52,10 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:url::URLSearchParams", "rust.node.UrlSearchParams"],
     ["node:crypto::Hash", "rust.node.Hash"],
     ["node:crypto::Hmac", "rust.node.Hmac"],
+    ["node:http::IncomingMessage", "rust.node.HttpIncomingMessage"],
+    ["node:http::ServerResponse", "rust.node.HttpServerResponse"],
+    ["node:http::Server", "rust.node.HttpServer"],
+    ["node:timers::Timeout", "rust.node.Timeout"],
   ].map(([exportId, id]) => ({
     exportId,
     targetCarrier: { kind: "target-named", id },
@@ -166,4 +172,76 @@ test("provider package preserves fluent hash identity for string and buffer upda
     { kind: "target-named", id: "rust.node.Hash" },
   ]);
   assert.deepEqual(rows.map((row) => row.target.name), ["update_str_owned", "update_buffer_owned"]);
+});
+
+test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const { operations, binaryEpilogues, carrierPaths } = contribution.definition;
+
+  const statusRead = operations.find((row) =>
+    row.memberId === "node:http::ServerResponse.statusCode" && row.operationKind === "property");
+  const statusWrite = operations.find((row) =>
+    row.memberId === "node:http::ServerResponse.statusCode" && row.operationKind === "property-set");
+  assert.deepEqual(statusRead?.target, { form: "receiver-method", name: "status_code" });
+  assert.deepEqual(statusWrite?.target, { form: "receiver-method", name: "set_status_code" });
+  assert.deepEqual(statusWrite?.parameterCarriers, [{ kind: "source-primitive", name: "int32" }]);
+
+  const endRows = operations.filter((row) => row.memberId === "node:http::ServerResponse.end");
+  assert.deepEqual(endRows.map((row) => row.signatureId), [
+    "node:http::ServerResponse.end()",
+    "node:http::ServerResponse.end(string)",
+    "node:http::ServerResponse.end(buffer)",
+  ]);
+  assert.deepEqual(endRows.map((row) => row.target.name), ["end_empty", "end_string", "end_buffer"]);
+
+  const listenRows = operations.filter((row) => row.memberId === "node:http::Server.listen");
+  assert.deepEqual(listenRows.map((row) => row.target.name), ["listen_default_host", "listen"]);
+  assert.equal(listenRows.every((row) => row.isFallible === true), true);
+  assert.deepEqual(listenRows.map((row) => row.callback), [
+    {
+      sourceArgumentIndex: 1,
+      fallibleTarget: {
+        form: "receiver-method",
+        name: "listen_default_host_fallible",
+        argModes: ["value", "value"],
+      },
+    },
+    {
+      sourceArgumentIndex: 2,
+      fallibleTarget: {
+        form: "receiver-method",
+        name: "listen_fallible",
+        argModes: ["value", "ref", "value"],
+      },
+    },
+  ]);
+  const createServer = operations.find((row) => row.exportId === "node:http::createServer");
+  assert.deepEqual(createServer?.callback, {
+    sourceArgumentIndex: 0,
+    fallibleTarget: { form: "call", path: "node_http::create_server_fallible_callable" },
+  });
+  assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
+    "tsonic_rust_node::http::ServerResponseHandle");
+  assert.deepEqual(binaryEpilogues, [{
+    id: "node-event-loop",
+    path: "tsonic_rust_node::run_event_loop",
+    requiredCrate: "tsonic_rust_node",
+    isFallible: true,
+  }]);
+});
+
+test("provider package maps timers to the shared Node event loop", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const row = contribution.definition.operations.find((candidate) =>
+    candidate.exportId === "node:timers::setInterval");
+  assert.ok(row !== undefined);
+  assert.equal(row.operationKind, "method");
+  assert.deepEqual(row.target, { form: "call", path: "node_timers::set_interval_callable" });
+  assert.deepEqual(row.callback, {
+    sourceArgumentIndex: 0,
+    fallibleTarget: { form: "call", path: "node_timers::set_interval_fallible_callable" },
+  });
+  assert.deepEqual(row.resultCarrier, { kind: "target-named", id: "rust.node.Timeout" });
 });

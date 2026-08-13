@@ -11,6 +11,7 @@ pub mod dgram;
 pub mod diagnostics_channel;
 pub mod dns;
 pub mod error;
+mod event_loop;
 pub mod events;
 pub mod fetch;
 pub mod fs;
@@ -42,3 +43,4 @@ pub mod worker_threads;
 pub mod zlib;
 
 pub use error::{NodeError, NodeResult};
+pub use event_loop::run_event_loop;
