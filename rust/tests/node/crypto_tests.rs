@@ -283,9 +283,9 @@ fn crypto_sha256_known_vector() {
     )
     .is_err());
     let mut hash = tsonic_rust_node::crypto::create_hash("sha256").unwrap();
-    hash.update(b"a");
+    hash.update(b"a").unwrap();
     hash.update_string("bc", Some("utf8")).unwrap();
-    let copied = hash.copy();
+    let copied = hash.copy().unwrap();
     let digest = hash.digest(Some("hex")).unwrap();
     assert_eq!(
         digest,
@@ -307,7 +307,7 @@ fn crypto_sha256_known_vector() {
     let mut options_hash =
         tsonic_rust_node::crypto::create_hash_with_options("sha256", HashOptions::default())
             .unwrap();
-    options_hash.update(b"abc");
+    options_hash.update(b"abc").unwrap();
     assert_eq!(options_hash.digest_buffer().unwrap().len(), 32);
     assert!(tsonic_rust_node::crypto::create_hash_with_options(
         "sha256",
@@ -1143,6 +1143,31 @@ fn crypto_hash_update_str_matches_known_sha256_vector() {
     assert_eq!(
         hash.digest_string("hex").unwrap(),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}
+
+#[test]
+fn crypto_hash_fluent_updates_share_identity_and_finalize_once() {
+    let mut hash = Hash::create("sha256").unwrap();
+    let mut returned = hash.update_str_owned("a").unwrap();
+    let returned = returned
+        .update_buffer_owned(&tsonic_rust_node::buffer::Buffer::from_bytes(b"b".to_vec()))
+        .unwrap();
+    hash.update_str("c").unwrap();
+    assert_eq!(
+        returned.digest_string("hex").unwrap(),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert!(hash.update_str("d").is_err());
+}
+
+#[test]
+fn crypto_hash_supports_node_md5_name() {
+    let mut hash = Hash::create("md5").unwrap();
+    let returned = hash.update_str_owned("abc").unwrap();
+    assert_eq!(
+        returned.digest_string("hex").unwrap(),
+        "900150983cd24fb0d6963f7d28e17f72"
     );
 }
 

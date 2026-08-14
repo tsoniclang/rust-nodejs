@@ -1,3 +1,6 @@
+use std::cell::{RefCell, RefMut};
+use std::rc::Rc;
+
 pub fn create_hash(algorithm: &str) -> NodeResult<Hash> {
     Hash::create(algorithm)
 }
@@ -18,14 +21,29 @@ pub enum DigestResult {
     String(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Hash {
+    state: Rc<RefCell<HashState>>,
+}
+
+#[derive(Debug, Clone)]
+struct HashState {
     algorithm: DigestAlgorithm,
     bytes: Vec<u8>,
+    finalized: bool,
+}
+
+impl Clone for Hash {
+    fn clone(&self) -> Self {
+        Self {
+            state: Rc::clone(&self.state),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DigestAlgorithm {
+    Md5,
     Sha1,
     Sha256,
     Sha384,
@@ -36,36 +54,77 @@ impl Hash {
     pub fn create(algorithm: &str) -> NodeResult<Self> {
         let algorithm = parse_algorithm(algorithm)?;
         Ok(Self {
-            algorithm,
-            bytes: Vec::new(),
+            state: Rc::new(RefCell::new(HashState {
+                algorithm,
+                bytes: Vec::new(),
+                finalized: false,
+            })),
         })
     }
 
-    pub fn update_bytes(&mut self, bytes: &[u8]) {
-        self.bytes.extend_from_slice(bytes);
+    fn writable_state(&self) -> NodeResult<RefMut<'_, HashState>> {
+        let state = self.state.try_borrow_mut().map_err(|_| {
+            NodeError::new("ERR_CRYPTO_INVALID_STATE", "hash state is already borrowed")
+        })?;
+        if state.finalized {
+            return Err(NodeError::new(
+                "ERR_CRYPTO_HASH_FINALIZED",
+                "hash state has already been finalized",
+            ));
+        }
+        Ok(state)
     }
 
-    pub fn update(&mut self, bytes: &[u8]) -> &mut Self {
-        self.update_bytes(bytes);
-        self
+    pub fn update_bytes(&mut self, bytes: &[u8]) -> NodeResult<&mut Self> {
+        self.writable_state()?.bytes.extend_from_slice(bytes);
+        Ok(self)
     }
 
-    pub fn copy(&self) -> Self {
-        self.clone()
+    pub fn update(&mut self, bytes: &[u8]) -> NodeResult<&mut Self> {
+        self.update_bytes(bytes)
     }
 
-    pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<()> {
-        self.bytes
-            .extend_from_slice(&crate::buffer::encode_string(value, encoding)?);
-        Ok(())
+    pub fn copy(&self) -> NodeResult<Self> {
+        let state = self.state.try_borrow().map_err(|_| {
+            NodeError::new("ERR_CRYPTO_INVALID_STATE", "hash state is already borrowed")
+        })?;
+        if state.finalized {
+            return Err(NodeError::new(
+                "ERR_CRYPTO_HASH_FINALIZED",
+                "hash state has already been finalized",
+            ));
+        }
+        Ok(Self {
+            state: Rc::new(RefCell::new(state.clone())),
+        })
     }
 
-    pub fn update_str(&mut self, value: &str) -> NodeResult<()> {
+    pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<&mut Self> {
+        let bytes = crate::buffer::encode_string(value, encoding)?;
+        self.update_bytes(&bytes)
+    }
+
+    pub fn update_str(&mut self, value: &str) -> NodeResult<&mut Self> {
         self.update_string(value, None)
     }
 
+    pub fn update_str_owned(&mut self, value: &str) -> NodeResult<Self> {
+        self.update_str(value)?;
+        Ok(self.clone())
+    }
+
+    pub fn update_buffer_owned(&mut self, value: &Buffer) -> NodeResult<Self> {
+        self.update_bytes(&value.as_bytes())?;
+        Ok(self.clone())
+    }
+
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
-        let bytes = digest_bytes(self.algorithm, &self.bytes);
+        let (algorithm, input) = {
+            let mut state = self.writable_state()?;
+            state.finalized = true;
+            (state.algorithm, state.bytes.clone())
+        };
+        let bytes = digest_bytes(algorithm, &input);
         match encoding {
             None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
             Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),
@@ -95,7 +154,7 @@ impl Hash {
 
 pub fn hash(algorithm: &str, data: &[u8], encoding: Option<&str>) -> NodeResult<DigestResult> {
     let mut hash = create_hash(algorithm)?;
-    hash.update_bytes(data);
+    hash.update_bytes(data)?;
     hash.digest(encoding)
 }
 

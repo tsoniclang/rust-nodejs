@@ -8,12 +8,37 @@ pub fn chdir(path: &str) -> NodeResult<()> {
     std::env::set_current_dir(path).map_err(|error| NodeError::new("ENOENT", error.to_string()))
 }
 
-pub fn argv() -> JsArray<String> {
-    JsArray::from_dense(std::env::args().collect())
+thread_local! {
+    static PROCESS_ARGV: std::cell::RefCell<Option<JsArray<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub fn argv() -> NodeResult<JsArray<String>> {
+    PROCESS_ARGV.with(|slot| {
+        if let Some(existing) = slot.borrow().as_ref() {
+            return Ok(existing.clone());
+        }
+
+        let command_line = std::env::args_os()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let executable = exec_path()?;
+        let mut values = Vec::with_capacity(command_line.len().saturating_add(1).max(2));
+        values.push(executable.clone());
+        values.push(executable);
+        values.extend(command_line.into_iter().skip(1));
+
+        let argv = JsArray::from_dense(values);
+        *slot.borrow_mut() = Some(argv.clone());
+        Ok(argv)
+    })
 }
 
 pub fn argv0() -> String {
-    argv().get(0).unwrap_or_default()
+    std::env::args_os()
+        .next()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 pub fn exec_argv() -> JsArray<String> {

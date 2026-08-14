@@ -123,6 +123,15 @@ fn buffer_common_mutation_search_and_predicates() {
 }
 
 #[test]
+fn buffer_number_arrays_follow_uint8_coercion_and_sparse_zero_fill() {
+    let values = JsArray::from_sparse(5, vec![(0, 257.0), (1, -1.0), (2, 1.9), (4, f64::NAN)]);
+    assert_eq!(
+        Buffer::from_number_array(&values).as_bytes(),
+        vec![1, 255, 1, 0, 0]
+    );
+}
+
+#[test]
 fn buffer_overload_values_cover_string_number_and_byte_views() {
     let from_fill = Buffer::alloc_with_fill(5, BufferValue::text("ab", Some("utf8"))).unwrap();
     assert_eq!(from_fill.as_bytes(), b"ababa");

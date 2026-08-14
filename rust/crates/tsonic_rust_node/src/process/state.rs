@@ -7,8 +7,14 @@ pub fn exit_code() -> Option<i32> {
     }
 }
 
-pub fn set_exit_code(code: i32) {
-    EXIT_CODE.store(code, Ordering::SeqCst);
+pub fn set_exit_code(code: Option<i32>) {
+    EXIT_CODE.store(code.unwrap_or(i32::MIN), Ordering::SeqCst);
+}
+
+pub fn apply_exit_code() {
+    if let Some(code) = exit_code() {
+        std::process::exit(code);
+    }
 }
 
 pub fn next_tick(callback: impl FnOnce()) {

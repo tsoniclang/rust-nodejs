@@ -1,18 +1,27 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use tsonic_rust_node::{buffer::Buffer, dns, stream, timers};
+use tsonic_rust_runtime::Callable;
 
 #[test]
 fn timers_run_callbacks_and_expose_handle_state() {
-    let called = Cell::new(false);
-    let mut timeout = timers::set_timeout(|| called.set(true), 0);
-    assert!(called.get());
+    let called = Rc::new(Cell::new(false));
+    let callback_called = Rc::clone(&called);
+    let timeout = timers::set_timeout(move || callback_called.set(true), 0);
+    assert!(!called.get());
     assert!(timeout.id() > 0);
     assert_eq!(timeout.delay_ms(), 0);
     assert!(timeout.has_ref());
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert!(called.get());
+    assert!(!timeout.has_ref());
+
+    let mut timeout = timers::set_timeout(|| {}, 10_000);
     timeout.unref();
     assert!(!timeout.has_ref());
     timeout.r#ref();
+    assert!(timeout.has_ref());
     timers::clear_timeout(&mut timeout);
     assert!(!timeout.has_ref());
     timeout.on_timeout(|| called.set(false));
@@ -20,9 +29,10 @@ fn timers_run_callbacks_and_expose_handle_state() {
 
     let (_, value) = timers::promises::set_timeout_value(0, "done");
     assert_eq!(value, "done");
-    let aborted_called = Cell::new(false);
+    let aborted_called = Rc::new(Cell::new(false));
+    let callback_called = Rc::clone(&aborted_called);
     let aborted = timers::set_timeout_with_options(
-        || aborted_called.set(true),
+        move || callback_called.set(true),
         0,
         timers::TimerOptions {
             r#ref: true,
@@ -35,21 +45,39 @@ fn timers_run_callbacks_and_expose_handle_state() {
 
 #[test]
 fn timers_cover_interval_immediate_and_scheduler_shapes() {
-    let count = Cell::new(0);
-    let mut interval = timers::set_interval(|| count.set(count.get() + 1), 0);
-    assert_eq!(count.get(), 1);
+    let count = Rc::new(Cell::new(0));
+    let interval_slot = Rc::new(RefCell::new(None::<timers::Timeout>));
+    let callback_count = Rc::clone(&count);
+    let callback_slot = Rc::clone(&interval_slot);
+    let interval = timers::set_interval_callable(
+        Callable::new(move |()| {
+            callback_count.set(callback_count.get() + 1);
+            if callback_count.get() == 2 {
+                callback_slot.borrow_mut().as_mut().unwrap().close();
+            }
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
+        }),
+        1,
+    );
+    *interval_slot.borrow_mut() = Some(interval.clone());
+    assert_eq!(count.get(), 0);
     assert!(interval.has_ref());
-    interval.refresh().close();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert_eq!(count.get(), 2);
     assert!(!interval.has_ref());
 
-    let mut immediate = timers::set_immediate(|| count.set(count.get() + 1));
+    let callback_count = Rc::clone(&count);
+    let mut immediate = timers::set_immediate(move || callback_count.set(callback_count.get() + 1));
     assert_eq!(count.get(), 2);
-    immediate.on_immediate(|| count.set(count.get() + 1));
+    tsonic_rust_node::run_event_loop().unwrap();
     assert_eq!(count.get(), 3);
+    immediate.on_immediate(|| count.set(count.get() + 1));
+    assert_eq!(count.get(), 4);
     timers::clear_immediate(&mut immediate);
     assert!(!immediate.has_ref());
+    let callback_count = Rc::clone(&count);
     let immediate_options = timers::set_immediate_with_options(
-        || count.set(count.get() + 1),
+        move || callback_count.set(callback_count.get() + 1),
         timers::TimerOptions {
             r#ref: false,
             signal_aborted: false,
@@ -61,15 +89,16 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
     let mut another = timers::set_interval(|| {}, 0);
     timers::clear_interval(&mut another);
     assert!(!another.has_ref());
+    let callback_count = Rc::clone(&count);
     let interval_options = timers::set_interval_with_options(
-        || count.set(count.get() + 1),
+        move || callback_count.set(callback_count.get() + 1),
         0,
         timers::TimerOptions {
             r#ref: false,
             signal_aborted: false,
         },
     );
-    assert_eq!(count.get(), 5);
+    assert_eq!(count.get(), 4);
     assert!(!interval_options.has_ref());
 
     let (_, values) = timers::promises::set_interval_values(0, "tick", 3);
@@ -107,6 +136,17 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
     assert!(!unrefed_interval.has_ref());
     timers::promises::scheduler::wait(0);
     timers::promises::scheduler::yield_now();
+}
+
+#[test]
+fn interval_callable_propagates_fallible_callback_errors() {
+    timers::set_interval_callable(
+        Callable::new(|()| Err(std::io::Error::other("timer failed"))),
+        1,
+    );
+    let error = tsonic_rust_node::run_event_loop().unwrap_err();
+    assert!(error.to_string().contains("ERR_TSONIC_CALLBACK"));
+    assert!(error.to_string().contains("timer failed"));
 }
 
 #[test]
