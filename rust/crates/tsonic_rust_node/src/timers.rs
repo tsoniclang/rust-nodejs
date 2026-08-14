@@ -159,10 +159,17 @@ pub fn set_interval_with_options(
     )
 }
 
-pub fn set_interval_callable(callback: Callable<(), TsonicResult<()>>, delay_ms: i32) -> Timeout {
+pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: i32) -> Timeout
+where
+    E: std::fmt::Display + 'static,
+{
     let delay_ms = u64::try_from(delay_ms).unwrap_or(0).max(1);
     schedule(
-        Box::new(move || callback.call(())),
+        Box::new(move || {
+            callback
+                .call(())
+                .map_err(crate::error::callback_runtime_error)
+        }),
         delay_ms,
         true,
         TimerOptions::default(),

@@ -41,12 +41,15 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
-    pub fn listen(
+    pub fn listen<E>(
         &self,
         port: i32,
         host: &str,
-        callback: RuntimeListenCallback,
-    ) -> NodeResult<Self> {
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
         let port = u16::try_from(port)
             .map_err(|_| NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535"))?;
         let listener = std::net::TcpListener::bind((host, port))
@@ -65,7 +68,7 @@ impl ServerHandle {
                 RuntimeServer {
                     listener,
                     handler: self.handler.clone(),
-                    listening_callback: Some(callback),
+                    listening_callback: Some(adapt_runtime_callback(callback)),
                 },
             );
             Ok(())
@@ -73,11 +76,14 @@ impl ServerHandle {
         Ok(self.clone())
     }
 
-    pub fn listen_default_host(
+    pub fn listen_default_host<E>(
         &self,
         port: i32,
-        callback: RuntimeListenCallback,
-    ) -> NodeResult<Self> {
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
         self.listen(port, "0.0.0.0", callback)
     }
 
@@ -165,8 +171,27 @@ impl ServerResponseHandle {
     }
 }
 
-pub fn create_server_callable(handler: RuntimeRequestHandler) -> ServerHandle {
-    create_runtime_server(handler)
+pub fn create_server_callable<E>(
+    handler: tsonic_rust_runtime::Callable<RuntimeRequestArguments, Result<(), E>>,
+) -> ServerHandle
+where
+    E: std::fmt::Display + 'static,
+{
+    create_runtime_server(adapt_runtime_callback(handler))
+}
+
+fn adapt_runtime_callback<TArguments, E>(
+    callback: tsonic_rust_runtime::Callable<TArguments, Result<(), E>>,
+) -> tsonic_rust_runtime::Callable<TArguments, tsonic_rust_runtime::TsonicResult<()>>
+where
+    TArguments: 'static,
+    E: std::fmt::Display + 'static,
+{
+    tsonic_rust_runtime::Callable::new(move |arguments| {
+        callback
+            .call(arguments)
+            .map_err(crate::error::callback_runtime_error)
+    })
 }
 
 fn create_runtime_server(handler: RuntimeRequestHandler) -> ServerHandle {

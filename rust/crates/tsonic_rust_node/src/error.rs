@@ -41,3 +41,10 @@ impl From<NodeError> for tsonic_rust_runtime::TsonicError {
         }
     }
 }
+
+pub(crate) fn callback_runtime_error(error: impl fmt::Display) -> tsonic_rust_runtime::TsonicError {
+    tsonic_rust_runtime::TsonicError::Node {
+        code: "ERR_TSONIC_CALLBACK".to_string(),
+        message: error.to_string(),
+    }
+}

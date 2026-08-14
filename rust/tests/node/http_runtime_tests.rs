@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::thread;
 
 use tsonic_rust_node::{buffer::Buffer, http, run_event_loop};
-use tsonic_rust_runtime::Callable;
+use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
@@ -29,7 +29,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
                 .unwrap();
             response.end_buffer(Buffer::from_bytes(vec![0, 255, 1]));
             callback_server.borrow().as_ref().unwrap().close();
-            Ok(())
+            Ok::<(), TsonicError>(())
         },
     ));
     *server_slot.borrow_mut() = Some(server.clone());
@@ -40,7 +40,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
             0,
             Callable::new(move |_| {
                 listen_thread.set(thread::current().id() == event_thread);
-                Ok(())
+                Ok::<(), TsonicError>(())
             }),
         )
         .unwrap();
@@ -78,12 +78,12 @@ fn translated_http_server_propagates_fallible_callback_errors() {
     let server = http::create_server_callable(Callable::new(
         move |(_request, _response): (http::IncomingMessage, http::ServerResponseHandle)| {
             callback_server.borrow().as_ref().unwrap().close();
-            Err(tsonic_rust_node::NodeError::new("ERR_CALLBACK", "request callback failed").into())
+            Err(std::io::Error::other("request callback failed"))
         },
     ));
     *server_slot.borrow_mut() = Some(server.clone());
     server
-        .listen_default_host(0, Callable::new(|()| Ok(())))
+        .listen_default_host(0, Callable::new(|()| Ok::<(), TsonicError>(())))
         .unwrap();
     let port = server.local_port().unwrap();
     let client = thread::spawn(move || {
@@ -97,6 +97,7 @@ fn translated_http_server_propagates_fallible_callback_errors() {
     });
 
     let error = run_event_loop().unwrap_err();
+    assert!(error.to_string().contains("ERR_TSONIC_CALLBACK"));
     assert!(error.to_string().contains("request callback failed"));
     assert!(client.join().unwrap().is_empty());
 }
@@ -119,12 +120,12 @@ fn round_trip_single_response(finish: impl Fn(http::ServerResponseHandle) + 'sta
         move |(_request, response): (http::IncomingMessage, http::ServerResponseHandle)| {
             finish(response);
             callback_server.borrow().as_ref().unwrap().close();
-            Ok(())
+            Ok::<(), TsonicError>(())
         },
     ));
     *server_slot.borrow_mut() = Some(server.clone());
     server
-        .listen_default_host(0, Callable::new(|_| Ok(())))
+        .listen_default_host(0, Callable::new(|_| Ok::<(), TsonicError>(())))
         .unwrap();
     let port = server.local_port().unwrap();
     let client = thread::spawn(move || {

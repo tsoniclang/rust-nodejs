@@ -60,6 +60,15 @@ test("provider type relations carry exact closed target carriers", () => {
     exportId,
     targetCarrier: { kind: "target-named", id },
   })));
+  assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
+    clone: "always",
+    copy: "never",
+  });
+  assert.equal(
+    Object.keys(contribution.definition.carrierTraits).every((id) =>
+      contribution.definition.carrierPaths[id] !== undefined),
+    true,
+  );
 });
 
 test("provider package maps exact assert.ok overloads", () => {
@@ -133,6 +142,44 @@ test("provider package maps process execPath to a fallible property row", () => 
   assert.equal(execPath.target.path, "node_process::exec_path");
 });
 
+test("provider package exposes exact process env absence and writable exit status", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const processModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:process");
+  assert.ok(processModule !== undefined);
+  const processEnv = processModule.exports.find((entry) => entry.id === "node:process::ProcessEnv");
+  assert.ok(processEnv !== undefined && processEnv.kind === "class");
+  assert.deepEqual(processEnv.members[0].signatures[0].returnType, {
+    kind: "union",
+    types: [{ kind: "string" }, { kind: "undefined" }],
+  });
+  const exitCode = processModule.exports.find((entry) => entry.id === "node:process::exitCode");
+  assert.deepEqual(exitCode?.type, {
+    kind: "union",
+    types: [{ kind: "number" }, { kind: "literal", value: null }],
+  });
+  const defaultObject = processModule.exports.find((entry) => entry.exportKind === "default");
+  assert.equal(defaultObject?.name, "NodeProcessModule");
+  const defaultExitCode = defaultObject.members.find((member) => member.name === "exitCode");
+  assert.equal(defaultExitCode?.readonly, undefined);
+  assert.equal(defaultExitCode?.static, true);
+  const defaultArgv = defaultObject.members.find((member) => member.name === "argv");
+  assert.equal(defaultArgv?.readonly, true);
+  const rows = contribution.definition.operations.filter((row) =>
+    row.memberId === "node:process.default.exitCode");
+  assert.deepEqual(rows.map((row) => [row.operationKind, row.target.path]), [
+    ["property", "node_process::exit_code"],
+    ["property-set", "node_process::set_exit_code"],
+  ]);
+  const selectedValueRows = contribution.definition.operations.filter((row) =>
+    row.exportId === "node:process::exitCode" && row.memberId === undefined);
+  assert.deepEqual(selectedValueRows.map((row) => [row.operationKind, row.target.path]), [
+    ["property", "node_process::exit_code"],
+    ["property-set", "node_process::set_exit_code"],
+  ]);
+});
+
 test("provider package exposes exact filesystem and path contracts required by portable applications", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
@@ -203,12 +250,19 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   assert.equal(createServer?.immediateCallback, undefined);
   assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
     "tsonic_rust_node::http::ServerResponseHandle");
-  assert.deepEqual(binaryEpilogues, [{
-    id: "node-event-loop",
-    path: "tsonic_rust_node::run_event_loop",
-    requiredCrate: "tsonic_rust_node",
-    isFallible: true,
-  }]);
+  assert.deepEqual(binaryEpilogues, [
+    {
+      id: "node-event-loop",
+      path: "tsonic_rust_node::run_event_loop",
+      requiredCrate: "tsonic_rust_node",
+      isFallible: true,
+    },
+    {
+      id: "node-process-exit-code",
+      path: "tsonic_rust_node::process::apply_exit_code",
+      requiredCrate: "tsonic_rust_node",
+    },
+  ]);
 });
 
 test("provider package maps timers to the shared Node event loop", () => {

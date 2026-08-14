@@ -55,7 +55,7 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             if callback_count.get() == 2 {
                 callback_slot.borrow_mut().as_mut().unwrap().close();
             }
-            Ok(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
         1,
     );
@@ -141,14 +141,11 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
 #[test]
 fn interval_callable_propagates_fallible_callback_errors() {
     timers::set_interval_callable(
-        Callable::new(|()| {
-            Err(tsonic_rust_runtime::TsonicError::unsupported(
-                "timer failed",
-            ))
-        }),
+        Callable::new(|()| Err(std::io::Error::other("timer failed"))),
         1,
     );
     let error = tsonic_rust_node::run_event_loop().unwrap_err();
+    assert!(error.to_string().contains("ERR_TSONIC_CALLBACK"));
     assert!(error.to_string().contains("timer failed"));
 }
 

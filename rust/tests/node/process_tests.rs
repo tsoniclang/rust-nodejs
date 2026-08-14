@@ -30,8 +30,11 @@ fn process_env_and_exit_code_are_testable() {
     process::env_delete("QUOTED");
     std::fs::remove_file(env_file).unwrap();
 
-    process::set_exit_code(23);
+    process::set_exit_code(Some(23));
     assert_eq!(process::exit_code(), Some(23));
+    process::set_exit_code(None);
+    assert_eq!(process::exit_code(), None);
+    process::apply_exit_code();
 }
 
 #[test]
