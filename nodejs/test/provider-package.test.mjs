@@ -142,6 +142,20 @@ test("provider package maps process execPath to a fallible property row", () => 
   assert.equal(execPath.target.path, "node_process::exec_path");
 });
 
+test("provider package maps process argv through the fallible native snapshot", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const rows = contribution.definition.operations.filter((row) =>
+    row.exportId === "node:process::argv" || row.memberId === "node:process.default.argv");
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    assert.equal(row.operationKind, "property");
+    assert.equal(row.isFallible, true);
+    assert.equal(row.errorBoundary, "provider-native");
+    assert.equal(row.target.path, "node_process::argv");
+  }
+});
+
 test("provider package exposes exact process env absence and writable exit status", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});

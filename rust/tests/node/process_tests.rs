@@ -41,11 +41,31 @@ fn process_env_and_exit_code_are_testable() {
 fn process_platform_and_arch_use_node_spellings() {
     assert!(!process::platform().is_empty());
     assert!(!process::arch().is_empty());
-    assert!(process::exec_path().unwrap().contains('/'));
+    let exec_path = process::exec_path().unwrap();
+    assert!(exec_path.contains('/'));
+    let argv = process::argv().unwrap();
+    assert_eq!(argv.get(0).as_deref(), Some(exec_path.as_str()));
+    assert_eq!(argv.get(1).as_deref(), Some(exec_path.as_str()));
     assert!(!process::argv0().is_empty());
     assert!(process::exec_argv().is_empty());
     assert!(process::ppid() <= process::pid() || process::ppid() > 0);
     assert_eq!(process::release().name, "tsonic-rust");
+}
+
+#[test]
+fn process_argv_is_one_stable_mutable_node_array() {
+    let first = process::argv().unwrap();
+    let original_length = first.len();
+    first.push("tsonic-process-argv-proof".to_string());
+
+    let second = process::argv().unwrap();
+    assert!(first.ptr_eq(&second));
+    assert_eq!(second.len(), original_length + 1);
+    assert_eq!(
+        second.get(original_length).as_deref(),
+        Some("tsonic-process-argv-proof")
+    );
+    second.pop();
 }
 
 #[test]
