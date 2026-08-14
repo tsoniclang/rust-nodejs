@@ -125,7 +125,10 @@ fn buffer_common_mutation_search_and_predicates() {
 #[test]
 fn buffer_number_arrays_follow_uint8_coercion_and_sparse_zero_fill() {
     let values = JsArray::from_sparse(5, vec![(0, 257.0), (1, -1.0), (2, 1.9), (4, f64::NAN)]);
-    assert_eq!(Buffer::from_number_array(&values).as_bytes(), vec![1, 255, 1, 0, 0]);
+    assert_eq!(
+        Buffer::from_number_array(&values).as_bytes(),
+        vec![1, 255, 1, 0, 0]
+    );
 }
 
 #[test]

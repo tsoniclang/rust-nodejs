@@ -281,6 +281,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
       path: "tsonic_rust_node::run_event_loop",
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
+      errorBoundary: "source-program",
     },
     {
       id: "node-process-exit-code",
