@@ -191,6 +191,7 @@ test("provider package exposes exact filesystem and path contracts required by p
   assert.ok(path.exports.some((entry) => entry.id === "node:path::relative"));
   assert.ok(path.exports.some((entry) => entry.id === "node:path::sep" && entry.kind === "value"));
   assert.ok(fs.exports.some((entry) => entry.id === "node:fs::mkdtempSync"));
+  assert.ok(fs.exports.some((entry) => entry.id === "node:fs::symlinkSync"));
   const stats = fs.exports.find((entry) => entry.id === "node:fs::Stats");
   assert.ok(stats !== undefined && stats.kind === "class");
   assert.ok(stats.members.some((member) => member.id === "node:fs::Stats.isSymbolicLink"));
@@ -203,6 +204,13 @@ test("provider package exposes exact filesystem and path contracts required by p
     operations.filter((row) => row.exportId === "node:fs::writeFileSync").map((row) => row.signatureId),
     ["node:fs::writeFileSync(path,data,encoding)", "node:fs::writeFileSync(path,buffer)"],
   );
+  const symlink = operations.find((row) => row.exportId === "node:fs::symlinkSync");
+  assert.deepEqual(symlink?.target, {
+    form: "call",
+    path: "node_fs::symlink_sync",
+    argModes: ["ref", "ref"],
+  });
+  assert.equal(symlink?.isFallible, true);
 });
 
 test("provider package preserves fluent hash identity for string and buffer updates", () => {
@@ -219,6 +227,23 @@ test("provider package preserves fluent hash identity for string and buffer upda
     { kind: "target-named", id: "rust.node.Hash" },
   ]);
   assert.deepEqual(rows.map((row) => row.target.name), ["update_str_owned", "update_buffer_owned"]);
+});
+
+test("provider package maps Buffer.from overloads by exact selected signature", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const rows = contribution.definition.operations.filter((row) =>
+    row.memberId === "node:buffer::Buffer.from");
+  assert.deepEqual(rows.map((row) => row.signatureId), [
+    "node:buffer::Buffer.from(string)",
+    "node:buffer::Buffer.from(string,encoding)",
+    "node:buffer::Buffer.from(numberArray)",
+  ]);
+  assert.deepEqual(rows.map((row) => row.target.path), [
+    "node_buffer::Buffer::from_string",
+    "node_buffer::Buffer::from_string_enc",
+    "node_buffer::Buffer::from_number_array",
+  ]);
 });
 
 test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {

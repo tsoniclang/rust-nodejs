@@ -670,6 +670,7 @@ function fsModule(): RustProviderModuleDefinition {
       },
       fnExport(m, "mkdtempSync", [{ name: "prefix", type: stringType }], stringType),
       fnExport(m, "unlinkSync", [{ name: "path", type: stringType }], voidType),
+      fnExport(m, "symlinkSync", [{ name: "target", type: stringType }, { name: "path", type: stringType }], voidType),
       fnExport(m, "copyFileSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
       fnExport(m, "renameSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
       fnExport(m, "realpathSync", [{ name: "path", type: stringType }], stringType),
@@ -751,6 +752,7 @@ function fsRows(): readonly RustProviderOperationDefinition[] {
     },
     fallible("mkdtempSync", "node_fs::mkdtemp_sync", stringCarrier, [stringCarrier]),
     fallible("unlinkSync", "node_fs::unlink_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
+    fallible("symlinkSync", "node_fs::symlink_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("copyFileSync", "node_fs::copy_file_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("renameSync", "node_fs::rename_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("realpathSync", "node_fs::realpath_sync", stringCarrier, [stringCarrier]),
@@ -929,7 +931,29 @@ function bufferModule(): RustProviderModuleDefinition {
         name: "Buffer",
         kind: "class" as const,
         members: [
-          methodMember(bufferId, "from", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], providerRef(m, "Buffer"), { static: true }),
+          {
+            id: `${bufferId}.from`,
+            name: "from",
+            kind: "method" as const,
+            static: true,
+            signatures: [
+              {
+                id: `${bufferId}.from(string)`,
+                parameters: [{ name: "value", type: stringType }],
+                returnType: providerRef(m, "Buffer"),
+              },
+              {
+                id: `${bufferId}.from(string,encoding)`,
+                parameters: [{ name: "value", type: stringType }, { name: "encoding", type: stringType }],
+                returnType: providerRef(m, "Buffer"),
+              },
+              {
+                id: `${bufferId}.from(numberArray)`,
+                parameters: [{ name: "value", type: { kind: "array", elementType: numberType } }],
+                returnType: providerRef(m, "Buffer"),
+              },
+            ],
+          },
           methodMember(bufferId, "alloc", [{ name: "size", type: numberType }], providerRef(m, "Buffer"), { static: true }),
           methodMember(bufferId, "byteLength", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], numberType, { static: true }),
           methodMember(bufferId, "concat", [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }], providerRef(m, "Buffer"), { static: true }),
@@ -952,7 +976,9 @@ function bufferModule(): RustProviderModuleDefinition {
 function bufferRows(): readonly RustProviderOperationDefinition[] {
   const bufferId = "node:buffer::Buffer";
   return [
-    { exportId: bufferId, memberId: `${bufferId}.from`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(float64Carrier)] },
     { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier] },
     { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility, resultConversion: rustUsizeToInt32ValueConversion },
     { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },

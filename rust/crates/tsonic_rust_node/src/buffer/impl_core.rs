@@ -42,6 +42,15 @@ impl Buffer {
         Self::from_bytes(values.to_vec())
     }
 
+    pub fn from_number_array(values: &JsArray<f64>) -> Self {
+        let bytes = values
+            .values()
+            .into_iter()
+            .map(|value| value.map(to_uint8).unwrap_or(0))
+            .collect();
+        Self::from_bytes(bytes)
+    }
+
     pub fn copy_bytes_from(view: &[u8], offset: usize, length: Option<usize>) -> NodeResult<Self> {
         if offset > view.len() {
             return Err(NodeError::new(
@@ -393,4 +402,11 @@ impl Buffer {
         self.write_exact(offset, &bytes[..count])?;
         Ok(count)
     }
+}
+
+fn to_uint8(value: f64) -> u8 {
+    if !value.is_finite() || value == 0.0 {
+        return 0;
+    }
+    value.trunc().rem_euclid(256.0) as u8
 }
