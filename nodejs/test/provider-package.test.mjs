@@ -204,6 +204,12 @@ test("provider package exposes exact filesystem and path contracts required by p
   assert.ok(fs !== undefined);
   assert.ok(path.exports.some((entry) => entry.id === "node:path::relative"));
   assert.ok(path.exports.some((entry) => entry.id === "node:path::sep" && entry.kind === "value"));
+  const separator = operations.find((row) => row.exportId === "node:path::sep");
+  assert.deepEqual(separator?.resultConversion, {
+    kind: "semantic-conversion",
+    id: "owned-string-from-borrowed-str",
+  });
+  assert.deepEqual(separator?.target, { form: "call", path: "node_path::sep" });
   assert.ok(fs.exports.some((entry) => entry.id === "node:fs::mkdtempSync"));
   assert.ok(fs.exports.some((entry) => entry.id === "node:fs::symlinkSync"));
   const stats = fs.exports.find((entry) => entry.id === "node:fs::Stats");
