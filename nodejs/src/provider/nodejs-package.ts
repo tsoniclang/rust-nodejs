@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createRustProviderPackage,
+  rustBorrowedStrToStringValueConversion,
   rustCallableTargetType,
   rustInt32ToUint8ValueConversion,
   rustInt32ToUsizeValueConversion,
@@ -52,7 +53,6 @@ const httpRequestCallbackCarrier = rustCallableTargetType(
 );
 const trueArgument = { kind: "boolean", value: true } as const;
 const noneArgument = { kind: "none" } as const;
-const toStringStep = { kind: "method", name: "to_string" } as const;
 const providerNativeFallibility = {
   isFallible: true,
   errorBoundary: "provider-native",
@@ -537,8 +537,9 @@ function pathRows(): readonly RustProviderOperationDefinition[] {
     {
       exportId: "node:path::sep",
       operationKind: "property",
-      target: { form: "call", path: "node_path::sep", chain: [toStringStep] },
+      target: { form: "call", path: "node_path::sep" },
       resultCarrier: stringCarrier,
+      resultConversion: rustBorrowedStrToStringValueConversion,
     },
     {
       exportId: "node:path::basename",
@@ -578,7 +579,7 @@ function osRows(): readonly RustProviderOperationDefinition[] {
   return [
     call("platform", "node_os::platform"),
     call("arch", "node_os::arch"),
-    { exportId: "node:os::eol", operationKind: "method", target: { form: "call", path: "node_os::eol", chain: [toStringStep] }, resultCarrier: stringCarrier },
+    { exportId: "node:os::eol", operationKind: "method", target: { form: "call", path: "node_os::eol" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion },
     call("hostname", "node_os::hostname"),
     {
       exportId: "node:os::tmpdir",
@@ -1206,9 +1207,9 @@ function utilRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::stripVTControlCharacters`, operationKind: "method", target: { form: "call", path: "node_util::strip_vt_control_characters", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::toUSVString`, operationKind: "method", target: { form: "call", path: "node_util::to_usv_string", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier] },
     { exportId: `${m}::styleText`, operationKind: "method", target: { form: "call", path: "node_util::style_text", argModes: ["ref", "ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, stringCarrier] },
-    { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [jsValueCarrier] },
-    { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message", chain: [toStringStep] }, resultCarrier: stringCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::format`, operationKind: "method", target: { form: "call-value-slice", path: "node_util::format", leadingArguments: [{ carrier: stringCarrier, mode: "ref" }], elementCarrier: jsValueCarrier }, resultCarrier: stringCarrier },
   ];
 }
