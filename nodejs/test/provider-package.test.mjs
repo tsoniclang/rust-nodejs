@@ -46,6 +46,7 @@ test("provider type relations carry exact closed target carriers", () => {
   assert.deepEqual(contribution.definition.types, [
     ["node:fs::Stats", "rust.node.Stats"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
+    ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
     ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
@@ -194,6 +195,83 @@ test("provider package exposes exact process env absence and writable exit statu
     ["property", "node_process::exit_code"],
     ["property-set", "node_process::set_exit_code"],
   ]);
+});
+
+test("provider package closes process identity, timing, and memory contracts", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const processModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:process");
+  assert.ok(processModule !== undefined);
+
+  for (const name of [
+    "availableMemory", "chdir", "constrainedMemory", "hrtime", "memoryUsage", "uptime", "argv0", "version",
+  ]) {
+    assert.ok(processModule.exports.some((entry) => entry.name === name), `missing process export '${name}'`);
+  }
+  const memoryUsage = processModule.exports.find((entry) => entry.id === "node:process::MemoryUsage");
+  assert.ok(memoryUsage !== undefined && memoryUsage.kind === "class");
+  assert.deepEqual(memoryUsage.members.map((member) => member.name), [
+    "rss", "heapTotal", "heapUsed", "external", "arrayBuffers",
+  ]);
+
+  const rows = contribution.definition.operations;
+  assert.deepEqual(
+    rows.filter((row) => row.exportId === "node:process::hrtime").map((row) => [row.signatureId, row.target.path]),
+    [
+      ["node:process::hrtime()", "node_process::hrtime_open_number"],
+      ["node:process::hrtime(previous)", "node_process::hrtime_since_number"],
+    ],
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.memberId === "node:process.default.hrtime").map((row) => [row.signatureId, row.target.path]),
+    [
+      ["node:process.default.hrtime()", "node_process::hrtime_open_number"],
+      ["node:process.default.hrtime(previous)", "node_process::hrtime_since_number"],
+    ],
+  );
+
+  const namedMethods = ["availableMemory", "chdir", "constrainedMemory", "memoryUsage", "uptime"];
+  for (const name of namedMethods) {
+    const named = rows.find((row) => row.exportId === `node:process::${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    assert.ok(named !== undefined, `missing named process row '${name}'`);
+    assert.ok(defaultMember !== undefined, `missing default process row '${name}'`);
+    assert.deepEqual(defaultMember.target, named.target);
+    assert.deepEqual(defaultMember.resultCarrier, named.resultCarrier);
+  }
+  for (const name of ["argv0", "version"]) {
+    const named = rows.find((row) => row.exportId === `node:process::${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    assert.ok(named !== undefined, `missing named process property '${name}'`);
+    assert.ok(defaultMember !== undefined, `missing default process property '${name}'`);
+    assert.deepEqual(defaultMember.target, named.target);
+  }
+
+  const fieldNames = new Map([
+    ["rss", "rss"],
+    ["heapTotal", "heap_total"],
+    ["heapUsed", "heap_used"],
+    ["external", "external"],
+    ["arrayBuffers", "array_buffers"],
+  ]);
+  for (const [sourceName, targetName] of fieldNames) {
+    const row = rows.find((candidate) =>
+      candidate.memberId === `node:process::MemoryUsage.${sourceName}`);
+    assert.deepEqual(row?.target, { form: "field", name: targetName });
+    assert.deepEqual(row?.resultConversion, {
+      kind: "semantic-conversion",
+      id: "js-number-from-u64",
+    });
+  }
+  assert.equal(
+    contribution.definition.carrierPaths["rust.node.MemoryUsage"],
+    "tsonic_rust_node::process::MemoryUsage",
+  );
+  assert.deepEqual(
+    contribution.definition.carrierTraits["rust.node.MemoryUsage"],
+    contribution.definition.carrierTraits["rust.node.Buffer"],
+  );
 });
 
 test("provider package exposes exact filesystem and path contracts required by portable applications", () => {

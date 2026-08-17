@@ -130,6 +130,22 @@ fn process_runtime_queries_have_stable_shapes() {
 }
 
 #[test]
+fn process_source_hrtime_uses_dense_number_pairs_and_rejects_invalid_pairs() {
+    let first = process::hrtime_open_number();
+    assert_eq!(first.len(), 2);
+    assert!(first.values().into_iter().all(|value| value.is_some()));
+
+    let elapsed = process::hrtime_since_number(&first).unwrap();
+    assert_eq!(elapsed.len(), 2);
+    let elapsed_values = elapsed.values();
+    assert!(elapsed_values[0].unwrap() >= 0.0);
+    assert!((0.0..1_000_000_000.0).contains(&elapsed_values[1].unwrap()));
+
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::from_dense(vec![0.0])).is_err());
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_length(2)).is_err());
+}
+
+#[test]
 fn process_metadata_warnings_and_feature_shapes_are_closed() {
     process::set_title("tsonic-test");
     assert_eq!(process::title(), "tsonic-test");

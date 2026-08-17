@@ -31,8 +31,10 @@ const int32Carrier = rustSourcePrimitiveTargetType("int32");
 const float64Carrier = rustSourcePrimitiveTargetType("float64");
 const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
 const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
+const numberArrayCarrier = rustJsArrayTargetType(float64Carrier);
 const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
+const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
 const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
 const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
@@ -66,6 +68,7 @@ const booleanType = { kind: "boolean" } as const;
 const voidType = { kind: "void" } as const;
 const int32Type = { kind: "source-primitive", name: "int32" } as const;
 const stringArrayType = { kind: "array", elementType: stringType } as const;
+const numberArrayType = { kind: "array", elementType: numberType } as const;
 
 const nullType = { kind: "literal", value: null } as const;
 const undefinedType = { kind: "undefined" } as const;
@@ -77,6 +80,7 @@ type ProviderTypeExpr =
   | typeof voidType
   | typeof int32Type
   | typeof stringArrayType
+  | typeof numberArrayType
   | typeof undefinedType
   | { readonly kind: "provider-ref"; readonly moduleSpecifier: string; readonly exportName: string }
   | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
@@ -828,6 +832,7 @@ function fsPromisesRows(): readonly RustProviderOperationDefinition[] {
 function processModule(): RustProviderModuleDefinition {
   const m = "node:process";
   const envId = "node:process::ProcessEnv";
+  const memoryUsageId = "node:process::MemoryUsage";
   const defaultId = "node:process.default";
   const valueExport = (name: string, type: ProviderTypeExpr, documentation?: string) => ({
     id: `${m}::${name}`,
@@ -840,7 +845,25 @@ function processModule(): RustProviderModuleDefinition {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.process",
     exports: [
+      fnExport(m, "availableMemory", [], numberType),
+      fnExport(m, "chdir", [{ name: "directory", type: stringType }], voidType),
+      fnExport(m, "constrainedMemory", [], numberType),
       fnExport(m, "cwd", [], stringType),
+      {
+        id: `${m}::hrtime`,
+        name: "hrtime",
+        kind: "function",
+        signatures: [
+          { id: `${m}::hrtime()`, parameters: [], returnType: numberArrayType },
+          {
+            id: `${m}::hrtime(previous)`,
+            parameters: [{ name: "previous", type: numberArrayType }],
+            returnType: numberArrayType,
+          },
+        ],
+      },
+      fnExport(m, "memoryUsage", [], providerRef(m, "MemoryUsage")),
+      fnExport(m, "uptime", [], numberType),
       {
         id: envId,
         name: "ProcessEnv",
@@ -856,14 +879,28 @@ function processModule(): RustProviderModuleDefinition {
           }],
         }],
       },
+      {
+        id: memoryUsageId,
+        name: "MemoryUsage",
+        kind: "class",
+        members: [
+          propertyMember(memoryUsageId, "rss", numberType),
+          propertyMember(memoryUsageId, "heapTotal", numberType),
+          propertyMember(memoryUsageId, "heapUsed", numberType),
+          propertyMember(memoryUsageId, "external", numberType),
+          propertyMember(memoryUsageId, "arrayBuffers", numberType),
+        ],
+      },
       valueExport("env", providerRef(m, "ProcessEnv")),
       valueExport("platform", stringType),
       valueExport("arch", stringType),
       valueExport("argv", stringArrayType),
+      valueExport("argv0", stringType),
       valueExport("pid", numberType),
       valueExport("ppid", numberType),
       valueExport("execPath", stringType),
       valueExport("exitCode", { kind: "union", types: [numberType, nullType] }),
+      valueExport("version", stringType),
       fnExport(m, "exit", [{ name: "code", type: numberType }], voidType),
       {
         id: defaultId,
@@ -871,14 +908,35 @@ function processModule(): RustProviderModuleDefinition {
         exportKind: "default",
         kind: "class",
         members: [
+          methodMember(defaultId, "availableMemory", [], numberType, { static: true }),
+          methodMember(defaultId, "chdir", [{ name: "directory", type: stringType }], voidType, { static: true }),
+          methodMember(defaultId, "constrainedMemory", [], numberType, { static: true }),
           methodMember(defaultId, "cwd", [], stringType, { static: true }),
+          {
+            id: `${defaultId}.hrtime`,
+            name: "hrtime",
+            kind: "method",
+            static: true,
+            signatures: [
+              { id: `${defaultId}.hrtime()`, parameters: [], returnType: numberArrayType },
+              {
+                id: `${defaultId}.hrtime(previous)`,
+                parameters: [{ name: "previous", type: numberArrayType }],
+                returnType: numberArrayType,
+              },
+            ],
+          },
+          methodMember(defaultId, "memoryUsage", [], providerRef(m, "MemoryUsage"), { static: true }),
+          methodMember(defaultId, "uptime", [], numberType, { static: true }),
           propertyMember(defaultId, "env", providerRef(m, "ProcessEnv"), { static: true }),
           propertyMember(defaultId, "platform", stringType, { static: true }),
           propertyMember(defaultId, "arch", stringType, { static: true }),
           propertyMember(defaultId, "argv", stringArrayType, { static: true }),
+          propertyMember(defaultId, "argv0", stringType, { static: true }),
           propertyMember(defaultId, "pid", numberType, { static: true }),
           propertyMember(defaultId, "ppid", numberType, { static: true }),
           propertyMember(defaultId, "execPath", stringType, { static: true }),
+          propertyMember(defaultId, "version", stringType, { static: true }),
           propertyMember(defaultId, "exitCode", { kind: "union", types: [numberType, nullType] }, {
             readonly: false,
             static: true,
@@ -893,29 +951,53 @@ function processModule(): RustProviderModuleDefinition {
 function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
   const defaultId = "node:process.default";
+  const memoryUsageId = `${m}::MemoryUsage`;
   return [
+    { exportId: `${m}::availableMemory`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: `${m}::chdir`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: `${m}::constrainedMemory`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: `${m}::cwd`, operationKind: "method", target: { form: "call", path: "node_process::cwd" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
+    { exportId: `${m}::hrtime`, signatureId: `${m}::hrtime()`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_open_number" }, resultCarrier: numberArrayCarrier },
+    { exportId: `${m}::hrtime`, signatureId: `${m}::hrtime(previous)`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_since_number", argModes: ["ref"] }, resultCarrier: numberArrayCarrier, parameterCarriers: [numberArrayCarrier], ...providerNativeFallibility },
+    { exportId: `${m}::memoryUsage`, operationKind: "method", target: { form: "call", path: "node_process::memory_usage" }, resultCarrier: processMemoryUsageCarrier },
+    { exportId: `${m}::uptime`, operationKind: "method", target: { form: "call", path: "node_process::uptime" }, resultCarrier: float64Carrier },
     { exportId: `${m}::platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
     { exportId: `${m}::arch`, operationKind: "property", target: { form: "call", path: "node_process::arch" }, resultCarrier: stringCarrier },
     { exportId: `${m}::argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringArrayCarrier, ...providerNativeFallibility },
+    { exportId: `${m}::argv0`, operationKind: "property", target: { form: "call", path: "node_process::argv0" }, resultCarrier: stringCarrier },
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: `${m}::exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: `${m}::exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
+    { exportId: `${m}::version`, operationKind: "property", target: { form: "call", path: "node_process::version" }, resultCarrier: stringCarrier },
     { exportId: `${m}::ProcessEnv`, memberId: `${m}::ProcessEnv.indexer`, operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.rss`, operationKind: "property", target: { form: "field", name: "rss" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapTotal`, operationKind: "property", target: { form: "field", name: "heap_total" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapUsed`, operationKind: "property", target: { form: "field", name: "heap_used" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.external`, operationKind: "property", target: { form: "field", name: "external" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.arrayBuffers`, operationKind: "property", target: { form: "field", name: "array_buffers" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
+    { exportId: defaultId, memberId: `${defaultId}.availableMemory`, signatureId: `${defaultId}.availableMemory()`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: defaultId, memberId: `${defaultId}.chdir`, signatureId: `${defaultId}.chdir(directory)`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.constrainedMemory`, signatureId: `${defaultId}.constrainedMemory()`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.cwd`, signatureId: `${defaultId}.cwd()`, operationKind: "method", target: { form: "call", path: "node_process::cwd" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.hrtime`, signatureId: `${defaultId}.hrtime()`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_open_number" }, resultCarrier: numberArrayCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.hrtime`, signatureId: `${defaultId}.hrtime(previous)`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_since_number", argModes: ["ref"] }, resultCarrier: numberArrayCarrier, parameterCarriers: [numberArrayCarrier], ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.memoryUsage`, signatureId: `${defaultId}.memoryUsage()`, operationKind: "method", target: { form: "call", path: "node_process::memory_usage" }, resultCarrier: processMemoryUsageCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.uptime`, signatureId: `${defaultId}.uptime()`, operationKind: "method", target: { form: "call", path: "node_process::uptime" }, resultCarrier: float64Carrier },
     { exportId: defaultId, memberId: `${defaultId}.platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.arch`, operationKind: "property", target: { form: "call", path: "node_process::arch" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringArrayCarrier, ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.argv0`, operationKind: "property", target: { form: "call", path: "node_process::argv0" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
     { exportId: defaultId, memberId: `${defaultId}.execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
+    { exportId: defaultId, memberId: `${defaultId}.version`, operationKind: "property", target: { form: "call", path: "node_process::version" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.exit`, signatureId: `${defaultId}.exit(code)`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: unitCarrier, parameterCarriers: [int32Carrier] },
   ];
 }
@@ -1428,6 +1510,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     types: [
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
       { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
+      { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
       { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
       { exportId: "node:url::URL", targetCarrier: urlCarrier },
       { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
@@ -1476,6 +1559,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
+      "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
@@ -1489,6 +1573,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
       "rust.node.Hash": cloneOnlyCarrierTraits,
       "rust.node.Hmac": cloneOnlyCarrierTraits,
+      "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
