@@ -35,6 +35,7 @@ const numberArrayCarrier = rustJsArrayTargetType(float64Carrier);
 const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
 const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
+const processWriteStreamCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessWriteStream" };
 const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
 const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
@@ -854,6 +855,7 @@ function processModule(): RustProviderModuleDefinition {
   const m = "node:process";
   const envId = "node:process::ProcessEnv";
   const memoryUsageId = "node:process::MemoryUsage";
+  const writeStreamId = "node:process::ProcessWriteStream";
   const defaultId = "node:process.default";
   const valueExport = (name: string, type: ProviderTypeExpr, documentation?: string) => ({
     id: `${m}::${name}`,
@@ -865,6 +867,10 @@ function processModule(): RustProviderModuleDefinition {
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.process",
+    imports: [{
+      moduleSpecifier: "node:buffer",
+      namedImports: [{ exportedName: "Buffer" }],
+    }],
     exports: [
       fnExport(m, "availableMemory", [], numberType),
       fnExport(m, "chdir", [{ name: "directory", type: stringType }], voidType),
@@ -912,7 +918,35 @@ function processModule(): RustProviderModuleDefinition {
           propertyMember(memoryUsageId, "arrayBuffers", numberType),
         ],
       },
+      {
+        id: writeStreamId,
+        name: "ProcessWriteStream",
+        kind: "class",
+        members: [
+          {
+            id: `${writeStreamId}.write`,
+            name: "write",
+            kind: "method",
+            signatures: [
+              {
+                id: `${writeStreamId}.write(string)`,
+                parameters: [{ name: "chunk", type: stringType }],
+                returnType: booleanType,
+              },
+              {
+                id: `${writeStreamId}.write(buffer)`,
+                parameters: [{ name: "chunk", type: providerRef("node:buffer", "Buffer") }],
+                returnType: booleanType,
+              },
+            ],
+          },
+          propertyMember(writeStreamId, "isTTY", booleanType),
+          propertyMember(writeStreamId, "fd", numberType),
+        ],
+      },
       valueExport("env", providerRef(m, "ProcessEnv")),
+      valueExport("stdout", providerRef(m, "ProcessWriteStream")),
+      valueExport("stderr", providerRef(m, "ProcessWriteStream")),
       valueExport("platform", stringType),
       valueExport("arch", stringType),
       valueExport("argv", stringArrayType),
@@ -950,6 +984,8 @@ function processModule(): RustProviderModuleDefinition {
           methodMember(defaultId, "memoryUsage", [], providerRef(m, "MemoryUsage"), { static: true }),
           methodMember(defaultId, "uptime", [], numberType, { static: true }),
           propertyMember(defaultId, "env", providerRef(m, "ProcessEnv"), { static: true }),
+          propertyMember(defaultId, "stdout", providerRef(m, "ProcessWriteStream"), { static: true }),
+          propertyMember(defaultId, "stderr", providerRef(m, "ProcessWriteStream"), { static: true }),
           propertyMember(defaultId, "platform", stringType, { static: true }),
           propertyMember(defaultId, "arch", stringType, { static: true }),
           propertyMember(defaultId, "argv", stringArrayType, { static: true }),
@@ -973,6 +1009,7 @@ function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
   const defaultId = "node:process.default";
   const memoryUsageId = `${m}::MemoryUsage`;
+  const writeStreamId = `${m}::ProcessWriteStream`;
   return [
     { exportId: `${m}::availableMemory`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: `${m}::chdir`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
@@ -989,6 +1026,8 @@ function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
+    { exportId: `${m}::stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: processWriteStreamCarrier },
+    { exportId: `${m}::stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: processWriteStreamCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: `${m}::exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: `${m}::exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
@@ -999,6 +1038,10 @@ function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapUsed`, operationKind: "property", target: { form: "field", name: "heap_used" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.external`, operationKind: "property", target: { form: "field", name: "external" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.arrayBuffers`, operationKind: "property", target: { form: "field", name: "array_buffers" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.isTTY`, operationKind: "property", target: { form: "receiver-method", name: "is_tty" }, resultCarrier: boolCarrier },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.fd`, operationKind: "property", target: { form: "receiver-method", name: "fd" }, resultCarrier: int32Carrier },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
     { exportId: defaultId, memberId: `${defaultId}.availableMemory`, signatureId: `${defaultId}.availableMemory()`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.chdir`, signatureId: `${defaultId}.chdir(directory)`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
@@ -1015,6 +1058,8 @@ function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: defaultId, memberId: `${defaultId}.pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: processWriteStreamCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: processWriteStreamCarrier },
     { exportId: defaultId, memberId: `${defaultId}.execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
@@ -1548,6 +1593,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
       { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
       { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
+      { exportId: "node:process::ProcessWriteStream", targetCarrier: processWriteStreamCarrier },
       { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
       { exportId: "node:url::URL", targetCarrier: urlCarrier },
       { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
@@ -1597,6 +1643,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
       "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
+      "rust.node.ProcessWriteStream": "tsonic_rust_node::process::ProcessWriteStream",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
@@ -1611,6 +1658,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Hash": cloneOnlyCarrierTraits,
       "rust.node.Hmac": cloneOnlyCarrierTraits,
       "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
+      "rust.node.ProcessWriteStream": cloneOnlyCarrierTraits,
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,

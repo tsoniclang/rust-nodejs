@@ -115,12 +115,12 @@ pub fn finalization_unregister() {
         .ok();
 }
 
-pub fn stdout() -> Writable {
-    Writable::new()
+pub fn stdout() -> ProcessWriteStream {
+    ProcessWriteStream::stdout()
 }
 
-pub fn stderr() -> Writable {
-    Writable::new()
+pub fn stderr() -> ProcessWriteStream {
+    ProcessWriteStream::stderr()
 }
 
 pub fn stdin_is_tty() -> bool {

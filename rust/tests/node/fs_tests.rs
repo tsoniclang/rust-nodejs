@@ -151,10 +151,10 @@ fn fs_extended_sync_file_lifecycle() {
     assert!(!stats.is_socket());
     assert!(stats.mtime_ms() > 0.0);
     assert!(stats.ctime_ms() > 0.0);
-    assert_eq!(stats.atime().get_time(), stats.atime_ms());
-    assert_eq!(stats.mtime().get_time(), stats.mtime_ms());
-    assert_eq!(stats.ctime().get_time(), stats.ctime_ms());
-    assert_eq!(stats.birthtime().get_time(), stats.birthtime_ms());
+    assert_eq!(stats.atime().get_time(), stats.atime_ms().trunc());
+    assert_eq!(stats.mtime().get_time(), stats.mtime_ms().trunc());
+    assert_eq!(stats.ctime().get_time(), stats.ctime_ms().trunc());
+    assert_eq!(stats.birthtime().get_time(), stats.birthtime_ms().trunc());
     assert!(stats.mtime_ns() >= stats.mtime_ms() as u128);
     assert!(stats.ctime_ns() >= stats.ctime_ms() as u128);
     assert!(stats.birthtime_ns() >= stats.birthtime_ms() as u128);

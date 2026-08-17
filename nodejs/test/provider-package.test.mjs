@@ -85,6 +85,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:fs::Stats", "rust.node.Stats"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
+    ["node:process::ProcessWriteStream", "rust.node.ProcessWriteStream"],
     ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
@@ -309,6 +310,52 @@ test("provider package closes process identity, timing, and memory contracts", (
   assert.deepEqual(
     contribution.definition.carrierTraits["rust.node.MemoryUsage"],
     contribution.definition.carrierTraits["rust.node.Buffer"],
+  );
+});
+
+test("provider package closes process stdout and stderr output contracts", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const processModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:process");
+  assert.ok(processModule !== undefined);
+  assert.deepEqual(processModule.imports, [{
+    moduleSpecifier: "node:buffer",
+    namedImports: [{ exportedName: "Buffer" }],
+  }]);
+  const stream = processModule.exports.find((entry) =>
+    entry.id === "node:process::ProcessWriteStream");
+  assert.ok(stream !== undefined && stream.kind === "class");
+  assert.deepEqual(stream.members.map((member) => member.name), ["write", "isTTY", "fd"]);
+  assert.deepEqual(stream.members[0].signatures.map((signature) => signature.id), [
+    "node:process::ProcessWriteStream.write(string)",
+    "node:process::ProcessWriteStream.write(buffer)",
+  ]);
+  for (const name of ["stdout", "stderr"]) {
+    const named = processModule.exports.find((entry) => entry.id === `node:process::${name}`);
+    assert.deepEqual(named?.type, {
+      kind: "provider-ref",
+      moduleSpecifier: "node:process",
+      exportName: "ProcessWriteStream",
+    });
+    const namedRow = contribution.definition.operations.find((row) =>
+      row.exportId === `node:process::${name}` && row.memberId === undefined);
+    const defaultRow = contribution.definition.operations.find((row) =>
+      row.memberId === `node:process.default.${name}`);
+    assert.equal(namedRow?.target.path, `node_process::${name}`);
+    assert.deepEqual(defaultRow?.target, namedRow?.target);
+    assert.deepEqual(defaultRow?.resultCarrier, namedRow?.resultCarrier);
+  }
+  const writeRows = contribution.definition.operations.filter((row) =>
+    row.memberId === "node:process::ProcessWriteStream.write");
+  assert.deepEqual(writeRows.map((row) => [row.signatureId, row.target.name]), [
+    ["node:process::ProcessWriteStream.write(string)", "write_string"],
+    ["node:process::ProcessWriteStream.write(buffer)", "write_buffer"],
+  ]);
+  assert.equal(writeRows.every((row) => row.isFallible === true), true);
+  assert.equal(
+    contribution.definition.carrierPaths["rust.node.ProcessWriteStream"],
+    "tsonic_rust_node::process::ProcessWriteStream",
   );
 });
 

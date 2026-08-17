@@ -4510,8 +4510,8 @@ NODE-PROCESS-ACTIVE-RESOURCES	process	getActiveResourcesInfo	implemented	N15	tso
 NODE-PROCESS-ALLOWED-FLAGS	process	allowedNodeEnvironmentFlags	implemented	N15	tsonic_rust_node::process::allowed_node_environment_flags	NODE-PROC-METADATA-001	closed environment flag metadata
 NODE-PROCESS-LOAD-ENV-FILE	process	loadEnvFile	implemented	N49	tsonic_rust_node::process::load_env_file	NODE-PROC-013	deterministic .env loader for key=value lines; no shell expansion
 NODE-PROCESS-UMASK	process	umask	implemented	N49	tsonic_rust_node::process::umask	NODE-PROC-013	platform umask get/set on Unix; zero fallback elsewhere
-NODE-PROCESS-STDOUT	process	stdout	implemented	N62	tsonic_rust_node::process::stdout	NODE-PROC-IO-001	closed Writable stdout carrier
-NODE-PROCESS-STDERR	process	stderr	implemented	N62	tsonic_rust_node::process::stderr	NODE-PROC-IO-001	closed Writable stderr carrier
+NODE-PROCESS-STDOUT	process	stdout	implemented	N62	tsonic_rust_node::process::{stdout,ProcessWriteStream}	NODE-PROC-IO-001	sink-backed stdout carrier with exact string/Buffer writes, fd, and TTY state
+NODE-PROCESS-STDERR	process	stderr	implemented	N62	tsonic_rust_node::process::{stderr,ProcessWriteStream}	NODE-PROC-IO-001	sink-backed stderr carrier with exact string/Buffer writes, fd, and TTY state
 NODE-PROCESS-STDIN-ISTTY	process	stdin isTTY	implemented	N62	tsonic_rust_node::process::stdin_is_tty	NODE-PROC-IO-001	closed stdin TTY probe
 NODE-PROCESS-EVENTS-CARRIER	process	ProcessEvents	implemented	N62	tsonic_rust_node::process::ProcessEvents	NODE-PROC-EVENTS-001	process lifecycle events use closed EventEmitter carrier
 NODE-PROCESS-EVENTS-ON	process	ProcessEvents.on	implemented	N62	tsonic_rust_node::process::ProcessEvents::on	NODE-PROC-EVENTS-001	process event listener registration
