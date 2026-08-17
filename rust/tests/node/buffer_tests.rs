@@ -372,3 +372,50 @@ fn buffer_btoa_and_atob_round_trip_latin1_and_base64() {
     let atob_error = tsonic_rust_node::buffer::atob("YQ==YQ").unwrap_err();
     assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
 }
+
+#[test]
+fn buffer_source_abi_preserves_views_mutation_and_numeric_results() {
+    let source = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    let mut target = Buffer::alloc(6);
+    let copied =
+        tsonic_rust_node::buffer::copy_closed_number(&source, &mut target, 1.0, 0.0, 4.0).unwrap();
+    assert_eq!(copied, 4.0);
+    assert_eq!(target.as_bytes(), vec![0, 1, 2, 3, 4, 0]);
+
+    let mut view = tsonic_rust_node::buffer::slice_closed_number(&target, 1.0, 5.0);
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint8_number(&mut view, 9.0, 0.0).unwrap(),
+        1.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint8_number(&target, 1.0).unwrap(),
+        9.0
+    );
+
+    let mut numeric = Buffer::alloc(16);
+    let next_offset =
+        tsonic_rust_node::buffer::write_uint16_le_number(&mut numeric, 4660.9, 0.0).unwrap();
+    assert_eq!(next_offset, 2.0);
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint16_le_number(&numeric, 0.0).unwrap(),
+        4660.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_double_be_number(&mut numeric, -2.5, 8.0).unwrap(),
+        16.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_double_be_number(&numeric, 8.0).unwrap(),
+        -2.5
+    );
+    assert!(tsonic_rust_node::buffer::read_uint8_number(&numeric, 0.5).is_err());
+
+    let mut swapped = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    let mut alias = swapped.swap16().unwrap();
+    alias.set(0, 8).unwrap();
+    assert_eq!(swapped.as_bytes(), vec![8, 1, 4, 3]);
+
+    let self_target = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    assert_eq!(self_target.copy(&self_target, 1, 0, Some(3)).unwrap(), 3);
+    assert_eq!(self_target.as_bytes(), vec![1, 1, 2, 3]);
+}

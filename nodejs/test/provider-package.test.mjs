@@ -61,8 +61,10 @@ test("provider type relations carry exact closed target carriers", () => {
     targetCarrier: { kind: "target-named", id },
   })));
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
-    clone: "always",
-    copy: "never",
+    implementations: [{
+      traitPath: "core::clone::Clone",
+      requirements: [],
+    }],
   });
   assert.equal(
     Object.keys(contribution.definition.carrierTraits).every((id) =>
@@ -264,6 +266,64 @@ test("provider package maps Buffer.from overloads by exact selected signature", 
     "node_buffer::Buffer::from_string_enc",
     "node_buffer::Buffer::from_number_array",
   ]);
+});
+
+test("provider package closes Buffer views, copies, swaps, and numeric operations", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const bufferModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:buffer");
+  const buffer = bufferModule?.exports.find((entry) => entry.id === "node:buffer::Buffer");
+  assert.ok(buffer !== undefined && buffer.kind === "class");
+
+  const copy = buffer.members.find((member) => member.id === "node:buffer::Buffer.copy");
+  assert.deepEqual(copy.signatures.map((signature) => signature.id), [
+    "node:buffer::Buffer.copy(target)",
+    "node:buffer::Buffer.copy(target,targetStart)",
+    "node:buffer::Buffer.copy(target,targetStart,sourceStart)",
+    "node:buffer::Buffer.copy(target,targetStart,sourceStart,sourceEnd)",
+  ]);
+
+  for (const name of ["slice", "subarray"]) {
+    const member = buffer.members.find((candidate) => candidate.name === name);
+    assert.deepEqual(member.signatures.map((signature) => signature.id), [
+      `node:buffer::Buffer.${name}()`,
+      `node:buffer::Buffer.${name}(start)`,
+      `node:buffer::Buffer.${name}(start,end)`,
+    ]);
+  }
+
+  const numericNames = [
+    "readUInt8", "readInt8", "readUInt16LE", "readUInt16BE", "readInt16LE", "readInt16BE",
+    "readUInt32LE", "readUInt32BE", "readInt32LE", "readInt32BE", "readFloatLE", "readFloatBE",
+    "readDoubleLE", "readDoubleBE", "writeUInt8", "writeInt8", "writeUInt16LE", "writeUInt16BE",
+    "writeInt16LE", "writeInt16BE", "writeUInt32LE", "writeUInt32BE", "writeInt32LE", "writeInt32BE",
+    "writeFloatLE", "writeFloatBE", "writeDoubleLE", "writeDoubleBE",
+  ];
+  for (const name of numericNames) {
+    const member = buffer.members.find((candidate) => candidate.name === name);
+    assert.equal(member.signatures.length, 2, `${name} must expose default and explicit offsets`);
+  }
+
+  const rows = contribution.definition.operations;
+  assert.equal(rows.filter((row) => numericNames.some((name) =>
+    row.memberId === `node:buffer::Buffer.${name}`)).length, numericNames.length * 2);
+  const writeUInt8 = rows.filter((row) => row.memberId === "node:buffer::Buffer.writeUInt8");
+  assert.deepEqual(writeUInt8.map((row) => row.resultCarrier), [
+    { kind: "source-primitive", name: "float64" },
+    { kind: "source-primitive", name: "float64" },
+  ]);
+  assert.deepEqual(writeUInt8.map((row) => row.target.receiverMode), ["mut-ref", "mut-ref"]);
+  assert.deepEqual(writeUInt8[0].target.trailingArguments, [{ kind: "float64", value: 0 }]);
+
+  const copyRows = rows.filter((row) => row.memberId === "node:buffer::Buffer.copy");
+  assert.equal(copyRows.length, 4);
+  assert.equal(copyRows[0].target.argModes[0], "ref");
+  for (const name of ["swap16", "swap32", "swap64"]) {
+    const row = rows.find((candidate) => candidate.memberId === `node:buffer::Buffer.${name}`);
+    assert.deepEqual(row.target, { form: "receiver-method", name, mutatesReceiver: true });
+    assert.equal(row.isFallible, true);
+  }
 });
 
 test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {

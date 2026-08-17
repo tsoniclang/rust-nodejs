@@ -159,7 +159,7 @@ impl Buffer {
 
     pub fn copy(
         &self,
-        target: &mut Buffer,
+        target: &Buffer,
         target_start: usize,
         source_start: usize,
         source_end: Option<usize>,

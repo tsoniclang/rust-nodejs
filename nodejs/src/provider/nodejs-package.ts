@@ -4,7 +4,6 @@ import {
   createRustProviderPackage,
   rustBorrowedStrToStringValueConversion,
   rustCallableTargetType,
-  rustInt32ToUint8ValueConversion,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
   rustOptionTargetType,
@@ -12,7 +11,6 @@ import {
   rustStringTargetType,
   rustUint32ToInt32ValueConversion,
   rustUint64ToFloat64ValueConversion,
-  rustUint8ToInt32ValueConversion,
   rustUsizeToInt32ValueConversion,
 } from "@tsonic/target-rust";
 import type {
@@ -53,9 +51,13 @@ const httpRequestCallbackCarrier = rustCallableTargetType(
 );
 const trueArgument = { kind: "boolean", value: true } as const;
 const noneArgument = { kind: "none" } as const;
+const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
 const providerNativeFallibility = {
   isFallible: true,
   errorBoundary: "provider-native",
+} as const;
+const cloneOnlyCarrierTraits = {
+  implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
 } as const;
 
 const stringType = { kind: "string" } as const;
@@ -920,6 +922,100 @@ function processRows(): readonly RustProviderOperationDefinition[] {
 
 // --- node:buffer -------------------------------------------------------------
 
+interface BufferNumericMemberDefinition {
+  readonly sourceName: string;
+  readonly targetName: string;
+  readonly mode: "read" | "write";
+}
+
+const bufferNumericMembers: readonly BufferNumericMemberDefinition[] = Object.freeze([
+  { sourceName: "readUInt8", targetName: "read_uint8_number", mode: "read" },
+  { sourceName: "readInt8", targetName: "read_int8_number", mode: "read" },
+  { sourceName: "readUInt16LE", targetName: "read_uint16_le_number", mode: "read" },
+  { sourceName: "readUInt16BE", targetName: "read_uint16_be_number", mode: "read" },
+  { sourceName: "readInt16LE", targetName: "read_int16_le_number", mode: "read" },
+  { sourceName: "readInt16BE", targetName: "read_int16_be_number", mode: "read" },
+  { sourceName: "readUInt32LE", targetName: "read_uint32_le_number", mode: "read" },
+  { sourceName: "readUInt32BE", targetName: "read_uint32_be_number", mode: "read" },
+  { sourceName: "readInt32LE", targetName: "read_int32_le_number", mode: "read" },
+  { sourceName: "readInt32BE", targetName: "read_int32_be_number", mode: "read" },
+  { sourceName: "readFloatLE", targetName: "read_float_le_number", mode: "read" },
+  { sourceName: "readFloatBE", targetName: "read_float_be_number", mode: "read" },
+  { sourceName: "readDoubleLE", targetName: "read_double_le_number", mode: "read" },
+  { sourceName: "readDoubleBE", targetName: "read_double_be_number", mode: "read" },
+  { sourceName: "writeUInt8", targetName: "write_uint8_number", mode: "write" },
+  { sourceName: "writeInt8", targetName: "write_int8_number", mode: "write" },
+  { sourceName: "writeUInt16LE", targetName: "write_uint16_le_number", mode: "write" },
+  { sourceName: "writeUInt16BE", targetName: "write_uint16_be_number", mode: "write" },
+  { sourceName: "writeInt16LE", targetName: "write_int16_le_number", mode: "write" },
+  { sourceName: "writeInt16BE", targetName: "write_int16_be_number", mode: "write" },
+  { sourceName: "writeUInt32LE", targetName: "write_uint32_le_number", mode: "write" },
+  { sourceName: "writeUInt32BE", targetName: "write_uint32_be_number", mode: "write" },
+  { sourceName: "writeInt32LE", targetName: "write_int32_le_number", mode: "write" },
+  { sourceName: "writeInt32BE", targetName: "write_int32_be_number", mode: "write" },
+  { sourceName: "writeFloatLE", targetName: "write_float_le_number", mode: "write" },
+  { sourceName: "writeFloatBE", targetName: "write_float_be_number", mode: "write" },
+  { sourceName: "writeDoubleLE", targetName: "write_double_le_number", mode: "write" },
+  { sourceName: "writeDoubleBE", targetName: "write_double_be_number", mode: "write" },
+]);
+
+function bufferNumericMemberDeclarations(bufferId: string) {
+  return bufferNumericMembers.map((member) => {
+    const memberId = `${bufferId}.${member.sourceName}`;
+    const valueParameters = member.mode === "read"
+      ? []
+      : [{ name: "value", type: numberType }];
+    return {
+      id: memberId,
+      name: member.sourceName,
+      kind: "method" as const,
+      signatures: [
+        {
+          id: `${memberId}(${valueParameters.map((parameter) => parameter.name).join(",")})`,
+          parameters: valueParameters,
+          returnType: numberType,
+        },
+        {
+          id: `${memberId}(${[...valueParameters.map((parameter) => parameter.name), "offset"].join(",")})`,
+          parameters: [...valueParameters, { name: "offset", type: numberType }],
+          returnType: numberType,
+        },
+      ],
+    };
+  });
+}
+
+function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefinition[] {
+  return bufferNumericMembers.flatMap((member): readonly RustProviderOperationDefinition[] => {
+    const memberId = `${bufferId}.${member.sourceName}`;
+    const valueCarriers = member.mode === "read" ? [] : [float64Carrier];
+    const target = {
+      form: "free-call" as const,
+      path: `node_buffer::${member.targetName}`,
+      receiverMode: member.mode === "read" ? "ref" as const : "mut-ref" as const,
+    } as const;
+    return [{
+      exportId: bufferId,
+      memberId,
+      signatureId: `${memberId}(${member.mode === "read" ? "" : "value"})`,
+      operationKind: "method",
+      target: { ...target, trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: valueCarriers,
+      ...providerNativeFallibility,
+    }, {
+      exportId: bufferId,
+      memberId,
+      signatureId: `${memberId}(${member.mode === "read" ? "offset" : "value,offset"})`,
+      operationKind: "method",
+      target,
+      resultCarrier: float64Carrier,
+      parameterCarriers: [...valueCarriers, float64Carrier],
+      ...providerNativeFallibility,
+    }];
+  });
+}
+
 function bufferModule(): RustProviderModuleDefinition {
   const m = "node:buffer";
   const bufferId = "node:buffer::Buffer";
@@ -959,8 +1055,29 @@ function bufferModule(): RustProviderModuleDefinition {
           methodMember(bufferId, "byteLength", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], numberType, { static: true }),
           methodMember(bufferId, "concat", [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }], providerRef(m, "Buffer"), { static: true }),
           methodMember(bufferId, "toString", [{ name: "encoding", type: stringType }], stringType),
-          methodMember(bufferId, "readUInt8", [{ name: "offset", type: numberType }], numberType),
-          methodMember(bufferId, "writeUInt8", [{ name: "value", type: numberType }, { name: "offset", type: numberType }], voidType),
+          {
+            id: `${bufferId}.copy`,
+            name: "copy",
+            kind: "method",
+            signatures: [
+              { id: `${bufferId}.copy(target)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart,sourceStart)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }, { name: "sourceStart", type: numberType }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart,sourceStart,sourceEnd)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }, { name: "sourceStart", type: numberType }, { name: "sourceEnd", type: numberType }], returnType: numberType },
+            ],
+          },
+          ...["slice", "subarray"].map((name) => ({
+            id: `${bufferId}.${name}`,
+            name,
+            kind: "method" as const,
+            signatures: [
+              { id: `${bufferId}.${name}()`, parameters: [], returnType: providerRef(m, "Buffer") },
+              { id: `${bufferId}.${name}(start)`, parameters: [{ name: "start", type: numberType }], returnType: providerRef(m, "Buffer") },
+              { id: `${bufferId}.${name}(start,end)`, parameters: [{ name: "start", type: numberType }, { name: "end", type: numberType }], returnType: providerRef(m, "Buffer") },
+            ],
+          })),
+          ...["swap16", "swap32", "swap64"].map((name) => methodMember(bufferId, name, [], providerRef(m, "Buffer"))),
+          ...bufferNumericMemberDeclarations(bufferId),
           methodMember(bufferId, "equals", [{ name: "other", type: providerRef(m, "Buffer") }], booleanType),
           methodMember(bufferId, "compare", [{ name: "other", type: providerRef(m, "Buffer") }], numberType),
           propertyMember(bufferId, "length", numberType),
@@ -984,8 +1101,82 @@ function bufferRows(): readonly RustProviderOperationDefinition[] {
     { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility, resultConversion: rustUsizeToInt32ValueConversion },
     { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.readUInt8`, operationKind: "method", target: { form: "receiver-method", name: "read_u8", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: int32Carrier, parameterCarriers: [int32Carrier], ...providerNativeFallibility, resultConversion: rustUint8ToInt32ValueConversion },
-    { exportId: bufferId, memberId: `${bufferId}.writeUInt8`, operationKind: "method", target: { form: "receiver-method", name: "set", argOrder: [1, 0], argConversions: [rustInt32ToUsizeValueConversion, rustInt32ToUint8ValueConversion], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier, int32Carrier], ...providerNativeFallibility },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroFloat64Argument, zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart,sourceStart)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value", "value"] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart,sourceStart,sourceEnd)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_closed_number", receiverMode: "ref", argModes: ["ref", "value", "value", "value"] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    ...["slice", "subarray"].flatMap((name): readonly RustProviderOperationDefinition[] => [{
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}()`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [],
+    }, {
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}(start)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref" },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [float64Carrier],
+    }, {
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}(start,end)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_closed_number", receiverMode: "ref" },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [float64Carrier, float64Carrier],
+    }]),
+    ...["swap16", "swap32", "swap64"].map((name): RustProviderOperationDefinition => ({
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}()`,
+      operationKind: "method",
+      target: { form: "receiver-method", name, mutatesReceiver: true },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [],
+      ...providerNativeFallibility,
+    })),
+    ...bufferNumericRows(bufferId),
     { exportId: bufferId, memberId: `${bufferId}.equals`, operationKind: "method", target: { form: "receiver-method", name: "equals", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.compare`, operationKind: "method", target: { form: "receiver-method", name: "compare", argModes: ["ref"] }, resultCarrier: int32Carrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: int32Carrier, resultConversion: rustUsizeToInt32ValueConversion },
@@ -1291,17 +1482,17 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
     },
     carrierTraits: {
-      "rust.node.Stats": { clone: "always", copy: "never" },
-      "rust.node.Buffer": { clone: "always", copy: "never" },
-      "rust.node.Url": { clone: "always", copy: "never" },
-      "rust.node.UrlObject": { clone: "always", copy: "never" },
-      "rust.node.UrlSearchParams": { clone: "always", copy: "never" },
-      "rust.node.Hash": { clone: "always", copy: "never" },
-      "rust.node.Hmac": { clone: "always", copy: "never" },
-      "rust.node.HttpIncomingMessage": { clone: "always", copy: "never" },
-      "rust.node.HttpServerResponse": { clone: "always", copy: "never" },
-      "rust.node.HttpServer": { clone: "always", copy: "never" },
-      "rust.node.Timeout": { clone: "always", copy: "never" },
+      "rust.node.Stats": cloneOnlyCarrierTraits,
+      "rust.node.Buffer": cloneOnlyCarrierTraits,
+      "rust.node.Url": cloneOnlyCarrierTraits,
+      "rust.node.UrlObject": cloneOnlyCarrierTraits,
+      "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
+      "rust.node.Hash": cloneOnlyCarrierTraits,
+      "rust.node.Hmac": cloneOnlyCarrierTraits,
+      "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
+      "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
+      "rust.node.HttpServer": cloneOnlyCarrierTraits,
+      "rust.node.Timeout": cloneOnlyCarrierTraits,
     },
     binaryEpilogues: [{
       id: "node-event-loop",

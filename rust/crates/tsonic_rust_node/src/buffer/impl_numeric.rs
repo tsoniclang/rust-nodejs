@@ -1,14 +1,17 @@
 impl Buffer {
-    pub fn swap16(&mut self) -> NodeResult<&mut Self> {
-        self.swap_chunks(2)
+    pub fn swap16(&mut self) -> NodeResult<Self> {
+        self.swap_chunks(2)?;
+        Ok(self.clone())
     }
 
-    pub fn swap32(&mut self) -> NodeResult<&mut Self> {
-        self.swap_chunks(4)
+    pub fn swap32(&mut self) -> NodeResult<Self> {
+        self.swap_chunks(4)?;
+        Ok(self.clone())
     }
 
-    pub fn swap64(&mut self) -> NodeResult<&mut Self> {
-        self.swap_chunks(8)
+    pub fn swap64(&mut self) -> NodeResult<Self> {
+        self.swap_chunks(8)?;
+        Ok(self.clone())
     }
 
     pub fn reverse(&mut self) -> &mut Self {
@@ -278,7 +281,7 @@ impl Buffer {
         Ok(self.storage.borrow()[self.offset + offset..self.offset + offset + len].to_vec())
     }
 
-    fn write_exact(&mut self, offset: usize, bytes: &[u8]) -> NodeResult<()> {
+    fn write_exact(&self, offset: usize, bytes: &[u8]) -> NodeResult<()> {
         if offset + bytes.len() > self.len {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
