@@ -15,6 +15,20 @@ const expectedModules = [
   "node:util",
   "node:http",
   "node:timers",
+  "assert",
+  "assert/strict",
+  "node:assert/strict",
+  "buffer",
+  "crypto",
+  "fs",
+  "fs/promises",
+  "http",
+  "os",
+  "path",
+  "process",
+  "timers",
+  "util",
+  "url",
 ];
 
 test("provider package declares the expected node module specifiers", () => {
@@ -24,6 +38,30 @@ test("provider package declares the expected node module specifiers", () => {
     assert.ok(specifiers.includes(moduleSpecifier), `missing module '${moduleSpecifier}'`);
   }
   assert.equal(specifiers.length, expectedModules.length);
+});
+
+test("provider package declares bare Node modules as canonical aliases", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  assert.deepEqual(contribution.definition.moduleAliases, [
+    ["assert", "node:assert"],
+    ["assert/strict", "node:assert"],
+    ["node:assert/strict", "node:assert"],
+    ["buffer", "node:buffer"],
+    ["crypto", "node:crypto"],
+    ["fs", "node:fs"],
+    ["fs/promises", "node:fs/promises"],
+    ["http", "node:http"],
+    ["os", "node:os"],
+    ["path", "node:path"],
+    ["process", "node:process"],
+    ["timers", "node:timers"],
+    ["util", "node:util"],
+    ["url", "node:url"],
+  ].map(([moduleSpecifier, canonicalModuleSpecifier]) => ({
+    moduleSpecifier,
+    canonicalModuleSpecifier,
+  })));
 });
 
 test("provider package contributes a non-empty operation row set", () => {
@@ -452,11 +490,19 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
 test("provider package maps timers to the shared Node event loop", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
-  const row = contribution.definition.operations.find((candidate) =>
+  const rows = contribution.definition.operations.filter((candidate) =>
+    candidate.exportId === "node:timers::setTimeout" ||
     candidate.exportId === "node:timers::setInterval");
-  assert.ok(row !== undefined);
-  assert.equal(row.operationKind, "method");
-  assert.deepEqual(row.target, { form: "call", path: "node_timers::set_interval_callable" });
-  assert.equal(row.immediateCallback, undefined);
-  assert.deepEqual(row.resultCarrier, { kind: "target-named", id: "rust.node.Timeout" });
+  assert.deepEqual(rows.map((row) => row.exportId), [
+    "node:timers::setTimeout",
+    "node:timers::setInterval",
+  ]);
+  assert.deepEqual(rows.map((row) => row.target), [
+    { form: "call", path: "node_timers::set_timeout_callable" },
+    { form: "call", path: "node_timers::set_interval_callable" },
+  ]);
+  assert.equal(rows.every((row) => row.operationKind === "method"), true);
+  assert.equal(rows.every((row) => row.immediateCallback === undefined), true);
+  assert.equal(rows.every((row) =>
+    JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout" })), true);
 });

@@ -176,6 +176,23 @@ where
     )
 }
 
+pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: i32) -> Timeout
+where
+    E: std::fmt::Display + 'static,
+{
+    let delay_ms = u64::try_from(delay_ms).unwrap_or(0);
+    schedule(
+        Box::new(move || {
+            callback
+                .call(())
+                .map_err(crate::error::callback_runtime_error)
+        }),
+        delay_ms,
+        false,
+        TimerOptions::default(),
+    )
+}
+
 pub fn clear_timeout(timeout: &mut Timeout) {
     remove_entry(timeout.id);
 }

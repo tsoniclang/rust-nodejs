@@ -376,6 +376,18 @@ function timersModule(): RustProviderModuleDefinition {
         kind: "class",
         members: [],
       },
+      fnExport(m, "setTimeout", [
+        {
+          name: "callback",
+          type: {
+            kind: "function",
+            id: `${m}.TimeoutCallback`,
+            parameters: [],
+            returnType: voidType,
+          },
+        },
+        { name: "delay", type: int32Type },
+      ], providerRef(m, "Timeout")),
       fnExport(m, "setInterval", [
         {
           name: "callback",
@@ -393,13 +405,22 @@ function timersModule(): RustProviderModuleDefinition {
 }
 
 function timersRows(): readonly RustProviderOperationDefinition[] {
-  return [{
-    exportId: "node:timers::setInterval",
-    operationKind: "method",
-    target: { form: "call", path: "node_timers::set_interval_callable" },
-    resultCarrier: timeoutCarrier,
-    parameterCarriers: [emptyCallbackCarrier, int32Carrier],
-  }];
+  return [
+    {
+      exportId: "node:timers::setTimeout",
+      operationKind: "method",
+      target: { form: "call", path: "node_timers::set_timeout_callable" },
+      resultCarrier: timeoutCarrier,
+      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+    },
+    {
+      exportId: "node:timers::setInterval",
+      operationKind: "method",
+      target: { form: "call", path: "node_timers::set_interval_callable" },
+      resultCarrier: timeoutCarrier,
+      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+    },
+  ];
 }
 
 function constructorMember(classId: string, parameters: readonly { name: string; type: ProviderTypeExpr }[]) {
@@ -1493,6 +1514,22 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     displayName: "Node.js for Rust",
     version: "0.0.1",
     requiredSurfaces: ["js"],
+    moduleAliases: [
+      { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "node:assert/strict", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "buffer", canonicalModuleSpecifier: "node:buffer" },
+      { moduleSpecifier: "crypto", canonicalModuleSpecifier: "node:crypto" },
+      { moduleSpecifier: "fs", canonicalModuleSpecifier: "node:fs" },
+      { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
+      { moduleSpecifier: "http", canonicalModuleSpecifier: "node:http" },
+      { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
+      { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
+      { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
+      { moduleSpecifier: "timers", canonicalModuleSpecifier: "node:timers" },
+      { moduleSpecifier: "util", canonicalModuleSpecifier: "node:util" },
+      { moduleSpecifier: "url", canonicalModuleSpecifier: "node:url" },
+    ],
     modules: [
       assertModule(),
       pathModule(),
