@@ -299,8 +299,8 @@ pub use crate::process::{
     thread_cpu_usage as process_thread_cpu_usage, title as process_title, umask as process_umask,
     unref_handle as process_unref_handle, uptime as process_uptime, version as process_version,
     versions as process_versions, CpuUsage as ProcessCpuUsage, MemoryUsage as ProcessMemoryUsage,
-    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning, Release as ProcessRelease,
-    ResourceUsage as ProcessResourceUsage,
+    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning, ProcessWriteStream,
+    Release as ProcessRelease, ResourceUsage as ProcessResourceUsage,
 };
 pub use crate::punycode::{to_ascii as punycode_to_ascii, to_unicode as punycode_to_unicode};
 pub use crate::querystring::{

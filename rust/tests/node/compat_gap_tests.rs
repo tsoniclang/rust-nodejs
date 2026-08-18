@@ -92,11 +92,16 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
 
 #[test]
 fn process_stdio_helpers_are_closed_stream_shapes() {
-    let mut stdout = process::stdout();
-    assert!(stdout.write(buffer::Buffer::from_string("line", Some("utf8")).unwrap()));
-    assert_eq!(stdout.chunks().len(), 1);
+    let stdout = process::stdout();
+    assert_eq!(stdout.fd(), 1);
+    assert!(stdout
+        .write_buffer(&buffer::Buffer::from_bytes(Vec::new()))
+        .unwrap());
     let stderr = process::stderr();
-    assert!(stderr.chunks().is_empty());
+    assert_eq!(stderr.fd(), 2);
+    assert!(stderr.write_string("").unwrap());
+    let _ = stdout.is_tty();
+    let _ = stderr.is_tty();
     assert!(!process::stdin_is_tty());
 }
 

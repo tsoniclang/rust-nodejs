@@ -88,6 +88,11 @@ impl Buffer {
         self.to_vec()
     }
 
+    pub(crate) fn with_bytes<T>(&self, operation: impl FnOnce(&[u8]) -> T) -> T {
+        let storage = self.storage.borrow();
+        operation(&storage[self.offset..self.offset + self.len])
+    }
+
     pub fn get(&self, index: usize) -> Option<u8> {
         if index >= self.len {
             return None;
@@ -159,7 +164,7 @@ impl Buffer {
 
     pub fn copy(
         &self,
-        target: &mut Buffer,
+        target: &Buffer,
         target_start: usize,
         source_start: usize,
         source_end: Option<usize>,

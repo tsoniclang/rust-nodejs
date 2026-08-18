@@ -4,7 +4,6 @@ import {
   createRustProviderPackage,
   rustBorrowedStrToStringValueConversion,
   rustCallableTargetType,
-  rustInt32ToUint8ValueConversion,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
   rustOptionTargetType,
@@ -12,7 +11,6 @@ import {
   rustStringTargetType,
   rustUint32ToInt32ValueConversion,
   rustUint64ToFloat64ValueConversion,
-  rustUint8ToInt32ValueConversion,
   rustUsizeToInt32ValueConversion,
 } from "@tsonic/target-rust";
 import type {
@@ -33,8 +31,11 @@ const int32Carrier = rustSourcePrimitiveTargetType("int32");
 const float64Carrier = rustSourcePrimitiveTargetType("float64");
 const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
 const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
+const numberArrayCarrier = rustJsArrayTargetType(float64Carrier);
 const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
+const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
+const processWriteStreamCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessWriteStream" };
 const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
 const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
@@ -53,9 +54,13 @@ const httpRequestCallbackCarrier = rustCallableTargetType(
 );
 const trueArgument = { kind: "boolean", value: true } as const;
 const noneArgument = { kind: "none" } as const;
+const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
 const providerNativeFallibility = {
   isFallible: true,
   errorBoundary: "provider-native",
+} as const;
+const cloneOnlyCarrierTraits = {
+  implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
 } as const;
 
 const stringType = { kind: "string" } as const;
@@ -64,6 +69,7 @@ const booleanType = { kind: "boolean" } as const;
 const voidType = { kind: "void" } as const;
 const int32Type = { kind: "source-primitive", name: "int32" } as const;
 const stringArrayType = { kind: "array", elementType: stringType } as const;
+const numberArrayType = { kind: "array", elementType: numberType } as const;
 
 const nullType = { kind: "literal", value: null } as const;
 const undefinedType = { kind: "undefined" } as const;
@@ -75,6 +81,7 @@ type ProviderTypeExpr =
   | typeof voidType
   | typeof int32Type
   | typeof stringArrayType
+  | typeof numberArrayType
   | typeof undefinedType
   | { readonly kind: "provider-ref"; readonly moduleSpecifier: string; readonly exportName: string }
   | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
@@ -370,6 +377,18 @@ function timersModule(): RustProviderModuleDefinition {
         kind: "class",
         members: [],
       },
+      fnExport(m, "setTimeout", [
+        {
+          name: "callback",
+          type: {
+            kind: "function",
+            id: `${m}.TimeoutCallback`,
+            parameters: [],
+            returnType: voidType,
+          },
+        },
+        { name: "delay", type: int32Type },
+      ], providerRef(m, "Timeout")),
       fnExport(m, "setInterval", [
         {
           name: "callback",
@@ -387,13 +406,22 @@ function timersModule(): RustProviderModuleDefinition {
 }
 
 function timersRows(): readonly RustProviderOperationDefinition[] {
-  return [{
-    exportId: "node:timers::setInterval",
-    operationKind: "method",
-    target: { form: "call", path: "node_timers::set_interval_callable" },
-    resultCarrier: timeoutCarrier,
-    parameterCarriers: [emptyCallbackCarrier, int32Carrier],
-  }];
+  return [
+    {
+      exportId: "node:timers::setTimeout",
+      operationKind: "method",
+      target: { form: "call", path: "node_timers::set_timeout_callable" },
+      resultCarrier: timeoutCarrier,
+      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+    },
+    {
+      exportId: "node:timers::setInterval",
+      operationKind: "method",
+      target: { form: "call", path: "node_timers::set_interval_callable" },
+      resultCarrier: timeoutCarrier,
+      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+    },
+  ];
 }
 
 function constructorMember(classId: string, parameters: readonly { name: string; type: ProviderTypeExpr }[]) {
@@ -826,6 +854,8 @@ function fsPromisesRows(): readonly RustProviderOperationDefinition[] {
 function processModule(): RustProviderModuleDefinition {
   const m = "node:process";
   const envId = "node:process::ProcessEnv";
+  const memoryUsageId = "node:process::MemoryUsage";
+  const writeStreamId = "node:process::ProcessWriteStream";
   const defaultId = "node:process.default";
   const valueExport = (name: string, type: ProviderTypeExpr, documentation?: string) => ({
     id: `${m}::${name}`,
@@ -837,8 +867,30 @@ function processModule(): RustProviderModuleDefinition {
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.process",
+    imports: [{
+      moduleSpecifier: "node:buffer",
+      namedImports: [{ exportedName: "Buffer" }],
+    }],
     exports: [
+      fnExport(m, "availableMemory", [], numberType),
+      fnExport(m, "chdir", [{ name: "directory", type: stringType }], voidType),
+      fnExport(m, "constrainedMemory", [], numberType),
       fnExport(m, "cwd", [], stringType),
+      {
+        id: `${m}::hrtime`,
+        name: "hrtime",
+        kind: "function",
+        signatures: [
+          { id: `${m}::hrtime()`, parameters: [], returnType: numberArrayType },
+          {
+            id: `${m}::hrtime(previous)`,
+            parameters: [{ name: "previous", type: numberArrayType }],
+            returnType: numberArrayType,
+          },
+        ],
+      },
+      fnExport(m, "memoryUsage", [], providerRef(m, "MemoryUsage")),
+      fnExport(m, "uptime", [], numberType),
       {
         id: envId,
         name: "ProcessEnv",
@@ -854,14 +906,56 @@ function processModule(): RustProviderModuleDefinition {
           }],
         }],
       },
+      {
+        id: memoryUsageId,
+        name: "MemoryUsage",
+        kind: "class",
+        members: [
+          propertyMember(memoryUsageId, "rss", numberType),
+          propertyMember(memoryUsageId, "heapTotal", numberType),
+          propertyMember(memoryUsageId, "heapUsed", numberType),
+          propertyMember(memoryUsageId, "external", numberType),
+          propertyMember(memoryUsageId, "arrayBuffers", numberType),
+        ],
+      },
+      {
+        id: writeStreamId,
+        name: "ProcessWriteStream",
+        kind: "class",
+        members: [
+          {
+            id: `${writeStreamId}.write`,
+            name: "write",
+            kind: "method",
+            signatures: [
+              {
+                id: `${writeStreamId}.write(string)`,
+                parameters: [{ name: "chunk", type: stringType }],
+                returnType: booleanType,
+              },
+              {
+                id: `${writeStreamId}.write(buffer)`,
+                parameters: [{ name: "chunk", type: providerRef("node:buffer", "Buffer") }],
+                returnType: booleanType,
+              },
+            ],
+          },
+          propertyMember(writeStreamId, "isTTY", booleanType),
+          propertyMember(writeStreamId, "fd", numberType),
+        ],
+      },
       valueExport("env", providerRef(m, "ProcessEnv")),
+      valueExport("stdout", providerRef(m, "ProcessWriteStream")),
+      valueExport("stderr", providerRef(m, "ProcessWriteStream")),
       valueExport("platform", stringType),
       valueExport("arch", stringType),
       valueExport("argv", stringArrayType),
+      valueExport("argv0", stringType),
       valueExport("pid", numberType),
       valueExport("ppid", numberType),
       valueExport("execPath", stringType),
       valueExport("exitCode", { kind: "union", types: [numberType, nullType] }),
+      valueExport("version", stringType),
       fnExport(m, "exit", [{ name: "code", type: numberType }], voidType),
       {
         id: defaultId,
@@ -869,14 +963,37 @@ function processModule(): RustProviderModuleDefinition {
         exportKind: "default",
         kind: "class",
         members: [
+          methodMember(defaultId, "availableMemory", [], numberType, { static: true }),
+          methodMember(defaultId, "chdir", [{ name: "directory", type: stringType }], voidType, { static: true }),
+          methodMember(defaultId, "constrainedMemory", [], numberType, { static: true }),
           methodMember(defaultId, "cwd", [], stringType, { static: true }),
+          {
+            id: `${defaultId}.hrtime`,
+            name: "hrtime",
+            kind: "method",
+            static: true,
+            signatures: [
+              { id: `${defaultId}.hrtime()`, parameters: [], returnType: numberArrayType },
+              {
+                id: `${defaultId}.hrtime(previous)`,
+                parameters: [{ name: "previous", type: numberArrayType }],
+                returnType: numberArrayType,
+              },
+            ],
+          },
+          methodMember(defaultId, "memoryUsage", [], providerRef(m, "MemoryUsage"), { static: true }),
+          methodMember(defaultId, "uptime", [], numberType, { static: true }),
           propertyMember(defaultId, "env", providerRef(m, "ProcessEnv"), { static: true }),
+          propertyMember(defaultId, "stdout", providerRef(m, "ProcessWriteStream"), { static: true }),
+          propertyMember(defaultId, "stderr", providerRef(m, "ProcessWriteStream"), { static: true }),
           propertyMember(defaultId, "platform", stringType, { static: true }),
           propertyMember(defaultId, "arch", stringType, { static: true }),
           propertyMember(defaultId, "argv", stringArrayType, { static: true }),
+          propertyMember(defaultId, "argv0", stringType, { static: true }),
           propertyMember(defaultId, "pid", numberType, { static: true }),
           propertyMember(defaultId, "ppid", numberType, { static: true }),
           propertyMember(defaultId, "execPath", stringType, { static: true }),
+          propertyMember(defaultId, "version", stringType, { static: true }),
           propertyMember(defaultId, "exitCode", { kind: "union", types: [numberType, nullType] }, {
             readonly: false,
             static: true,
@@ -891,34 +1008,161 @@ function processModule(): RustProviderModuleDefinition {
 function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
   const defaultId = "node:process.default";
+  const memoryUsageId = `${m}::MemoryUsage`;
+  const writeStreamId = `${m}::ProcessWriteStream`;
   return [
+    { exportId: `${m}::availableMemory`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: `${m}::chdir`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: `${m}::constrainedMemory`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: `${m}::cwd`, operationKind: "method", target: { form: "call", path: "node_process::cwd" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
+    { exportId: `${m}::hrtime`, signatureId: `${m}::hrtime()`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_open_number" }, resultCarrier: numberArrayCarrier },
+    { exportId: `${m}::hrtime`, signatureId: `${m}::hrtime(previous)`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_since_number", argModes: ["ref"] }, resultCarrier: numberArrayCarrier, parameterCarriers: [numberArrayCarrier], ...providerNativeFallibility },
+    { exportId: `${m}::memoryUsage`, operationKind: "method", target: { form: "call", path: "node_process::memory_usage" }, resultCarrier: processMemoryUsageCarrier },
+    { exportId: `${m}::uptime`, operationKind: "method", target: { form: "call", path: "node_process::uptime" }, resultCarrier: float64Carrier },
     { exportId: `${m}::platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
     { exportId: `${m}::arch`, operationKind: "property", target: { form: "call", path: "node_process::arch" }, resultCarrier: stringCarrier },
     { exportId: `${m}::argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringArrayCarrier, ...providerNativeFallibility },
+    { exportId: `${m}::argv0`, operationKind: "property", target: { form: "call", path: "node_process::argv0" }, resultCarrier: stringCarrier },
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
+    { exportId: `${m}::stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: processWriteStreamCarrier },
+    { exportId: `${m}::stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: processWriteStreamCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: `${m}::exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: `${m}::exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
+    { exportId: `${m}::version`, operationKind: "property", target: { form: "call", path: "node_process::version" }, resultCarrier: stringCarrier },
     { exportId: `${m}::ProcessEnv`, memberId: `${m}::ProcessEnv.indexer`, operationKind: "indexer", target: { form: "call", path: "node_process::env_get", argModes: ["ref"] }, resultCarrier: rustOptionTargetType(stringCarrier), parameterCarriers: [stringCarrier] },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.rss`, operationKind: "property", target: { form: "field", name: "rss" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapTotal`, operationKind: "property", target: { form: "field", name: "heap_total" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapUsed`, operationKind: "property", target: { form: "field", name: "heap_used" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.external`, operationKind: "property", target: { form: "field", name: "external" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: memoryUsageId, memberId: `${memoryUsageId}.arrayBuffers`, operationKind: "property", target: { form: "field", name: "array_buffers" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.isTTY`, operationKind: "property", target: { form: "receiver-method", name: "is_tty" }, resultCarrier: boolCarrier },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.fd`, operationKind: "property", target: { form: "receiver-method", name: "fd" }, resultCarrier: int32Carrier },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
+    { exportId: defaultId, memberId: `${defaultId}.availableMemory`, signatureId: `${defaultId}.availableMemory()`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: defaultId, memberId: `${defaultId}.chdir`, signatureId: `${defaultId}.chdir(directory)`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.constrainedMemory`, signatureId: `${defaultId}.constrainedMemory()`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.cwd`, signatureId: `${defaultId}.cwd()`, operationKind: "method", target: { form: "call", path: "node_process::cwd" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.hrtime`, signatureId: `${defaultId}.hrtime()`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_open_number" }, resultCarrier: numberArrayCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.hrtime`, signatureId: `${defaultId}.hrtime(previous)`, operationKind: "method", target: { form: "call", path: "node_process::hrtime_since_number", argModes: ["ref"] }, resultCarrier: numberArrayCarrier, parameterCarriers: [numberArrayCarrier], ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.memoryUsage`, signatureId: `${defaultId}.memoryUsage()`, operationKind: "method", target: { form: "call", path: "node_process::memory_usage" }, resultCarrier: processMemoryUsageCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.uptime`, signatureId: `${defaultId}.uptime()`, operationKind: "method", target: { form: "call", path: "node_process::uptime" }, resultCarrier: float64Carrier },
     { exportId: defaultId, memberId: `${defaultId}.platform`, operationKind: "property", target: { form: "call", path: "node_process::platform" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.arch`, operationKind: "property", target: { form: "call", path: "node_process::arch" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.argv`, operationKind: "property", target: { form: "call", path: "node_process::argv" }, resultCarrier: stringArrayCarrier, ...providerNativeFallibility },
+    { exportId: defaultId, memberId: `${defaultId}.argv0`, operationKind: "property", target: { form: "call", path: "node_process::argv0" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: int32Carrier, resultConversion: rustUint32ToInt32ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.env`, operationKind: "property", target: { form: "marker" }, resultCarrier: processEnvCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: processWriteStreamCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: processWriteStreamCarrier },
     { exportId: defaultId, memberId: `${defaultId}.execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
+    { exportId: defaultId, memberId: `${defaultId}.version`, operationKind: "property", target: { form: "call", path: "node_process::version" }, resultCarrier: stringCarrier },
     { exportId: defaultId, memberId: `${defaultId}.exit`, signatureId: `${defaultId}.exit(code)`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: unitCarrier, parameterCarriers: [int32Carrier] },
   ];
 }
 
 // --- node:buffer -------------------------------------------------------------
+
+interface BufferNumericMemberDefinition {
+  readonly sourceName: string;
+  readonly targetName: string;
+  readonly mode: "read" | "write";
+}
+
+const bufferNumericMembers: readonly BufferNumericMemberDefinition[] = Object.freeze([
+  { sourceName: "readUInt8", targetName: "read_uint8_number", mode: "read" },
+  { sourceName: "readInt8", targetName: "read_int8_number", mode: "read" },
+  { sourceName: "readUInt16LE", targetName: "read_uint16_le_number", mode: "read" },
+  { sourceName: "readUInt16BE", targetName: "read_uint16_be_number", mode: "read" },
+  { sourceName: "readInt16LE", targetName: "read_int16_le_number", mode: "read" },
+  { sourceName: "readInt16BE", targetName: "read_int16_be_number", mode: "read" },
+  { sourceName: "readUInt32LE", targetName: "read_uint32_le_number", mode: "read" },
+  { sourceName: "readUInt32BE", targetName: "read_uint32_be_number", mode: "read" },
+  { sourceName: "readInt32LE", targetName: "read_int32_le_number", mode: "read" },
+  { sourceName: "readInt32BE", targetName: "read_int32_be_number", mode: "read" },
+  { sourceName: "readFloatLE", targetName: "read_float_le_number", mode: "read" },
+  { sourceName: "readFloatBE", targetName: "read_float_be_number", mode: "read" },
+  { sourceName: "readDoubleLE", targetName: "read_double_le_number", mode: "read" },
+  { sourceName: "readDoubleBE", targetName: "read_double_be_number", mode: "read" },
+  { sourceName: "writeUInt8", targetName: "write_uint8_number", mode: "write" },
+  { sourceName: "writeInt8", targetName: "write_int8_number", mode: "write" },
+  { sourceName: "writeUInt16LE", targetName: "write_uint16_le_number", mode: "write" },
+  { sourceName: "writeUInt16BE", targetName: "write_uint16_be_number", mode: "write" },
+  { sourceName: "writeInt16LE", targetName: "write_int16_le_number", mode: "write" },
+  { sourceName: "writeInt16BE", targetName: "write_int16_be_number", mode: "write" },
+  { sourceName: "writeUInt32LE", targetName: "write_uint32_le_number", mode: "write" },
+  { sourceName: "writeUInt32BE", targetName: "write_uint32_be_number", mode: "write" },
+  { sourceName: "writeInt32LE", targetName: "write_int32_le_number", mode: "write" },
+  { sourceName: "writeInt32BE", targetName: "write_int32_be_number", mode: "write" },
+  { sourceName: "writeFloatLE", targetName: "write_float_le_number", mode: "write" },
+  { sourceName: "writeFloatBE", targetName: "write_float_be_number", mode: "write" },
+  { sourceName: "writeDoubleLE", targetName: "write_double_le_number", mode: "write" },
+  { sourceName: "writeDoubleBE", targetName: "write_double_be_number", mode: "write" },
+]);
+
+function bufferNumericMemberDeclarations(bufferId: string) {
+  return bufferNumericMembers.map((member) => {
+    const memberId = `${bufferId}.${member.sourceName}`;
+    const valueParameters = member.mode === "read"
+      ? []
+      : [{ name: "value", type: numberType }];
+    return {
+      id: memberId,
+      name: member.sourceName,
+      kind: "method" as const,
+      signatures: [
+        {
+          id: `${memberId}(${valueParameters.map((parameter) => parameter.name).join(",")})`,
+          parameters: valueParameters,
+          returnType: numberType,
+        },
+        {
+          id: `${memberId}(${[...valueParameters.map((parameter) => parameter.name), "offset"].join(",")})`,
+          parameters: [...valueParameters, { name: "offset", type: numberType }],
+          returnType: numberType,
+        },
+      ],
+    };
+  });
+}
+
+function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefinition[] {
+  return bufferNumericMembers.flatMap((member): readonly RustProviderOperationDefinition[] => {
+    const memberId = `${bufferId}.${member.sourceName}`;
+    const valueCarriers = member.mode === "read" ? [] : [float64Carrier];
+    const target = {
+      form: "free-call" as const,
+      path: `node_buffer::${member.targetName}`,
+      receiverMode: member.mode === "read" ? "ref" as const : "mut-ref" as const,
+    } as const;
+    return [{
+      exportId: bufferId,
+      memberId,
+      signatureId: `${memberId}(${member.mode === "read" ? "" : "value"})`,
+      operationKind: "method",
+      target: { ...target, trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: valueCarriers,
+      ...providerNativeFallibility,
+    }, {
+      exportId: bufferId,
+      memberId,
+      signatureId: `${memberId}(${member.mode === "read" ? "offset" : "value,offset"})`,
+      operationKind: "method",
+      target,
+      resultCarrier: float64Carrier,
+      parameterCarriers: [...valueCarriers, float64Carrier],
+      ...providerNativeFallibility,
+    }];
+  });
+}
 
 function bufferModule(): RustProviderModuleDefinition {
   const m = "node:buffer";
@@ -959,8 +1203,29 @@ function bufferModule(): RustProviderModuleDefinition {
           methodMember(bufferId, "byteLength", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], numberType, { static: true }),
           methodMember(bufferId, "concat", [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }], providerRef(m, "Buffer"), { static: true }),
           methodMember(bufferId, "toString", [{ name: "encoding", type: stringType }], stringType),
-          methodMember(bufferId, "readUInt8", [{ name: "offset", type: numberType }], numberType),
-          methodMember(bufferId, "writeUInt8", [{ name: "value", type: numberType }, { name: "offset", type: numberType }], voidType),
+          {
+            id: `${bufferId}.copy`,
+            name: "copy",
+            kind: "method",
+            signatures: [
+              { id: `${bufferId}.copy(target)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart,sourceStart)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }, { name: "sourceStart", type: numberType }], returnType: numberType },
+              { id: `${bufferId}.copy(target,targetStart,sourceStart,sourceEnd)`, parameters: [{ name: "target", type: providerRef(m, "Buffer") }, { name: "targetStart", type: numberType }, { name: "sourceStart", type: numberType }, { name: "sourceEnd", type: numberType }], returnType: numberType },
+            ],
+          },
+          ...["slice", "subarray"].map((name) => ({
+            id: `${bufferId}.${name}`,
+            name,
+            kind: "method" as const,
+            signatures: [
+              { id: `${bufferId}.${name}()`, parameters: [], returnType: providerRef(m, "Buffer") },
+              { id: `${bufferId}.${name}(start)`, parameters: [{ name: "start", type: numberType }], returnType: providerRef(m, "Buffer") },
+              { id: `${bufferId}.${name}(start,end)`, parameters: [{ name: "start", type: numberType }, { name: "end", type: numberType }], returnType: providerRef(m, "Buffer") },
+            ],
+          })),
+          ...["swap16", "swap32", "swap64"].map((name) => methodMember(bufferId, name, [], providerRef(m, "Buffer"))),
+          ...bufferNumericMemberDeclarations(bufferId),
           methodMember(bufferId, "equals", [{ name: "other", type: providerRef(m, "Buffer") }], booleanType),
           methodMember(bufferId, "compare", [{ name: "other", type: providerRef(m, "Buffer") }], numberType),
           propertyMember(bufferId, "length", numberType),
@@ -984,8 +1249,82 @@ function bufferRows(): readonly RustProviderOperationDefinition[] {
     { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility, resultConversion: rustUsizeToInt32ValueConversion },
     { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.readUInt8`, operationKind: "method", target: { form: "receiver-method", name: "read_u8", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: int32Carrier, parameterCarriers: [int32Carrier], ...providerNativeFallibility, resultConversion: rustUint8ToInt32ValueConversion },
-    { exportId: bufferId, memberId: `${bufferId}.writeUInt8`, operationKind: "method", target: { form: "receiver-method", name: "set", argOrder: [1, 0], argConversions: [rustInt32ToUsizeValueConversion, rustInt32ToUint8ValueConversion], mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier, int32Carrier], ...providerNativeFallibility },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroFloat64Argument, zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart,sourceStart)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value", "value"] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: bufferId,
+      memberId: `${bufferId}.copy`,
+      signatureId: `${bufferId}.copy(target,targetStart,sourceStart,sourceEnd)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::copy_closed_number", receiverMode: "ref", argModes: ["ref", "value", "value", "value"] },
+      resultCarrier: float64Carrier,
+      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier, float64Carrier],
+      ...providerNativeFallibility,
+    },
+    ...["slice", "subarray"].flatMap((name): readonly RustProviderOperationDefinition[] => [{
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}()`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroFloat64Argument] },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [],
+    }, {
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}(start)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref" },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [float64Carrier],
+    }, {
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}(start,end)`,
+      operationKind: "method",
+      target: { form: "free-call", path: "node_buffer::slice_closed_number", receiverMode: "ref" },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [float64Carrier, float64Carrier],
+    }]),
+    ...["swap16", "swap32", "swap64"].map((name): RustProviderOperationDefinition => ({
+      exportId: bufferId,
+      memberId: `${bufferId}.${name}`,
+      signatureId: `${bufferId}.${name}()`,
+      operationKind: "method",
+      target: { form: "receiver-method", name, mutatesReceiver: true },
+      resultCarrier: bufferCarrier,
+      parameterCarriers: [],
+      ...providerNativeFallibility,
+    })),
+    ...bufferNumericRows(bufferId),
     { exportId: bufferId, memberId: `${bufferId}.equals`, operationKind: "method", target: { form: "receiver-method", name: "equals", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.compare`, operationKind: "method", target: { form: "receiver-method", name: "compare", argModes: ["ref"] }, resultCarrier: int32Carrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: int32Carrier, resultConversion: rustUsizeToInt32ValueConversion },
@@ -1220,6 +1559,22 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     displayName: "Node.js for Rust",
     version: "0.0.1",
     requiredSurfaces: ["js"],
+    moduleAliases: [
+      { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "node:assert/strict", canonicalModuleSpecifier: "node:assert" },
+      { moduleSpecifier: "buffer", canonicalModuleSpecifier: "node:buffer" },
+      { moduleSpecifier: "crypto", canonicalModuleSpecifier: "node:crypto" },
+      { moduleSpecifier: "fs", canonicalModuleSpecifier: "node:fs" },
+      { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
+      { moduleSpecifier: "http", canonicalModuleSpecifier: "node:http" },
+      { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
+      { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
+      { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
+      { moduleSpecifier: "timers", canonicalModuleSpecifier: "node:timers" },
+      { moduleSpecifier: "util", canonicalModuleSpecifier: "node:util" },
+      { moduleSpecifier: "url", canonicalModuleSpecifier: "node:url" },
+    ],
     modules: [
       assertModule(),
       pathModule(),
@@ -1237,6 +1592,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     types: [
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
       { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
+      { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
+      { exportId: "node:process::ProcessWriteStream", targetCarrier: processWriteStreamCarrier },
       { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
       { exportId: "node:url::URL", targetCarrier: urlCarrier },
       { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
@@ -1285,23 +1642,27 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
+      "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
+      "rust.node.ProcessWriteStream": "tsonic_rust_node::process::ProcessWriteStream",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
     },
     carrierTraits: {
-      "rust.node.Stats": { clone: "always", copy: "never" },
-      "rust.node.Buffer": { clone: "always", copy: "never" },
-      "rust.node.Url": { clone: "always", copy: "never" },
-      "rust.node.UrlObject": { clone: "always", copy: "never" },
-      "rust.node.UrlSearchParams": { clone: "always", copy: "never" },
-      "rust.node.Hash": { clone: "always", copy: "never" },
-      "rust.node.Hmac": { clone: "always", copy: "never" },
-      "rust.node.HttpIncomingMessage": { clone: "always", copy: "never" },
-      "rust.node.HttpServerResponse": { clone: "always", copy: "never" },
-      "rust.node.HttpServer": { clone: "always", copy: "never" },
-      "rust.node.Timeout": { clone: "always", copy: "never" },
+      "rust.node.Stats": cloneOnlyCarrierTraits,
+      "rust.node.Buffer": cloneOnlyCarrierTraits,
+      "rust.node.Url": cloneOnlyCarrierTraits,
+      "rust.node.UrlObject": cloneOnlyCarrierTraits,
+      "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
+      "rust.node.Hash": cloneOnlyCarrierTraits,
+      "rust.node.Hmac": cloneOnlyCarrierTraits,
+      "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
+      "rust.node.ProcessWriteStream": cloneOnlyCarrierTraits,
+      "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
+      "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
+      "rust.node.HttpServer": cloneOnlyCarrierTraits,
+      "rust.node.Timeout": cloneOnlyCarrierTraits,
     },
     binaryEpilogues: [{
       id: "node-event-loop",

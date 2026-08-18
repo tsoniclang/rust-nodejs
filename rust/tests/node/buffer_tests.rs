@@ -372,3 +372,157 @@ fn buffer_btoa_and_atob_round_trip_latin1_and_base64() {
     let atob_error = tsonic_rust_node::buffer::atob("YQ==YQ").unwrap_err();
     assert_eq!(atob_error.code(), "INVALID_CHARACTER_ERR");
 }
+
+#[test]
+fn buffer_source_abi_preserves_views_mutation_and_numeric_results() {
+    let source = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    let mut target = Buffer::alloc(6);
+    let copied =
+        tsonic_rust_node::buffer::copy_closed_number(&source, &mut target, 1.0, 0.0, 4.0).unwrap();
+    assert_eq!(copied, 4.0);
+    assert_eq!(target.as_bytes(), vec![0, 1, 2, 3, 4, 0]);
+
+    let open_target = Buffer::alloc(5);
+    assert_eq!(
+        tsonic_rust_node::buffer::copy_open_number(&source, &open_target, 1.0, 1.0).unwrap(),
+        3.0
+    );
+    assert_eq!(open_target.as_bytes(), vec![0, 2, 3, 4, 0]);
+
+    let mut view = tsonic_rust_node::buffer::slice_closed_number(&target, 1.0, 5.0);
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint8_number(&mut view, 9.0, 0.0).unwrap(),
+        1.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint8_number(&target, 1.0).unwrap(),
+        9.0
+    );
+    let mut open_view = tsonic_rust_node::buffer::slice_open_number(&open_target, 2.0);
+    open_view.set(0, 8).unwrap();
+    assert_eq!(open_target.as_bytes(), vec![0, 2, 8, 4, 0]);
+
+    let mut numeric = Buffer::alloc(50);
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint8_number(&mut numeric, 255.0, 0.0).unwrap(),
+        1.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_int8_number(&mut numeric, -5.0, 1.0).unwrap(),
+        2.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint16_le_number(&mut numeric, 4660.9, 2.0).unwrap(),
+        4.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint16_be_number(&mut numeric, 22136.0, 4.0).unwrap(),
+        6.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_int16_le_number(&mut numeric, -1234.0, 6.0).unwrap(),
+        8.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_int16_be_number(&mut numeric, -2345.0, 8.0).unwrap(),
+        10.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint32_le_number(&mut numeric, 305419896.0, 10.0).unwrap(),
+        14.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_uint32_be_number(&mut numeric, 2271560481.0, 14.0).unwrap(),
+        18.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_int32_le_number(&mut numeric, -123456.0, 18.0).unwrap(),
+        22.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_int32_be_number(&mut numeric, -654321.0, 22.0).unwrap(),
+        26.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_float_le_number(&mut numeric, 12.5, 26.0).unwrap(),
+        30.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_float_be_number(&mut numeric, -2.25, 30.0).unwrap(),
+        34.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_double_le_number(&mut numeric, 1234.5, 34.0).unwrap(),
+        42.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::write_double_be_number(&mut numeric, -0.5, 42.0).unwrap(),
+        50.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint8_number(&numeric, 0.0).unwrap(),
+        255.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_int8_number(&numeric, 1.0).unwrap(),
+        -5.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint16_le_number(&numeric, 2.0).unwrap(),
+        4660.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint16_be_number(&numeric, 4.0).unwrap(),
+        22136.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_int16_le_number(&numeric, 6.0).unwrap(),
+        -1234.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_int16_be_number(&numeric, 8.0).unwrap(),
+        -2345.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint32_le_number(&numeric, 10.0).unwrap(),
+        305419896.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_uint32_be_number(&numeric, 14.0).unwrap(),
+        2271560481.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_int32_le_number(&numeric, 18.0).unwrap(),
+        -123456.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_int32_be_number(&numeric, 22.0).unwrap(),
+        -654321.0
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_float_le_number(&numeric, 26.0).unwrap(),
+        12.5
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_float_be_number(&numeric, 30.0).unwrap(),
+        -2.25
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_double_le_number(&numeric, 34.0).unwrap(),
+        1234.5
+    );
+    assert_eq!(
+        tsonic_rust_node::buffer::read_double_be_number(&numeric, 42.0).unwrap(),
+        -0.5
+    );
+    assert!(tsonic_rust_node::buffer::read_uint8_number(&numeric, 0.5).is_err());
+
+    let mut swapped = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    let mut alias = swapped.swap16().unwrap();
+    alias.set(0, 8).unwrap();
+    assert_eq!(swapped.as_bytes(), vec![8, 1, 4, 3]);
+
+    let self_target = Buffer::from_bytes(vec![1, 2, 3, 4]);
+    assert_eq!(self_target.copy(&self_target, 1, 0, Some(3)).unwrap(), 3);
+    assert_eq!(self_target.as_bytes(), vec![1, 1, 2, 3]);
+}

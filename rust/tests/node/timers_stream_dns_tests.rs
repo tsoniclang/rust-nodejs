@@ -17,6 +17,12 @@ fn timers_run_callbacks_and_expose_handle_state() {
     assert!(called.get());
     assert!(!timeout.has_ref());
 
+    timers::set_timeout_callable(
+        Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
+        0,
+    );
+    tsonic_rust_node::run_event_loop().unwrap();
+
     let mut timeout = timers::set_timeout(|| {}, 10_000);
     timeout.unref();
     assert!(!timeout.has_ref());

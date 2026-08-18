@@ -1,4 +1,4 @@
-use tsonic_rust_node::process;
+use tsonic_rust_node::{buffer::Buffer, process};
 
 #[test]
 fn process_env_and_exit_code_are_testable() {
@@ -130,6 +130,22 @@ fn process_runtime_queries_have_stable_shapes() {
 }
 
 #[test]
+fn process_source_hrtime_uses_dense_number_pairs_and_rejects_invalid_pairs() {
+    let first = process::hrtime_open_number();
+    assert_eq!(first.len(), 2);
+    assert!(first.values().into_iter().all(|value| value.is_some()));
+
+    let elapsed = process::hrtime_since_number(&first).unwrap();
+    assert_eq!(elapsed.len(), 2);
+    let elapsed_values = elapsed.values();
+    assert!(elapsed_values[0].unwrap() >= 0.0);
+    assert!((0.0..1_000_000_000.0).contains(&elapsed_values[1].unwrap()));
+
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::from_dense(vec![0.0])).is_err());
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_length(2)).is_err());
+}
+
+#[test]
 fn process_metadata_warnings_and_feature_shapes_are_closed() {
     process::set_title("tsonic-test");
     assert_eq!(process::title(), "tsonic-test");
@@ -221,8 +237,14 @@ fn process_metadata_warnings_and_feature_shapes_are_closed() {
 
     let stdout = process::stdout();
     let stderr = process::stderr();
-    assert!(!stdout.closed());
-    assert!(!stderr.closed());
+    assert_eq!(stdout.fd(), 1);
+    assert_eq!(stderr.fd(), 2);
+    assert!(stdout.write_string("").unwrap());
+    assert!(stderr
+        .write_buffer(&Buffer::from_bytes(Vec::new()))
+        .unwrap());
+    let _ = stdout.is_tty();
+    let _ = stderr.is_tty();
     assert!(!process::stdin_is_tty());
 }
 

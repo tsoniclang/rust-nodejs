@@ -15,6 +15,20 @@ const expectedModules = [
   "node:util",
   "node:http",
   "node:timers",
+  "assert",
+  "assert/strict",
+  "node:assert/strict",
+  "buffer",
+  "crypto",
+  "fs",
+  "fs/promises",
+  "http",
+  "os",
+  "path",
+  "process",
+  "timers",
+  "util",
+  "url",
 ];
 
 test("provider package declares the expected node module specifiers", () => {
@@ -24,6 +38,30 @@ test("provider package declares the expected node module specifiers", () => {
     assert.ok(specifiers.includes(moduleSpecifier), `missing module '${moduleSpecifier}'`);
   }
   assert.equal(specifiers.length, expectedModules.length);
+});
+
+test("provider package declares bare Node modules as canonical aliases", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  assert.deepEqual(contribution.definition.moduleAliases, [
+    ["assert", "node:assert"],
+    ["assert/strict", "node:assert"],
+    ["node:assert/strict", "node:assert"],
+    ["buffer", "node:buffer"],
+    ["crypto", "node:crypto"],
+    ["fs", "node:fs"],
+    ["fs/promises", "node:fs/promises"],
+    ["http", "node:http"],
+    ["os", "node:os"],
+    ["path", "node:path"],
+    ["process", "node:process"],
+    ["timers", "node:timers"],
+    ["util", "node:util"],
+    ["url", "node:url"],
+  ].map(([moduleSpecifier, canonicalModuleSpecifier]) => ({
+    moduleSpecifier,
+    canonicalModuleSpecifier,
+  })));
 });
 
 test("provider package contributes a non-empty operation row set", () => {
@@ -46,6 +84,8 @@ test("provider type relations carry exact closed target carriers", () => {
   assert.deepEqual(contribution.definition.types, [
     ["node:fs::Stats", "rust.node.Stats"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
+    ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
+    ["node:process::ProcessWriteStream", "rust.node.ProcessWriteStream"],
     ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
@@ -61,8 +101,10 @@ test("provider type relations carry exact closed target carriers", () => {
     targetCarrier: { kind: "target-named", id },
   })));
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
-    clone: "always",
-    copy: "never",
+    implementations: [{
+      traitPath: "core::clone::Clone",
+      requirements: [],
+    }],
   });
   assert.equal(
     Object.keys(contribution.definition.carrierTraits).every((id) =>
@@ -194,6 +236,129 @@ test("provider package exposes exact process env absence and writable exit statu
   ]);
 });
 
+test("provider package closes process identity, timing, and memory contracts", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const processModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:process");
+  assert.ok(processModule !== undefined);
+
+  for (const name of [
+    "availableMemory", "chdir", "constrainedMemory", "hrtime", "memoryUsage", "uptime", "argv0", "version",
+  ]) {
+    assert.ok(processModule.exports.some((entry) => entry.name === name), `missing process export '${name}'`);
+  }
+  const memoryUsage = processModule.exports.find((entry) => entry.id === "node:process::MemoryUsage");
+  assert.ok(memoryUsage !== undefined && memoryUsage.kind === "class");
+  assert.deepEqual(memoryUsage.members.map((member) => member.name), [
+    "rss", "heapTotal", "heapUsed", "external", "arrayBuffers",
+  ]);
+
+  const rows = contribution.definition.operations;
+  assert.deepEqual(
+    rows.filter((row) => row.exportId === "node:process::hrtime").map((row) => [row.signatureId, row.target.path]),
+    [
+      ["node:process::hrtime()", "node_process::hrtime_open_number"],
+      ["node:process::hrtime(previous)", "node_process::hrtime_since_number"],
+    ],
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.memberId === "node:process.default.hrtime").map((row) => [row.signatureId, row.target.path]),
+    [
+      ["node:process.default.hrtime()", "node_process::hrtime_open_number"],
+      ["node:process.default.hrtime(previous)", "node_process::hrtime_since_number"],
+    ],
+  );
+
+  const namedMethods = ["availableMemory", "chdir", "constrainedMemory", "memoryUsage", "uptime"];
+  for (const name of namedMethods) {
+    const named = rows.find((row) => row.exportId === `node:process::${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    assert.ok(named !== undefined, `missing named process row '${name}'`);
+    assert.ok(defaultMember !== undefined, `missing default process row '${name}'`);
+    assert.deepEqual(defaultMember.target, named.target);
+    assert.deepEqual(defaultMember.resultCarrier, named.resultCarrier);
+  }
+  for (const name of ["argv0", "version"]) {
+    const named = rows.find((row) => row.exportId === `node:process::${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    assert.ok(named !== undefined, `missing named process property '${name}'`);
+    assert.ok(defaultMember !== undefined, `missing default process property '${name}'`);
+    assert.deepEqual(defaultMember.target, named.target);
+  }
+
+  const fieldNames = new Map([
+    ["rss", "rss"],
+    ["heapTotal", "heap_total"],
+    ["heapUsed", "heap_used"],
+    ["external", "external"],
+    ["arrayBuffers", "array_buffers"],
+  ]);
+  for (const [sourceName, targetName] of fieldNames) {
+    const row = rows.find((candidate) =>
+      candidate.memberId === `node:process::MemoryUsage.${sourceName}`);
+    assert.deepEqual(row?.target, { form: "field", name: targetName });
+    assert.deepEqual(row?.resultConversion, {
+      kind: "semantic-conversion",
+      id: "js-number-from-u64",
+    });
+  }
+  assert.equal(
+    contribution.definition.carrierPaths["rust.node.MemoryUsage"],
+    "tsonic_rust_node::process::MemoryUsage",
+  );
+  assert.deepEqual(
+    contribution.definition.carrierTraits["rust.node.MemoryUsage"],
+    contribution.definition.carrierTraits["rust.node.Buffer"],
+  );
+});
+
+test("provider package closes process stdout and stderr output contracts", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const processModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:process");
+  assert.ok(processModule !== undefined);
+  assert.deepEqual(processModule.imports, [{
+    moduleSpecifier: "node:buffer",
+    namedImports: [{ exportedName: "Buffer" }],
+  }]);
+  const stream = processModule.exports.find((entry) =>
+    entry.id === "node:process::ProcessWriteStream");
+  assert.ok(stream !== undefined && stream.kind === "class");
+  assert.deepEqual(stream.members.map((member) => member.name), ["write", "isTTY", "fd"]);
+  assert.deepEqual(stream.members[0].signatures.map((signature) => signature.id), [
+    "node:process::ProcessWriteStream.write(string)",
+    "node:process::ProcessWriteStream.write(buffer)",
+  ]);
+  for (const name of ["stdout", "stderr"]) {
+    const named = processModule.exports.find((entry) => entry.id === `node:process::${name}`);
+    assert.deepEqual(named?.type, {
+      kind: "provider-ref",
+      moduleSpecifier: "node:process",
+      exportName: "ProcessWriteStream",
+    });
+    const namedRow = contribution.definition.operations.find((row) =>
+      row.exportId === `node:process::${name}` && row.memberId === undefined);
+    const defaultRow = contribution.definition.operations.find((row) =>
+      row.memberId === `node:process.default.${name}`);
+    assert.equal(namedRow?.target.path, `node_process::${name}`);
+    assert.deepEqual(defaultRow?.target, namedRow?.target);
+    assert.deepEqual(defaultRow?.resultCarrier, namedRow?.resultCarrier);
+  }
+  const writeRows = contribution.definition.operations.filter((row) =>
+    row.memberId === "node:process::ProcessWriteStream.write");
+  assert.deepEqual(writeRows.map((row) => [row.signatureId, row.target.name]), [
+    ["node:process::ProcessWriteStream.write(string)", "write_string"],
+    ["node:process::ProcessWriteStream.write(buffer)", "write_buffer"],
+  ]);
+  assert.equal(writeRows.every((row) => row.isFallible === true), true);
+  assert.equal(
+    contribution.definition.carrierPaths["rust.node.ProcessWriteStream"],
+    "tsonic_rust_node::process::ProcessWriteStream",
+  );
+});
+
 test("provider package exposes exact filesystem and path contracts required by portable applications", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
@@ -266,6 +431,64 @@ test("provider package maps Buffer.from overloads by exact selected signature", 
   ]);
 });
 
+test("provider package closes Buffer views, copies, swaps, and numeric operations", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const bufferModule = contribution.definition.modules.find((module) =>
+    module.moduleSpecifier === "node:buffer");
+  const buffer = bufferModule?.exports.find((entry) => entry.id === "node:buffer::Buffer");
+  assert.ok(buffer !== undefined && buffer.kind === "class");
+
+  const copy = buffer.members.find((member) => member.id === "node:buffer::Buffer.copy");
+  assert.deepEqual(copy.signatures.map((signature) => signature.id), [
+    "node:buffer::Buffer.copy(target)",
+    "node:buffer::Buffer.copy(target,targetStart)",
+    "node:buffer::Buffer.copy(target,targetStart,sourceStart)",
+    "node:buffer::Buffer.copy(target,targetStart,sourceStart,sourceEnd)",
+  ]);
+
+  for (const name of ["slice", "subarray"]) {
+    const member = buffer.members.find((candidate) => candidate.name === name);
+    assert.deepEqual(member.signatures.map((signature) => signature.id), [
+      `node:buffer::Buffer.${name}()`,
+      `node:buffer::Buffer.${name}(start)`,
+      `node:buffer::Buffer.${name}(start,end)`,
+    ]);
+  }
+
+  const numericNames = [
+    "readUInt8", "readInt8", "readUInt16LE", "readUInt16BE", "readInt16LE", "readInt16BE",
+    "readUInt32LE", "readUInt32BE", "readInt32LE", "readInt32BE", "readFloatLE", "readFloatBE",
+    "readDoubleLE", "readDoubleBE", "writeUInt8", "writeInt8", "writeUInt16LE", "writeUInt16BE",
+    "writeInt16LE", "writeInt16BE", "writeUInt32LE", "writeUInt32BE", "writeInt32LE", "writeInt32BE",
+    "writeFloatLE", "writeFloatBE", "writeDoubleLE", "writeDoubleBE",
+  ];
+  for (const name of numericNames) {
+    const member = buffer.members.find((candidate) => candidate.name === name);
+    assert.equal(member.signatures.length, 2, `${name} must expose default and explicit offsets`);
+  }
+
+  const rows = contribution.definition.operations;
+  assert.equal(rows.filter((row) => numericNames.some((name) =>
+    row.memberId === `node:buffer::Buffer.${name}`)).length, numericNames.length * 2);
+  const writeUInt8 = rows.filter((row) => row.memberId === "node:buffer::Buffer.writeUInt8");
+  assert.deepEqual(writeUInt8.map((row) => row.resultCarrier), [
+    { kind: "source-primitive", name: "float64" },
+    { kind: "source-primitive", name: "float64" },
+  ]);
+  assert.deepEqual(writeUInt8.map((row) => row.target.receiverMode), ["mut-ref", "mut-ref"]);
+  assert.deepEqual(writeUInt8[0].target.trailingArguments, [{ kind: "float64", value: 0 }]);
+
+  const copyRows = rows.filter((row) => row.memberId === "node:buffer::Buffer.copy");
+  assert.equal(copyRows.length, 4);
+  assert.equal(copyRows[0].target.argModes[0], "ref");
+  for (const name of ["swap16", "swap32", "swap64"]) {
+    const row = rows.find((candidate) => candidate.memberId === `node:buffer::Buffer.${name}`);
+    assert.deepEqual(row.target, { form: "receiver-method", name, mutatesReceiver: true });
+    assert.equal(row.isFallible, true);
+  }
+});
+
 test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
@@ -314,11 +537,19 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
 test("provider package maps timers to the shared Node event loop", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
-  const row = contribution.definition.operations.find((candidate) =>
+  const rows = contribution.definition.operations.filter((candidate) =>
+    candidate.exportId === "node:timers::setTimeout" ||
     candidate.exportId === "node:timers::setInterval");
-  assert.ok(row !== undefined);
-  assert.equal(row.operationKind, "method");
-  assert.deepEqual(row.target, { form: "call", path: "node_timers::set_interval_callable" });
-  assert.equal(row.immediateCallback, undefined);
-  assert.deepEqual(row.resultCarrier, { kind: "target-named", id: "rust.node.Timeout" });
+  assert.deepEqual(rows.map((row) => row.exportId), [
+    "node:timers::setTimeout",
+    "node:timers::setInterval",
+  ]);
+  assert.deepEqual(rows.map((row) => row.target), [
+    { form: "call", path: "node_timers::set_timeout_callable" },
+    { form: "call", path: "node_timers::set_interval_callable" },
+  ]);
+  assert.equal(rows.every((row) => row.operationKind === "method"), true);
+  assert.equal(rows.every((row) => row.immediateCallback === undefined), true);
+  assert.equal(rows.every((row) =>
+    JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout" })), true);
 });
