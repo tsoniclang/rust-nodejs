@@ -134,6 +134,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
+      "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
       "rust.node.Stats": cloneOnlyCarrierTraits,
@@ -149,6 +150,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
       "rust.node.Timeout": cloneOnlyCarrierTraits,
+      "rust.node.NodeError": cloneOnlyCarrierTraits,
     },
     binaryEpilogues: [{
       id: "node-event-loop",

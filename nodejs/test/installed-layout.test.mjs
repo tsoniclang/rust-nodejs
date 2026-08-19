@@ -166,6 +166,7 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
   });
   const result = backend.compile({
     source: createEmptyTargetSourceProgram(),
+    sourcePackages: createEmptySourcePackageGraph(projectRoot),
     project,
     target,
     runtimeReferences,
@@ -180,6 +181,30 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     writeFileSync(path, artifact.text);
   }
   return { projectRoot, result };
+}
+
+function createEmptySourcePackageGraph(projectRoot) {
+  const packageRoot = resolve(projectRoot).split(sep).join("/");
+  const packageId = `source-package:${packageRoot}`;
+  const componentId = "source-package-component:installed-layout-empty";
+  return Object.freeze({
+    fingerprint: "installed-layout-empty-source-package-graph",
+    rootPackageId: packageId,
+    packages: Object.freeze([Object.freeze({
+      id: packageId,
+      packageRoot,
+      sourceRoot: packageRoot,
+      sourceFiles: Object.freeze([]),
+      dependencies: Object.freeze([]),
+      exports: Object.freeze([]),
+      componentId,
+    })]),
+    components: Object.freeze([Object.freeze({
+      id: componentId,
+      packages: Object.freeze([packageId]),
+      dependencies: Object.freeze([]),
+    })]),
+  });
 }
 
 function createEmptyTargetSourceProgram() {

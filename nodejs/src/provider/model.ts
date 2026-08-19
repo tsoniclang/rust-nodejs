@@ -56,6 +56,7 @@ export const httpIncomingMessageCarrier: RustTargetTypeRef = { kind: "target-nam
 export const httpServerResponseCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServerResponse" };
 export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
 export const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
+export const nodeErrorCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.NodeError" };
 export const unitCarrier: RustTargetTypeRef = { kind: "tuple", elements: [] };
 export const emptyCallbackCarrier = rustCallableTargetType([], unitCarrier);
 export const httpRequestCallbackCarrier = rustCallableTargetType(
@@ -68,6 +69,7 @@ export const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
 export const providerNativeFallibility = {
   isFallible: true,
   errorBoundary: "provider-native",
+  errorCarrier: nodeErrorCarrier,
 } as const;
 export const cloneOnlyCarrierTraits = {
   implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
