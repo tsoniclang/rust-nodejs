@@ -47,6 +47,7 @@ export const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: 
 export const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
 export const processWriteStreamCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessWriteStream" };
 export const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
+export const spawnSyncResultCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.SpawnSyncResult" };
 export const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 export const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
 export const searchParamsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlSearchParams" };
@@ -56,6 +57,7 @@ export const httpIncomingMessageCarrier: RustTargetTypeRef = { kind: "target-nam
 export const httpServerResponseCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServerResponse" };
 export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
 export const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
+export const textDecoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextDecoder" };
 export const nodeErrorCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.NodeError" };
 export const unitCarrier: RustTargetTypeRef = { kind: "tuple", elements: [] };
 export const emptyCallbackCarrier = rustCallableTargetType([], unitCarrier);
@@ -95,7 +97,13 @@ export type ProviderTypeExpr =
   | typeof stringArrayType
   | typeof numberArrayType
   | typeof undefinedType
-  | { readonly kind: "provider-ref"; readonly moduleSpecifier: string; readonly exportName: string }
+  | {
+      readonly kind: "provider-ref";
+      readonly moduleSpecifier: string;
+      readonly exportName: string;
+      readonly typeArguments?: readonly ProviderTypeExpr[];
+    }
+  | { readonly kind: "type-parameter"; readonly name: string }
   | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
   | { readonly kind: "union"; readonly types: readonly ProviderTypeExpr[] }
   | typeof nullType
@@ -113,8 +121,17 @@ export type ProviderTypeExpr =
 // diagnostic that names the selected identity. Unsupported rows each state
 // the concrete contract they require.
 
-export function providerRef(moduleSpecifier: string, exportName: string): ProviderTypeExpr {
-  return { kind: "provider-ref", moduleSpecifier, exportName };
+export function providerRef(
+  moduleSpecifier: string,
+  exportName: string,
+  typeArguments?: readonly ProviderTypeExpr[],
+): ProviderTypeExpr {
+  return {
+    kind: "provider-ref",
+    moduleSpecifier,
+    exportName,
+    ...(typeArguments === undefined ? {} : { typeArguments }),
+  };
 }
 
 export function fnExport(moduleSpecifier: string, name: string, parameters: readonly { name: string; type: ProviderTypeExpr; rest?: boolean }[], returnType: ProviderTypeExpr) {
@@ -162,7 +179,11 @@ export function propertyMember(
   classId: string,
   name: string,
   type: ProviderTypeExpr,
-  options?: { readonly readonly?: boolean; readonly static?: boolean },
+  options?: {
+    readonly readonly?: boolean;
+    readonly static?: boolean;
+    readonly optional?: boolean;
+  },
 ) {
   return {
     id: `${classId}.${name}`,
@@ -170,6 +191,7 @@ export function propertyMember(
     kind: "property" as const,
     ...(options?.static === true ? { static: true } : {}),
     ...(options?.readonly === false ? {} : { readonly: true }),
+    ...(options?.optional === true ? { optional: true } : {}),
     type,
   };
 }

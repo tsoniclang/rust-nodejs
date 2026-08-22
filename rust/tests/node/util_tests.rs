@@ -3,7 +3,7 @@ use tsonic_rust_js::regexp::JsRegExp;
 use tsonic_rust_js::web::{AbortController, AbortSignal};
 use tsonic_rust_js::JsValue;
 use tsonic_rust_js::{ArrayBuffer, JsObject, Uint8Array};
-use tsonic_rust_node::util;
+use tsonic_rust_node::{buffer::Buffer, util};
 
 #[test]
 fn util_format_and_inspect_closed_values() {
@@ -211,7 +211,10 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert_eq!(decoder.encoding(), "utf-8");
     assert!(!decoder.fatal());
     assert!(!decoder.ignore_bom());
-    assert_eq!(decoder.decode("hé".as_bytes()), "hé");
+    assert_eq!(decoder.decode("hé".as_bytes()).unwrap(), "hé");
+    let default_decoder = util::text_decoder_new();
+    let buffer = Buffer::from_string("buffer", None).unwrap();
+    assert_eq!(default_decoder.decode_buffer(&buffer).unwrap(), "buffer");
     let decoder = util::TextDecoder::new_with_options(Some("utf-8"), true, true);
     assert!(decoder.fatal());
     assert!(decoder.ignore_bom());
@@ -223,10 +226,25 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
         },
     );
     assert_eq!(
-        decoder.decode_with_options("ok".as_bytes(), util::TextDecodeOptions { stream: true }),
+        decoder
+            .decode_with_options("ok".as_bytes(), util::TextDecodeOptions { stream: true })
+            .unwrap(),
         "ok"
     );
     assert!(decoder.ignore_bom());
+
+    let replacing = util::TextDecoder::new_with_options(Some("utf-8"), false, false);
+    assert_eq!(replacing.decode(&[0xff]).unwrap(), "�");
+    let fatal = util::TextDecoder::new_with_options(Some("utf-8"), true, false);
+    let error = fatal.decode(&[0xff]).unwrap_err();
+    assert_eq!(error.code, "ERR_ENCODING_INVALID_ENCODED_DATA");
+    let bom_aware = util::TextDecoder::new_with_options(Some("utf-8"), false, false);
+    assert_eq!(bom_aware.decode(b"\xef\xbb\xbfvalue").unwrap(), "value");
+    let bom_preserving = util::TextDecoder::new_with_options(Some("utf-8"), false, true);
+    assert_eq!(
+        bom_preserving.decode(b"\xef\xbb\xbfvalue").unwrap(),
+        "\u{feff}value"
+    );
 
     assert_eq!(
         util::strip_vt_control_characters("\u{1b}[31mred\u{1b}[0m"),

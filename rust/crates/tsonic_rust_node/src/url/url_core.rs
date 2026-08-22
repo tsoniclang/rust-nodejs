@@ -130,68 +130,89 @@ impl std::fmt::Display for Url {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyUrlObject {
-    pub href: String,
-    pub protocol: String,
-    pub slashes: bool,
-    pub auth: String,
-    pub host: String,
-    pub port: String,
-    pub hostname: String,
-    pub hash: String,
-    pub search: String,
-    pub query: String,
-    pub pathname: String,
-    pub path: String,
+    pub href: Option<String>,
+    pub protocol: Option<String>,
+    pub slashes: Option<bool>,
+    pub auth: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<String>,
+    pub hostname: Option<String>,
+    pub hash: Option<String>,
+    pub search: Option<String>,
+    pub query: Option<String>,
+    pub pathname: Option<String>,
+    pub path: Option<String>,
 }
 
 impl LegacyUrlObject {
-    /// Returns the full serialized URL. Empty string when absent.
-    pub fn href(&self) -> String {
+    pub fn href(&self) -> Option<String> {
         self.href.clone()
     }
 
+    pub fn required_href(&self) -> String {
+        self.href
+            .clone()
+            .expect("Url values must carry their required href")
+    }
+
+    pub fn set_required_href(&mut self, value: String) {
+        self.href = Some(value);
+    }
+
     /// Returns the protocol including the trailing colon (for example
-    /// `https:`). Empty string when absent.
-    pub fn protocol(&self) -> String {
+    /// `https:`).
+    pub fn protocol(&self) -> Option<String> {
         self.protocol.clone()
     }
 
+    /// Returns the authentication component without the trailing `@`.
+    pub fn auth(&self) -> Option<String> {
+        self.auth.clone()
+    }
+
     /// Returns the host including the port when present (for example
-    /// `example.com:8443`). Empty string when absent.
-    pub fn host(&self) -> String {
+    /// `example.com:8443`).
+    pub fn host(&self) -> Option<String> {
         self.host.clone()
     }
 
-    /// Returns the hostname without the port. Empty string when absent.
-    pub fn hostname(&self) -> String {
+    /// Returns the hostname without the port.
+    pub fn hostname(&self) -> Option<String> {
         self.hostname.clone()
     }
 
-    /// Returns the port as a decimal string. Empty string when absent.
-    pub fn port(&self) -> String {
+    /// Returns the port as a decimal string.
+    pub fn port(&self) -> Option<String> {
         self.port.clone()
     }
 
-    /// Returns the pathname (for example `/a/b`). Empty string when absent.
-    pub fn pathname(&self) -> String {
+    /// Returns the pathname (for example `/a/b`).
+    pub fn pathname(&self) -> Option<String> {
         self.pathname.clone()
     }
 
-    /// Returns the search string including the leading `?`. Empty string
-    /// when absent.
-    pub fn search(&self) -> String {
+    /// Returns the search string including the leading `?`.
+    pub fn search(&self) -> Option<String> {
         self.search.clone()
     }
 
-    /// Returns the query string without the leading `?`. Empty string when
-    /// absent.
-    pub fn query(&self) -> String {
+    /// Returns the pathname and search string.
+    pub fn path(&self) -> Option<String> {
+        self.path.clone()
+    }
+
+    /// Returns whether the URL contains a host-introducing `//` sequence.
+    pub fn slashes(&self) -> Option<bool> {
+        self.slashes
+    }
+
+    /// Returns the query string without the leading `?`.
+    pub fn query(&self) -> Option<String> {
         self.query.clone()
     }
 
-    /// Returns the fragment including the leading `#`. Empty string when
-    /// absent.
-    pub fn hash(&self) -> String {
+    /// Returns the fragment including the leading `#`.
+    pub fn hash(&self) -> Option<String> {
         self.hash.clone()
     }
 }
@@ -236,42 +257,115 @@ pub fn parse(
     parse_query_string: bool,
     slashes_denote_host: bool,
 ) -> NodeResult<LegacyUrlObject> {
-    let url = if input.contains("://") {
-        Url::parse(input, None)?
-    } else if slashes_denote_host && input.starts_with("//") {
-        Url::parse(&format!("http:{input}"), None)?
+    if input.contains('\0') {
+        return Err(NodeError::new("ERR_INVALID_URL", "URL input contains a null character"));
+    }
+
+    if parse_query_string {
+        return Err(NodeError::new(
+            "ERR_UNSUPPORTED_OPERATION",
+            "legacy URL query-object parsing is not part of the closed runtime contract",
+        ));
+    }
+    let (before_hash, hash_text) = split_once_with_prefix(input, '#');
+    let (before_query, search_text) = split_once_with_prefix(before_hash, '?');
+    let hash = (!hash_text.is_empty()).then(|| hash_text.to_string());
+    let search = (!search_text.is_empty()).then(|| search_text.to_string());
+    let query = search
+        .as_deref()
+        .map(|value| value.strip_prefix('?').unwrap_or(value).to_string());
+
+    let (protocol_text, mut remainder) = split_scheme(before_query);
+    let protocol = (!protocol_text.is_empty()).then_some(protocol_text);
+    let has_authority = remainder.starts_with("//") && (protocol.is_some() || slashes_denote_host);
+    let mut auth = None;
+    let mut host = None;
+    let mut hostname = None;
+    let mut port = None;
+    let pathname: Option<String>;
+    if has_authority {
+        remainder = remainder.strip_prefix("//").unwrap_or(remainder);
+        let slash_index = remainder.find('/');
+        let mut authority = slash_index.map_or(remainder, |index| &remainder[..index]);
+        pathname = Some(slash_index.map_or("/", |index| &remainder[index..]).to_string());
+        if let Some(at_index) = authority.rfind('@') {
+            auth = Some(authority[..at_index].to_string());
+            authority = &authority[at_index + 1..];
+        }
+        host = Some(authority.to_string());
+        let (hostname_text, port_text) = split_host(authority);
+        hostname = Some(hostname_text);
+        port = (!port_text.is_empty()).then_some(port_text);
     } else {
-        Url::parse(input, Some("http://localhost"))?
-    };
-    let query = url
-        .search
-        .strip_prefix('?')
-        .unwrap_or(&url.search)
-        .to_string();
-    let auth = match (url.username.is_empty(), url.password.is_empty()) {
-        (true, _) => String::new(),
-        (false, true) => url.username.clone(),
-        (false, false) => format!("{}:{}", url.username, url.password),
-    };
-    let query_value = if parse_query_string {
-        UrlSearchParams::new(Some(&query))?.to_string()
+        pathname = (!remainder.is_empty()).then(|| remainder.to_string());
+    }
+    let path = if pathname.is_none() && search.is_none() {
+        None
     } else {
-        query
+        Some(format!(
+            "{}{}",
+            pathname.as_deref().unwrap_or(""),
+            search.as_deref().unwrap_or(""),
+        ))
     };
-    Ok(LegacyUrlObject {
-        href: url.href.clone(),
-        protocol: url.protocol.clone(),
-        slashes: true,
+    let mut parsed = LegacyUrlObject {
+        href: None,
+        protocol,
+        slashes: has_authority.then_some(true),
         auth,
-        host: url.host.clone(),
-        port: url.port.clone(),
-        hostname: url.hostname.clone(),
-        hash: url.hash.clone(),
-        search: url.search.clone(),
-        query: query_value,
-        pathname: url.pathname.clone(),
-        path: format!("{}{}", url.pathname, url.search),
-    })
+        host,
+        port,
+        hostname,
+        hash,
+        search,
+        query,
+        pathname,
+        path,
+    };
+    parsed.href = Some(format(&parsed));
+    Ok(parsed)
+}
+
+fn split_once_with_prefix(input: &str, separator: char) -> (&str, &str) {
+    input.find(separator).map_or((input, ""), |index| (&input[..index], &input[index..]))
+}
+
+fn split_scheme(input: &str) -> (String, &str) {
+    let Some(colon_index) = input.find(':') else {
+        return (String::new(), input);
+    };
+    let scheme = &input[..colon_index];
+    let mut characters = scheme.chars();
+    let Some(first) = characters.next() else {
+        return (String::new(), input);
+    };
+    if !first.is_ascii_alphabetic()
+        || characters.any(|character| !character.is_ascii_alphanumeric() && !matches!(character, '+' | '-' | '.'))
+    {
+        return (String::new(), input);
+    }
+    (format!("{}:", scheme.to_ascii_lowercase()), &input[colon_index + 1..])
+}
+
+fn split_host(authority: &str) -> (String, String) {
+    if authority.starts_with('[') {
+        if let Some(close_bracket) = authority.find(']') {
+            let hostname = authority[..=close_bracket].to_string();
+            let port = authority
+                .get(close_bracket + 1..)
+                .and_then(|suffix| suffix.strip_prefix(':'))
+                .unwrap_or("")
+                .to_string();
+            return (hostname, port);
+        }
+    }
+    if let Some(colon_index) = authority.rfind(':') {
+        if authority[..colon_index].contains(':') {
+            return (authority.to_string(), String::new());
+        }
+        return (authority[..colon_index].to_string(), authority[colon_index + 1..].to_string());
+    }
+    (authority.to_string(), String::new())
 }
 
 /// Parses `input` into a legacy URL object without query-string expansion
@@ -289,20 +383,52 @@ pub fn format_legacy(url: &LegacyUrlObject) -> String {
 }
 
 pub fn format(value: &LegacyUrlObject) -> String {
+    let mut protocol = value.protocol.clone().unwrap_or_default();
+    if !protocol.is_empty() && !protocol.ends_with(':') {
+        protocol.push(':');
+    }
+    let host = value.host.clone().filter(|value| !value.is_empty()).unwrap_or_else(|| {
+        let mut host = value.hostname.clone().unwrap_or_default();
+        if let Some(port) = value.port.as_deref().filter(|port| !port.is_empty()) {
+            host.push(':');
+            host.push_str(port);
+        }
+        host
+    });
+    let slashes = value.slashes == Some(true)
+        || (is_slashed_protocol(&protocol) && (!host.is_empty() || protocol == "file:"));
     let mut result = String::new();
-    result.push_str(&value.protocol);
-    if value.slashes {
+    result.push_str(&protocol);
+    if slashes {
         result.push_str("//");
     }
-    if !value.auth.is_empty() {
-        result.push_str(&value.auth);
+    if let Some(auth) = value.auth.as_deref().filter(|value| !value.is_empty()) {
+        result.push_str(auth);
         result.push('@');
     }
-    result.push_str(&value.host);
-    result.push_str(&value.pathname);
-    result.push_str(&value.search);
-    result.push_str(&value.hash);
+    result.push_str(&host);
+    let pathname = value.pathname.as_deref().unwrap_or("");
+    if slashes && !host.is_empty() && !pathname.is_empty() && !pathname.starts_with('/') {
+        result.push('/');
+    }
+    result.push_str(pathname);
+    push_prefixed(&mut result, value.search.as_deref(), '?');
+    push_prefixed(&mut result, value.hash.as_deref(), '#');
     result
+}
+
+fn is_slashed_protocol(protocol: &str) -> bool {
+    matches!(protocol, "http:" | "https:" | "ftp:" | "gopher:" | "file:" | "ws:" | "wss:")
+}
+
+fn push_prefixed(result: &mut String, value: Option<&str>, prefix: char) {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return;
+    };
+    if !value.starts_with(prefix) {
+        result.push(prefix);
+    }
+    result.push_str(value);
 }
 
 pub fn resolve(from: &str, to: &str) -> NodeResult<String> {

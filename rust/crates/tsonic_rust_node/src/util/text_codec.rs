@@ -1,3 +1,5 @@
+use crate::error::{NodeError, NodeResult};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TextEncoder;
 
@@ -65,13 +67,31 @@ impl TextDecoder {
         self.ignore_bom
     }
 
-    pub fn decode(&self, input: &[u8]) -> String {
-        String::from_utf8_lossy(input).into_owned()
+    pub fn decode(&self, input: &[u8]) -> NodeResult<String> {
+        let input = if !self.ignore_bom && input.starts_with(&[0xef, 0xbb, 0xbf]) {
+            &input[3..]
+        } else {
+            input
+        };
+        if self.fatal {
+            return String::from_utf8(input.to_vec()).map_err(|error| {
+                NodeError::new("ERR_ENCODING_INVALID_ENCODED_DATA", error.to_string())
+            });
+        }
+        Ok(String::from_utf8_lossy(input).into_owned())
     }
 
-    pub fn decode_with_options(&self, input: &[u8], _options: TextDecodeOptions) -> String {
+    pub fn decode_with_options(&self, input: &[u8], _options: TextDecodeOptions) -> NodeResult<String> {
         self.decode(input)
     }
+
+    pub fn decode_buffer(&self, input: &crate::buffer::Buffer) -> NodeResult<String> {
+        input.with_bytes(|bytes| self.decode(bytes))
+    }
+}
+
+pub fn text_decoder_new() -> TextDecoder {
+    TextDecoder::new(None)
 }
 
 pub mod types {

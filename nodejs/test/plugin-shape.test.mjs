@@ -11,7 +11,7 @@ test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
   assert.ok(plugin.moduleOwnership.length > 0);
   assert.ok(plugin.moduleOwnership.every(({ providerId }) =>
     providerId === "tsonic.rust.provider-package.@tsonic/rust-nodejs.binding"));
-  assert.deepEqual(plugin.requiredSurfaces, ["js"]);
+  assert.equal(Object.hasOwn(plugin, "requiredSurfaces"), false);
 });
 
 test("plugin exposes source, target-policy, and runtime contributions", () => {

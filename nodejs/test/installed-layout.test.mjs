@@ -138,40 +138,66 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
   mkdirSync(projectRoot, { recursive: true });
   const target = { id: "rust", options: {} };
   const project = { entryPoint: "src/index.ts", targets: [target] };
-  const contributionContext = {
-    project,
-    target,
-    selectedPackages: [],
-    selectedSurfaces: [jsSurface],
-    selectedCapabilities: [nodeCapability],
-    paths: {
-      projectFilePath: join(projectRoot, "tsonic.json"),
-      projectRoot,
-      outputRoot: join(projectRoot, "out"),
-      targetOutputRoot: join(projectRoot, "out/rust"),
-    },
+  const paths = {
+    projectFilePath: join(projectRoot, "tsonic.json"),
+    projectRoot,
+    outputRoot: join(projectRoot, "out"),
+    targetOutputRoot: join(projectRoot, "out/rust"),
   };
-  const runtimeReferences = [
-    ...targetPack.provider.runtimeContributions(contributionContext).references,
-    ...jsSurface.runtimeContributions(contributionContext).references,
-    ...nodeCapability.runtimeContributions(contributionContext).references,
-  ];
-  const backend = targetPack.createBackend({
+  const compositionContext = {
     project,
     projectDirectory: projectRoot,
     target,
-    targetPack,
-    selectedCapabilities: [nodeCapability],
-    selectedSurfaces: [jsSurface],
-  });
-  const result = backend.compile({
-    source: createEmptyTargetSourceProgram(),
-    sourcePackages: createEmptySourcePackageGraph(projectRoot),
+    selectedCapabilityIds: [nodeCapability.id],
+    selectedSurfaceIds: [jsSurface.id],
+  };
+  const capabilityContext = {
+    ...compositionContext,
+    capability: nodeCapability,
+  };
+  const capabilities = [Object.freeze({
+    capabilityId: nodeCapability.id,
+    moduleOwnership: Object.freeze([...nodeCapability.moduleOwnership]),
+    contributions: Object.freeze([
+      ...(nodeCapability.createTargetContributions?.(capabilityContext) ?? []),
+    ]),
+  })];
+  const session = targetPack.createCompilationSession({
     project,
+    projectDirectory: projectRoot,
     target,
-    runtimeReferences,
-    paths: contributionContext.paths,
+    paths,
+    selectedSurfaceIds: compositionContext.selectedSurfaceIds,
+    capabilities,
   });
+  let compiled;
+  try {
+    session.sourceProfileContributions();
+    session.sourceCompilerContributions();
+    const runtimeContext = { ...compositionContext, paths };
+    const runtimeReferences = [
+      ...session.runtimeContributions().references,
+      ...jsSurface.runtimeContributions(runtimeContext).references,
+      ...nodeCapability.runtimeContributions({
+        ...runtimeContext,
+        capability: nodeCapability,
+      }).references,
+    ];
+    compiled = session.compile({
+      source: createEmptyTargetSourceProgram(),
+      sourcePackages: createEmptySourcePackageGraph(projectRoot),
+      project,
+      target,
+      runtimeReferences,
+      paths,
+    });
+  } finally {
+    session.close();
+  }
+  const result = {
+    artifacts: compiled.kind === "resolved" ? compiled.value.artifacts : [],
+    diagnostics: compiled.diagnostics,
+  };
   assert.deepEqual(result.diagnostics, []);
   assert.ok(result.artifacts.length >= 2);
   for (const artifact of result.artifacts) {

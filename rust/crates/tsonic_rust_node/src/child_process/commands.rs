@@ -42,6 +42,25 @@ pub fn spawn_sync(program: &str, args: &[&str]) -> NodeResult<SpawnOutput> {
     spawn_file_sync(program, args)
 }
 
+pub fn spawn_sync_result<Arguments: SpawnSyncArguments + ?Sized>(
+    program: &str,
+    args: &Arguments,
+) -> NodeResult<SpawnSyncResult> {
+    let output = args.with_spawn_sync_arguments(|arguments| spawn_file_sync(program, arguments))?;
+    Ok(match output {
+        Ok(output) => SpawnSyncResult {
+            stdout: crate::buffer::Buffer::from_bytes(output.stdout),
+            stderr: crate::buffer::Buffer::from_bytes(output.stderr),
+            status: Some(output.status),
+        },
+        Err(error) => SpawnSyncResult {
+            stdout: crate::buffer::Buffer::from_bytes(Vec::new()),
+            stderr: crate::buffer::Buffer::from_bytes(error.to_string().into_bytes()),
+            status: None,
+        },
+    })
+}
+
 pub fn spawn_file(program: &str, args: &[&str]) -> NodeResult<ChildProcess> {
     spawn_file_with_options(program, args, &SpawnOptions::default())
 }

@@ -167,25 +167,25 @@ fn url_static_and_legacy_helpers_cover_common_node_shapes() {
     assert!(!can_parse("/a", None));
 
     let legacy = parse("https://u:p@example.com:8443/a?x=1#h", false, false).unwrap();
-    assert_eq!(legacy.protocol, "https:");
-    assert_eq!(legacy.auth, "u:p");
-    assert_eq!(legacy.host, "example.com:8443");
-    assert_eq!(legacy.path, "/a?x=1");
+    assert_eq!(legacy.protocol.as_deref(), Some("https:"));
+    assert_eq!(legacy.auth.as_deref(), Some("u:p"));
+    assert_eq!(legacy.host.as_deref(), Some("example.com:8443"));
+    assert_eq!(legacy.path.as_deref(), Some("/a?x=1"));
     assert_eq!(format(&legacy), "https://u:p@example.com:8443/a?x=1#h");
 
     let built = format(&LegacyUrlObject {
-        href: String::new(),
-        protocol: "https:".to_string(),
-        slashes: true,
-        auth: String::new(),
-        host: "example.com".to_string(),
-        port: String::new(),
-        hostname: "example.com".to_string(),
-        hash: "#top".to_string(),
-        search: "?q=1".to_string(),
-        query: "q=1".to_string(),
-        pathname: "/docs".to_string(),
-        path: "/docs?q=1".to_string(),
+        href: None,
+        protocol: Some("https:".to_string()),
+        slashes: Some(true),
+        auth: None,
+        host: Some("example.com".to_string()),
+        port: None,
+        hostname: Some("example.com".to_string()),
+        hash: Some("#top".to_string()),
+        search: Some("?q=1".to_string()),
+        query: Some("q=1".to_string()),
+        pathname: Some("/docs".to_string()),
+        path: Some("/docs?q=1".to_string()),
     });
     assert_eq!(built, "https://example.com/docs?q=1#top");
     let format_options = UrlFormatOptions {
@@ -207,33 +207,98 @@ fn url_static_and_legacy_helpers_cover_common_node_shapes() {
 
 #[test]
 fn legacy_url_object_accessors_expose_components_and_round_trip() {
-    let legacy = parse_legacy("https://user@example.com:8443/a/b?x=1#f").unwrap();
-    assert_eq!(legacy.href(), "https://user@example.com:8443/a/b?x=1#f");
-    assert_eq!(legacy.protocol(), "https:");
-    assert_eq!(legacy.host(), "example.com:8443");
-    assert_eq!(legacy.hostname(), "example.com");
-    assert_eq!(legacy.port(), "8443");
-    assert_eq!(legacy.pathname(), "/a/b");
-    assert_eq!(legacy.search(), "?x=1");
-    assert_eq!(legacy.query(), "x=1");
-    assert_eq!(legacy.hash(), "#f");
+    let mut legacy = parse_legacy("https://user@example.com:8443/a/b?x=1#f").unwrap();
+    assert_eq!(
+        legacy.href().as_deref(),
+        Some("https://user@example.com:8443/a/b?x=1#f")
+    );
+    assert_eq!(
+        legacy.required_href(),
+        "https://user@example.com:8443/a/b?x=1#f"
+    );
+    assert_eq!(legacy.protocol().as_deref(), Some("https:"));
+    assert_eq!(legacy.auth().as_deref(), Some("user"));
+    assert_eq!(legacy.host().as_deref(), Some("example.com:8443"));
+    assert_eq!(legacy.hostname().as_deref(), Some("example.com"));
+    assert_eq!(legacy.port().as_deref(), Some("8443"));
+    assert_eq!(legacy.pathname().as_deref(), Some("/a/b"));
+    assert_eq!(legacy.search().as_deref(), Some("?x=1"));
+    assert_eq!(legacy.query().as_deref(), Some("x=1"));
+    assert_eq!(legacy.hash().as_deref(), Some("#f"));
+    assert_eq!(legacy.path().as_deref(), Some("/a/b?x=1"));
+    assert_eq!(legacy.slashes(), Some(true));
+    legacy.set_required_href("https://example.test/replaced".to_string());
+    assert_eq!(legacy.required_href(), "https://example.test/replaced");
+    legacy.set_required_href("https://user@example.com:8443/a/b?x=1#f".to_string());
     assert_eq!(
         format_legacy(&legacy),
         "https://user@example.com:8443/a/b?x=1#f"
     );
 
-    // Absent components are empty strings, never panics or placeholders.
+    // Absent legacy components preserve Node's null contract.
     let bare = parse_legacy("https://example.com/").unwrap();
-    assert_eq!(bare.href(), "https://example.com/");
-    assert_eq!(bare.protocol(), "https:");
-    assert_eq!(bare.host(), "example.com");
-    assert_eq!(bare.hostname(), "example.com");
-    assert_eq!(bare.port(), "");
-    assert_eq!(bare.pathname(), "/");
-    assert_eq!(bare.search(), "");
-    assert_eq!(bare.query(), "");
-    assert_eq!(bare.hash(), "");
+    assert_eq!(bare.href().as_deref(), Some("https://example.com/"));
+    assert_eq!(bare.protocol().as_deref(), Some("https:"));
+    assert_eq!(bare.host().as_deref(), Some("example.com"));
+    assert_eq!(bare.hostname().as_deref(), Some("example.com"));
+    assert_eq!(bare.port(), None);
+    assert_eq!(bare.pathname().as_deref(), Some("/"));
+    assert_eq!(bare.search(), None);
+    assert_eq!(bare.query(), None);
+    assert_eq!(bare.hash(), None);
     assert_eq!(format_legacy(&bare), "https://example.com/");
+
+    let relative = parse_legacy("images/cover.png?width=320#preview").unwrap();
+    assert_eq!(relative.protocol(), None);
+    assert_eq!(relative.hostname(), None);
+    assert_eq!(relative.pathname().as_deref(), Some("images/cover.png"));
+    assert_eq!(relative.search().as_deref(), Some("?width=320"));
+    assert_eq!(relative.query().as_deref(), Some("width=320"));
+    assert_eq!(
+        relative.path().as_deref(),
+        Some("images/cover.png?width=320")
+    );
+    assert_eq!(relative.hash().as_deref(), Some("#preview"));
+    assert_eq!(
+        format_legacy(&relative),
+        "images/cover.png?width=320#preview"
+    );
+
+    let path = parse("//cdn.example.test/image.png", false, false).unwrap();
+    assert_eq!(path.slashes(), None);
+    assert_eq!(path.host(), None);
+    assert_eq!(
+        path.pathname().as_deref(),
+        Some("//cdn.example.test/image.png")
+    );
+
+    let authority = parse("//cdn.example.test/image.png", false, true).unwrap();
+    assert_eq!(authority.slashes(), Some(true));
+    assert_eq!(authority.host().as_deref(), Some("cdn.example.test"));
+    assert_eq!(authority.hostname().as_deref(), Some("cdn.example.test"));
+    assert_eq!(authority.pathname().as_deref(), Some("/image.png"));
+
+    let parsed_query_error = parse("https://example.test/?x=1", true, false).unwrap_err();
+    assert_eq!(parsed_query_error.code(), "ERR_UNSUPPORTED_OPERATION");
+
+    let composed = LegacyUrlObject {
+        href: None,
+        protocol: Some("https".to_string()),
+        slashes: None,
+        auth: None,
+        host: None,
+        port: Some("8443".to_string()),
+        hostname: Some("example.test".to_string()),
+        hash: Some("top".to_string()),
+        search: Some("page=1".to_string()),
+        query: None,
+        pathname: Some("docs".to_string()),
+        path: None,
+    };
+    assert_eq!(
+        format_legacy(&composed),
+        "https://example.test:8443/docs?page=1#top"
+    );
 }
 
 #[test]

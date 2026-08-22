@@ -10,6 +10,7 @@ const expectedModules = [
   "node:fs/promises",
   "node:process",
   "node:buffer",
+  "node:child_process",
   "node:url",
   "node:crypto",
   "node:util",
@@ -19,6 +20,7 @@ const expectedModules = [
   "assert/strict",
   "node:assert/strict",
   "buffer",
+  "child_process",
   "crypto",
   "fs",
   "fs/promises",
@@ -48,6 +50,7 @@ test("provider package declares bare Node modules as canonical aliases", () => {
     ["assert/strict", "node:assert"],
     ["node:assert/strict", "node:assert"],
     ["buffer", "node:buffer"],
+    ["child_process", "node:child_process"],
     ["crypto", "node:crypto"],
     ["fs", "node:fs"],
     ["fs/promises", "node:fs/promises"],
@@ -89,6 +92,8 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
+    ["node:url::Url", "rust.node.UrlObject"],
+    ["node:url::UrlWithStringQuery", "rust.node.UrlObject"],
     ["node:url::URLSearchParams", "rust.node.UrlSearchParams"],
     ["node:crypto::Hash", "rust.node.Hash"],
     ["node:crypto::Hmac", "rust.node.Hmac"],
@@ -96,6 +101,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::ServerResponse", "rust.node.HttpServerResponse"],
     ["node:http::Server", "rust.node.HttpServer"],
     ["node:timers::Timeout", "rust.node.Timeout"],
+    ["node:util::TextDecoder", "rust.node.TextDecoder"],
   ].map(([exportId, id]) => ({
     exportId,
     targetCarrier: { kind: "target-named", id },
@@ -155,6 +161,176 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
     contribution.definition.carrierPaths["rust.node.UrlObject"],
     "tsonic_rust_node::url::LegacyUrlObject",
   );
+});
+
+test("provider package closes child-process and text-decoder operations", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const rows = contribution.definition.operations;
+
+  const spawnSync = rows.find((row) => row.exportId === "node:child_process::spawnSync");
+  assert.deepEqual(spawnSync, {
+    exportId: "node:child_process::spawnSync",
+    operationKind: "method",
+    target: {
+      form: "call",
+      path: "node_child_process::spawn_sync_result",
+      argModes: ["ref", "ref"],
+    },
+    resultCarrier: { kind: "target-named", id: "rust.node.SpawnSyncResult" },
+    parameterCarriers: [
+      { kind: "target-named", id: "rust.std.String" },
+      { kind: "type-parameter", name: "Arguments" },
+    ],
+    typeParameters: ["Arguments"],
+    isFallible: true,
+    errorBoundary: "provider-native",
+    errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
+  });
+  const childProcessExports = contribution.definition.modules
+    .find((module) => module.moduleSpecifier === "node:child_process")?.exports ?? [];
+  const spawnReturns = childProcessExports.find((entry) =>
+    entry.name === "SpawnSyncReturns"
+  );
+  assert.deepEqual(spawnReturns?.typeParameters, [{ name: "T" }]);
+  assert.deepEqual(
+    spawnReturns?.members?.map((member) => [member.name, member.type]),
+    [
+      ["stdout", { kind: "type-parameter", name: "T" }],
+      ["stderr", { kind: "type-parameter", name: "T" }],
+      ["status", {
+        kind: "union",
+        types: [{ kind: "number" }, { kind: "literal", value: null }],
+      }],
+    ],
+  );
+  for (const name of ["stdout", "stderr", "status"]) {
+    assert.deepEqual(
+      rows
+        .filter((row) => row.memberId === `node:child_process::SpawnSyncReturns.${name}`)
+        .map((row) => row.operationKind),
+      ["property", "property-set"],
+      `incomplete SpawnSyncReturns property '${name}'`,
+    );
+  }
+
+  const decode = rows.find((row) => row.memberId === "node:util::TextDecoder.decode");
+  assert.equal(decode?.target.form, "receiver-method");
+  assert.equal(decode?.target.name, "decode_buffer");
+  assert.equal(decode?.isFallible, true);
+  assert.equal(decode?.errorBoundary, "provider-native");
+  const decoderConstructors = rows.filter((row) =>
+    row.memberId === "node:util::TextDecoder.constructor"
+  );
+  assert.deepEqual(
+    decoderConstructors.map((row) => row.signatureId),
+    ["node:util::TextDecoder.constructor()"],
+  );
+  for (const name of ["encoding", "fatal", "ignoreBOM"]) {
+    assert.ok(
+      rows.some((row) => row.memberId === `node:util::TextDecoder.${name}`),
+      `missing TextDecoder property '${name}'`,
+    );
+  }
+
+  const urlExports = contribution.definition.modules
+    .find((module) => module.moduleSpecifier === "node:url")?.exports ?? [];
+  const urlObject = urlExports.find((entry) => entry.name === "UrlObject");
+  assert.deepEqual(
+    urlObject?.members?.map((member) => member.name),
+    [
+      "href",
+      "protocol",
+      "auth",
+      "host",
+      "hostname",
+      "port",
+      "pathname",
+      "search",
+      "query",
+      "hash",
+      "slashes",
+    ],
+  );
+  assert.ok(urlObject?.members?.every((member) => member.optional === true));
+  const optionalNullableString = {
+    kind: "union",
+    types: [
+      { kind: "string" },
+      { kind: "literal", value: null },
+      { kind: "undefined" },
+    ],
+  };
+  for (const member of urlObject?.members ?? []) {
+    assert.equal(member.readonly, undefined);
+    assert.deepEqual(
+      member.type,
+      member.name === "slashes"
+        ? {
+          kind: "union",
+          types: [
+            { kind: "boolean" },
+            { kind: "literal", value: null },
+            { kind: "undefined" },
+          ],
+        }
+        : optionalNullableString,
+    );
+  }
+  const legacyUrl = urlExports.find((entry) => entry.name === "Url");
+  assert.equal(legacyUrl?.heritage, undefined);
+  assert.deepEqual(legacyUrl?.members?.map((member) => member.name), [
+    "href",
+    "protocol",
+    "auth",
+    "host",
+    "hostname",
+    "port",
+    "pathname",
+    "search",
+    "query",
+    "hash",
+    "path",
+    "slashes",
+  ]);
+  assert.deepEqual(
+    legacyUrl?.members?.find((member) => member.name === "href")?.type,
+    { kind: "string" },
+  );
+  assert.deepEqual(
+    legacyUrl?.members?.find((member) => member.name === "pathname")?.type,
+    {
+      kind: "union",
+      types: [{ kind: "string" }, { kind: "literal", value: null }],
+    },
+  );
+  const stringQueryUrl = urlExports.find((entry) => entry.name === "UrlWithStringQuery");
+  assert.deepEqual(stringQueryUrl?.heritage, [{
+    kind: "extends",
+    type: {
+      kind: "provider-ref",
+      moduleSpecifier: "node:url",
+      exportName: "Url",
+    },
+  }]);
+  assert.deepEqual(stringQueryUrl?.members?.map((member) => member.name), ["query"]);
+  const urlMemberGroups = [
+    ["UrlObject", urlObject?.members?.map((member) => member.name) ?? []],
+    ["Url", legacyUrl?.members?.map((member) => member.name) ?? []],
+    ["UrlWithStringQuery", ["query"]],
+  ];
+  for (const [exportName, memberNames] of urlMemberGroups) {
+    const exportId = `node:url::${exportName}`;
+    for (const name of memberNames) {
+      assert.deepEqual(
+        rows
+          .filter((row) => row.exportId === exportId && row.memberId === `${exportId}.${name}`)
+          .map((row) => row.operationKind),
+        ["property", "property-set"],
+        `incomplete ${exportName} property '${name}'`,
+      );
+    }
+  }
 });
 
 test("provider package maps util format to the generic value-slice call form", () => {
