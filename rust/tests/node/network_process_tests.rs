@@ -547,6 +547,29 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
     assert!(output.success());
     assert_eq!(output.output()[0], None);
     assert!(!output.to_spawn_sync_returns().stdout.is_empty());
+    let arguments = tsonic_rust_js::JsArray::from_dense(vec!["--list".to_string()]);
+    let closed = child_process::spawn_sync_result(&current, &arguments).unwrap();
+    assert_eq!(closed.status, Some(0));
+    assert!(closed
+        .stdout
+        .to_string_enc("utf8")
+        .unwrap()
+        .contains("network_process_tests"));
+    assert!(closed.stderr.is_empty());
+    let missing = child_process::spawn_sync_result(
+        "nonexistent_command_tsonic_node_compat",
+        &tsonic_rust_js::JsArray::new(),
+    )
+    .unwrap();
+    assert_eq!(missing.status, None);
+    assert!(!missing.stderr.is_empty());
+    let native_arguments = vec!["--list".to_string()];
+    let native = child_process::spawn_sync_result(&current, &native_arguments).unwrap();
+    assert_eq!(native.status, Some(0));
+    let sparse_arguments = tsonic_rust_js::JsArray::from_sparse(2, vec![(0, "--list".to_string())]);
+    let sparse_error = child_process::spawn_sync_result(&current, &sparse_arguments).unwrap_err();
+    assert_eq!(sparse_error.code(), "ERR_INVALID_ARG_TYPE");
+    assert!(sparse_error.message().contains("empty element at index 1"));
     assert!(child_process::exec_file_sync_string(&current, &["--list"])
         .unwrap()
         .contains("network_process_tests"));

@@ -29,6 +29,7 @@ test("Rust Node provider declarations are owned by semantic modules", () => {
     [
       "assert.ts",
       "buffer.ts",
+      "child-process.ts",
       "crypto.ts",
       "filesystem-promises.ts",
       "filesystem.ts",

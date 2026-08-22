@@ -16,12 +16,14 @@ import {
   searchParamsCarrier,
   statsCarrier,
   timeoutCarrier,
+  textDecoderCarrier,
   urlCarrier,
   urlObjectCarrier,
 } from "./model.js";
 import { assertModule, assertRows } from "./modules/assert.js";
 import { bufferModule, bufferRows } from "./modules/buffer.js";
 import { cryptoModule, cryptoRows } from "./modules/crypto.js";
+import { childProcessModule, childProcessRows } from "./modules/child-process.js";
 import { fsModule, fsRows } from "./modules/filesystem.js";
 import {
   fsPromisesModule,
@@ -44,12 +46,12 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     id: "@tsonic/rust-nodejs",
     displayName: "Node.js for Rust",
     version: "0.0.1",
-    requiredSurfaces: ["js"],
     moduleAliases: [
       { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
       { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
       { moduleSpecifier: "node:assert/strict", canonicalModuleSpecifier: "node:assert" },
       { moduleSpecifier: "buffer", canonicalModuleSpecifier: "node:buffer" },
+      { moduleSpecifier: "child_process", canonicalModuleSpecifier: "node:child_process" },
       { moduleSpecifier: "crypto", canonicalModuleSpecifier: "node:crypto" },
       { moduleSpecifier: "fs", canonicalModuleSpecifier: "node:fs" },
       { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
@@ -69,6 +71,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       fsPromisesModule(),
       processModule(),
       bufferModule(),
+      childProcessModule(),
       urlModule(),
       cryptoModule(),
       utilModule(),
@@ -83,6 +86,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
       { exportId: "node:url::URL", targetCarrier: urlCarrier },
       { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
+      { exportId: "node:url::Url", targetCarrier: urlObjectCarrier },
+      { exportId: "node:url::UrlWithStringQuery", targetCarrier: urlObjectCarrier },
       { exportId: "node:url::URLSearchParams", targetCarrier: searchParamsCarrier },
       { exportId: "node:crypto::Hash", targetCarrier: hashCarrier },
       { exportId: "node:crypto::Hmac", targetCarrier: hmacCarrier },
@@ -90,6 +95,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
       { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
       { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
+      { exportId: "node:util::TextDecoder", targetCarrier: textDecoderCarrier },
     ],
     operations: [
       ...assertRows(),
@@ -99,6 +105,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       ...fsPromisesRows(),
       ...processRows(),
       ...bufferRows(),
+      ...childProcessRows(),
       ...urlRows(),
       ...cryptoRows(),
       ...utilRows(),
@@ -113,6 +120,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { alias: "node_fs_promises", path: "tsonic_rust_node::fs_promises" },
       { alias: "node_process", path: "tsonic_rust_node::process" },
       { alias: "node_buffer", path: "tsonic_rust_node::buffer" },
+      { alias: "node_child_process", path: "tsonic_rust_node::child_process" },
       { alias: "node_url", path: "tsonic_rust_node::url" },
       { alias: "node_crypto", path: "tsonic_rust_node::crypto" },
       { alias: "node_util", path: "tsonic_rust_node::util" },
@@ -122,6 +130,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     carrierPaths: {
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
       "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
+      "rust.node.SpawnSyncResult": "tsonic_rust_node::child_process::SpawnSyncResult",
       "rust.node.Url": "tsonic_rust_node::url::Url",
       "rust.node.UrlObject": "tsonic_rust_node::url::LegacyUrlObject",
       "rust.node.UrlSearchParams": "tsonic_rust_node::url::UrlSearchParams",
@@ -134,11 +143,13 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
+      "rust.node.TextDecoder": "tsonic_rust_node::util::TextDecoder",
       "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
       "rust.node.Stats": cloneOnlyCarrierTraits,
       "rust.node.Buffer": cloneOnlyCarrierTraits,
+      "rust.node.SpawnSyncResult": cloneOnlyCarrierTraits,
       "rust.node.Url": cloneOnlyCarrierTraits,
       "rust.node.UrlObject": cloneOnlyCarrierTraits,
       "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
@@ -150,6 +161,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
       "rust.node.Timeout": cloneOnlyCarrierTraits,
+      "rust.node.TextDecoder": cloneOnlyCarrierTraits,
       "rust.node.NodeError": cloneOnlyCarrierTraits,
     },
     binaryEpilogues: [{

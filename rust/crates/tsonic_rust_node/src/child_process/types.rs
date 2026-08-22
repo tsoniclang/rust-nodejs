@@ -84,6 +84,52 @@ pub struct SpawnSyncReturns {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnSyncResult {
+    pub stdout: crate::buffer::Buffer,
+    pub stderr: crate::buffer::Buffer,
+    pub status: Option<i32>,
+}
+
+pub trait SpawnSyncArguments {
+    fn with_spawn_sync_arguments<Result>(
+        &self,
+        operation: impl FnOnce(&[&str]) -> Result,
+    ) -> NodeResult<Result>;
+}
+
+impl SpawnSyncArguments for Vec<String> {
+    fn with_spawn_sync_arguments<Result>(
+        &self,
+        operation: impl FnOnce(&[&str]) -> Result,
+    ) -> NodeResult<Result> {
+        let borrowed_arguments = self.iter().map(String::as_str).collect::<Vec<_>>();
+        Ok(operation(&borrowed_arguments))
+    }
+}
+
+impl SpawnSyncArguments for tsonic_rust_js::JsArray<String> {
+    fn with_spawn_sync_arguments<Result>(
+        &self,
+        operation: impl FnOnce(&[&str]) -> Result,
+    ) -> NodeResult<Result> {
+        let owned_arguments = self.values()
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value.ok_or_else(|| {
+                    NodeError::new(
+                        "ERR_INVALID_ARG_TYPE",
+                        format!("spawnSync argument array contains an empty element at index {index}"),
+                    )
+                })
+            })
+            .collect::<NodeResult<Vec<_>>>()?;
+        let borrowed_arguments = owned_arguments.iter().map(String::as_str).collect::<Vec<_>>();
+        Ok(operation(&borrowed_arguments))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromiseWithChild<T> {
     pub value: T,
     pub child: ChildProcessSnapshot,
