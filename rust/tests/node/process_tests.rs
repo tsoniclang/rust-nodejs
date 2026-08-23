@@ -185,7 +185,7 @@ fn process_metadata_warnings_and_feature_shapes_are_closed() {
     assert_eq!(process::channel(), None);
     assert!(!process::connected());
     assert!(process::disconnect().is_err());
-    assert!(process::send(&tsonic_rust_js::JsValue::String("hello".to_string())).is_err());
+    assert!(process::send(&tsonic_rust_js::JsValue::from("hello".to_string())).is_err());
     assert!(!process::no_deprecation());
     assert!(!process::throw_deprecation());
     assert!(!process::trace_deprecation());

@@ -401,7 +401,7 @@ fn tty_is_explicitly_non_interactive_by_default() {
     let input_hits = Arc::new(Mutex::new(0_usize));
     let input_hits_ref = Arc::clone(&input_hits);
     input.once("data", move |_| *input_hits_ref.lock().unwrap() += 1);
-    assert!(input.emit("data", &[JsValue::String("x".to_string())]));
+    assert!(input.emit("data", &[JsValue::from("x".to_string())]));
     assert!(!input.emit("data", &[]));
     assert_eq!(*input_hits.lock().unwrap(), 1);
 

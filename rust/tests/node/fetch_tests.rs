@@ -50,7 +50,7 @@ fn fetch_posts_request_body_and_headers() {
 #[test]
 fn fetch_rejects_pre_aborted_signal_without_network() {
     let controller = AbortController::new();
-    controller.abort(JsValue::String("stop".to_string()));
+    controller.abort(JsValue::from("stop".to_string()));
     let error = tsonic_rust_node::fetch::fetch(
         "http://127.0.0.1:9/",
         Some(tsonic_rust_node::fetch::FetchInit {

@@ -1105,6 +1105,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "regress"
+version = "0.11.1-tsonic.1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1579,6 +1586,7 @@ version = "0.1.0"
 dependencies = [
  "num-bigint",
  "num-traits",
+ "regress",
  "ryu-js",
  "tsonic_rust_runtime",
  "unicode-normalization",

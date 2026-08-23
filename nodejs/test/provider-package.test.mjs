@@ -346,6 +346,8 @@ test("provider package maps util format to the generic value-slice call form", (
     leadingArguments: [{ carrier: { kind: "target-named", id: "rust.std.String" }, mode: "ref" }],
     elementCarrier: { kind: "target-named", id: "rust.js.JsValue" },
   });
+  assert.equal(format.isFallible, true);
+  assert.equal(format.errorBoundary, "provider-native");
 });
 
 test("provider package maps process execPath to a fallible property row", () => {

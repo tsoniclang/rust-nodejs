@@ -12,7 +12,7 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     assert_eq!(dense.join(","), "1,2,3");
 
     let mut out = Vec::new();
-    js::abi::console_log_to(&mut out, &[js::abi::JsValue::String("ok".to_string())]).unwrap();
+    js::abi::console_log_to(&mut out, &[js::abi::JsValue::from("ok".to_string())]).unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "ok\n");
 
     let parsed = js::abi::json_parse(r#"{"ok":true}"#).unwrap();
@@ -31,10 +31,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
         js::abi::JsDate::from_millis(0.0).to_iso_string().unwrap(),
         "1970-01-01T00:00:00.000Z"
     );
-    assert!(js::abi::JsRegExp::new("abc", "")
-        .unwrap()
-        .test("abc")
-        .unwrap());
+    assert!(
+        js::abi::regexp_test_native(&js::abi::regexp_new_native("abc", "").unwrap(), "abc",)
+            .unwrap()
+    );
 
     let buffer = js::abi::ArrayBuffer::new(4);
     assert_eq!(buffer.byte_length(), 4);
@@ -70,10 +70,11 @@ fn node_backend_legal_abi_paths_are_emit_ready() {
         node::abi::util_format(
             "%s:%d",
             &[
-                js::abi::JsValue::String("x".to_string()),
+                js::abi::JsValue::from("x".to_string()),
                 js::abi::JsValue::Number(7.0)
             ]
-        ),
+        )
+        .unwrap(),
         "x:7"
     );
 

@@ -239,7 +239,7 @@ fn sqlite_database_sync_exec_run_get_and_all() {
         .unwrap()
         .unwrap();
     assert_eq!(row.get("id"), Some(&JsValue::Number(1.0)));
-    assert_eq!(row.get("name"), Some(&JsValue::String("ada".to_string())));
+    assert_eq!(row.get("name"), Some(&JsValue::from("ada".to_string())));
     assert_eq!(row.get("score"), Some(&JsValue::Number(42.5)));
 
     let rows = database.all("select name from users", &[]).unwrap();
@@ -303,7 +303,7 @@ fn sqlite_statement_sessions_tag_store_and_constants_are_closed_shapes() {
     assert_eq!(select.iterate(&[]).unwrap().len(), 1);
     assert_eq!(
         select.get(&[]).unwrap().unwrap().get("name"),
-        Some(&JsValue::String("alpha".to_string()))
+        Some(&JsValue::from("alpha".to_string()))
     );
 
     let tag_store = database.create_tag_store(Some(2));

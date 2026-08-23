@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use tsonic_rust_js::equality::JsStrictEqual;
-use tsonic_rust_js::{JsArray, JsObject, JsValue};
+use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
 use tsonic_rust_node::{process, readline, worker_threads};
 
 #[test]
@@ -116,11 +116,11 @@ fn worker_message_channel_structured_clones_js_values() {
     assert!(channel.port1.has_ref());
     channel
         .port1
-        .post_message(JsValue::String("hello".to_string()))
+        .post_message(JsValue::from("hello".to_string()))
         .unwrap();
     assert_eq!(
         worker_threads::receive_message_on_port(&channel.port2),
-        Some(JsValue::String("hello".to_string()))
+        Some(JsValue::from("hello".to_string()))
     );
     assert!(worker_threads::is_main_thread());
     assert!(worker_threads::parent_port().is_none());
@@ -132,11 +132,11 @@ fn worker_broadcast_channel_is_closed_in_process_state() {
     let left = worker_threads::BroadcastChannel::new("updates");
     let right = worker_threads::BroadcastChannel::new("updates");
     assert_eq!(left.name(), "updates");
-    left.post_message(JsValue::String("payload".to_string()))
+    left.post_message(JsValue::from("payload".to_string()))
         .unwrap();
     assert_eq!(
         right.receive_message(),
-        Some(JsValue::String("payload".to_string()))
+        Some(JsValue::from("payload".to_string()))
     );
     assert_eq!(right.receive_message(), None);
     left.close();
@@ -158,7 +158,7 @@ fn worker_options_environment_and_transfer_markers_are_closed_state() {
             name: Some("compiler-worker".to_string()),
             argv: vec!["--job".to_string()],
             env,
-            worker_data: JsValue::String("payload".to_string()),
+            worker_data: JsValue::from("payload".to_string()),
             resource_limits: worker_threads::ResourceLimits {
                 max_old_generation_size_mb: Some(256),
                 max_young_generation_size_mb: Some(64),
@@ -180,10 +180,10 @@ fn worker_options_environment_and_transfer_markers_are_closed_state() {
     assert!(worker.has_ref());
     assert_eq!(worker.join().unwrap(), "done");
 
-    worker_threads::set_environment_data("runtime", JsValue::String("rust".to_string())).unwrap();
+    worker_threads::set_environment_data("runtime", JsValue::from("rust".to_string())).unwrap();
     assert_eq!(
         worker_threads::get_environment_data("runtime"),
-        Some(JsValue::String("rust".to_string()))
+        Some(JsValue::from("rust".to_string()))
     );
     worker_threads::mark_as_untransferable_token("buffer-1");
     assert!(worker_threads::is_marked_as_untransferable_token(
@@ -231,9 +231,9 @@ fn worker_structured_clone_rejects_cyclic_values_deterministically() {
 fn worker_message_port_round_trips_structure_without_identity() {
     let sparse = JsArray::with_length(3);
     sparse.set(0, JsValue::Number(1.0));
-    sparse.set(2, JsValue::String("tail".to_string()));
+    sparse.set(2, JsValue::from("tail".to_string()));
     let original = JsValue::object(JsObject::from_pairs([
-        ("kind", JsValue::String("payload".to_string())),
+        ("kind", JsValue::from("payload".to_string())),
         ("items", JsValue::array(sparse)),
     ]));
 
@@ -247,7 +247,7 @@ fn worker_message_port_round_trips_structure_without_identity() {
     // Structural content does, including sparse array holes.
     assert_eq!(
         received.as_object().unwrap().borrow().get("kind"),
-        JsValue::String("payload".to_string())
+        JsValue::from("payload".to_string())
     );
     let items = received
         .as_object()
@@ -260,7 +260,7 @@ fn worker_message_port_round_trips_structure_without_identity() {
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(!items.has_index(1));
-    assert_eq!(items.get(2), Some(JsValue::String("tail".to_string())));
+    assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // Each delivery mints fresh handles: two posts of the same value are not
     // strict-equal to each other after crossing the port.
@@ -270,12 +270,27 @@ fn worker_message_port_round_trips_structure_without_identity() {
 }
 
 #[test]
+fn worker_structured_clone_preserves_exact_string_keys_and_values() {
+    let key = JsString::from_units(vec![0xd800]);
+    let value = JsString::from_units(vec![0xdc00]);
+    let mut object = JsObject::new();
+    object.set_exact(key.clone(), JsValue::String(value.clone()));
+
+    let cloned = worker_threads::ClonedValue::from_js(&JsValue::object(object))
+        .unwrap()
+        .to_js();
+    let entries = cloned.as_object().unwrap().borrow().entries_exact();
+
+    assert_eq!(entries, vec![(key, JsValue::String(value))]);
+}
+
+#[test]
 fn worker_environment_data_round_trips_structure_without_identity() {
     let sparse = JsArray::with_length(3);
     sparse.set(0, JsValue::Number(1.0));
-    sparse.set(2, JsValue::String("tail".to_string()));
+    sparse.set(2, JsValue::from("tail".to_string()));
     let original = JsValue::object(JsObject::from_pairs([
-        ("kind", JsValue::String("payload".to_string())),
+        ("kind", JsValue::from("payload".to_string())),
         ("items", JsValue::array(sparse)),
     ]));
 
@@ -289,7 +304,7 @@ fn worker_environment_data_round_trips_structure_without_identity() {
 
     // Structural content does survive it, including sparse array holes.
     let object = received.as_object().unwrap().borrow().clone();
-    assert_eq!(object.get("kind"), JsValue::String("payload".to_string()));
+    assert_eq!(object.get("kind"), JsValue::from("payload".to_string()));
     let items = received
         .as_object()
         .unwrap()
@@ -301,7 +316,7 @@ fn worker_environment_data_round_trips_structure_without_identity() {
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(!items.has_index(1));
-    assert_eq!(items.get(2), Some(JsValue::String("tail".to_string())));
+    assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // The payload rebuilds identical structure on every rebuild.
     let payload = worker_threads::ClonedValue::from_js(&original).unwrap();
@@ -316,6 +331,6 @@ fn worker_environment_data_round_trips_structure_without_identity() {
     assert!(!original.strict_equal(&broadcasted));
     assert_eq!(
         broadcasted.as_object().unwrap().borrow().get("kind"),
-        JsValue::String("payload".to_string())
+        JsValue::from("payload".to_string())
     );
 }

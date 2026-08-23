@@ -30,10 +30,15 @@ fn set_parsed_arg(result: &mut ParseArgsResult, name: &str, value: String, multi
 
 // Node %s semantics: strings are emitted verbatim; every other value is
 // rendered through inspection (which matches String() for primitives).
-fn format_string(value: &JsValue) -> String {
+fn format_string(value: &JsValue) -> crate::error::NodeResult<String> {
     match value {
-        JsValue::String(text) => text.clone(),
-        other => other.inspect(),
+        JsValue::String(text) => text.to_utf8().map_err(|_| {
+            crate::error::NodeError::new(
+                "ERR_INVALID_ARG_VALUE",
+                "JavaScript string cannot be represented by the native Rust string carrier",
+            )
+        }),
+        other => Ok(other.inspect()),
     }
 }
 
@@ -51,11 +56,16 @@ fn format_number(value: &JsValue) -> String {
         }
         JsValue::Null => 0.0,
         JsValue::String(text) => {
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                0.0
-            } else {
-                trimmed.parse::<f64>().unwrap_or(f64::NAN)
+            match text.to_utf8() {
+                Ok(text) => {
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        0.0
+                    } else {
+                        trimmed.parse::<f64>().unwrap_or(f64::NAN)
+                    }
+                }
+                Err(_) => f64::NAN,
             }
         }
         _ => f64::NAN,

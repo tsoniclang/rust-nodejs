@@ -78,6 +78,6 @@ export function utilRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::getSystemErrorName`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_name" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion, parameterCarriers: [int32Carrier] },
     { exportId: `${m}::inspect`, operationKind: "method", target: { form: "call", path: "node_util::inspect", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [jsValueCarrier] },
     { exportId: `${m}::getSystemErrorMessage`, operationKind: "method", target: { form: "call", path: "node_util::get_system_error_message" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion, parameterCarriers: [int32Carrier] },
-    { exportId: `${m}::format`, operationKind: "method", target: { form: "call-value-slice", path: "node_util::format", leadingArguments: [{ carrier: stringCarrier, mode: "ref" }], elementCarrier: jsValueCarrier }, resultCarrier: stringCarrier },
+    { exportId: `${m}::format`, operationKind: "method", target: { form: "call-value-slice", path: "node_util::format", leadingArguments: [{ carrier: stringCarrier, mode: "ref" }], elementCarrier: jsValueCarrier }, resultCarrier: stringCarrier, ...providerNativeFallibility },
   ];
 }

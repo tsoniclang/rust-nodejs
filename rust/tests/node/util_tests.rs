@@ -2,7 +2,7 @@ use tsonic_rust_js::date::JsDate;
 use tsonic_rust_js::regexp::JsRegExp;
 use tsonic_rust_js::web::{AbortController, AbortSignal};
 use tsonic_rust_js::JsValue;
-use tsonic_rust_js::{ArrayBuffer, JsObject, Uint8Array};
+use tsonic_rust_js::{ArrayBuffer, JsObject, JsString, Uint8Array};
 use tsonic_rust_node::{buffer::Buffer, util};
 
 #[test]
@@ -10,14 +10,15 @@ fn util_format_and_inspect_closed_values() {
     let output = util::format(
         "%s:%d:%j:%%",
         &[
-            JsValue::String("n".to_string()),
+            JsValue::from("n".to_string()),
             JsValue::Number(3.0),
             JsValue::Bool(true),
         ],
-    );
+    )
+    .unwrap();
     assert_eq!(output, "n:3:true:%");
     assert_eq!(
-        util::format_with_options(&JsValue::Null, "%s", &[JsValue::String("x".to_string())]),
+        util::format_with_options(&JsValue::Null, "%s", &[JsValue::from("x".to_string())]).unwrap(),
         "x"
     );
     let mut options = util::InspectOptions {
@@ -25,7 +26,7 @@ fn util_format_and_inspect_closed_values() {
         ..util::InspectOptions::default()
     };
     assert_eq!(
-        util::format_with_inspect_options(&options, "%d", &[JsValue::Number(1000.0)]),
+        util::format_with_inspect_options(&options, "%d", &[JsValue::Number(1000.0)]).unwrap(),
         "1_000"
     );
     assert_eq!(util::inspect(&JsValue::Null), "null");
@@ -41,7 +42,7 @@ fn util_format_and_inspect_closed_values() {
     options.max_string_length = Some(3);
     options.numeric_separator = false;
     assert_eq!(
-        util::inspect_with_struct_options(&JsValue::String("abcdef".to_string()), &options),
+        util::inspect_with_struct_options(&JsValue::from("abcdef".to_string()), &options),
         "\"ab..."
     );
     assert!(options.custom_inspect);
@@ -76,7 +77,7 @@ fn util_format_and_inspect_closed_values() {
             skip_prototype: true,
         }
     ));
-    assert!(util::types::is_string(&JsValue::String("x".to_string())));
+    assert!(util::types::is_string(&JsValue::from("x".to_string())));
     assert!(util::types::is_number(&JsValue::Number(1.0)));
     assert!(util::types::is_boolean(&JsValue::Bool(true)));
     assert!(util::types::is_null(&JsValue::Null));
@@ -88,70 +89,94 @@ fn util_format_and_inspect_closed_values() {
 #[test]
 fn util_format_placeholder_matrix_follows_node_semantics() {
     // %s: strings verbatim, other primitives via String() coercion.
-    assert_eq!(util::format("%s", &[JsValue::String("n".to_string())]), "n");
-    assert_eq!(util::format("%s", &[JsValue::Number(5.0)]), "5");
-    assert_eq!(util::format("%s", &[JsValue::Bool(true)]), "true");
-    assert_eq!(util::format("%s", &[JsValue::Null]), "null");
-    assert_eq!(util::format("%s", &[JsValue::Undefined]), "undefined");
+    assert_eq!(
+        util::format("%s", &[JsValue::from("n".to_string())]).unwrap(),
+        "n"
+    );
+    assert_eq!(util::format("%s", &[JsValue::Number(5.0)]).unwrap(), "5");
+    assert_eq!(util::format("%s", &[JsValue::Bool(true)]).unwrap(), "true");
+    assert_eq!(util::format("%s", &[JsValue::Null]).unwrap(), "null");
+    assert_eq!(
+        util::format("%s", &[JsValue::Undefined]).unwrap(),
+        "undefined"
+    );
 
     // %d: Number() coercion, NaN when the value does not coerce.
-    assert_eq!(util::format("%d", &[JsValue::Number(3.5)]), "3.5");
-    assert_eq!(util::format("%d", &[JsValue::String("5".to_string())]), "5");
-    assert_eq!(util::format("%d", &[JsValue::Bool(true)]), "1");
-    assert_eq!(util::format("%d", &[JsValue::Null]), "0");
-    assert_eq!(util::format("%d", &[JsValue::Undefined]), "NaN");
+    assert_eq!(util::format("%d", &[JsValue::Number(3.5)]).unwrap(), "3.5");
     assert_eq!(
-        util::format("%d", &[JsValue::String("nope".to_string())]),
+        util::format("%d", &[JsValue::from("5".to_string())]).unwrap(),
+        "5"
+    );
+    assert_eq!(util::format("%d", &[JsValue::Bool(true)]).unwrap(), "1");
+    assert_eq!(util::format("%d", &[JsValue::Null]).unwrap(), "0");
+    assert_eq!(util::format("%d", &[JsValue::Undefined]).unwrap(), "NaN");
+    assert_eq!(
+        util::format("%d", &[JsValue::from("nope".to_string())]).unwrap(),
         "NaN"
     );
 
     // %j: JSON serialization.
     assert_eq!(
-        util::format("%j", &[JsValue::String("x".to_string())]),
+        util::format("%j", &[JsValue::from("x".to_string())]).unwrap(),
         "\"x\""
     );
-    assert_eq!(util::format("%j", &[JsValue::Number(3.0)]), "3");
-    assert_eq!(util::format("%j", &[JsValue::Bool(true)]), "true");
-    assert_eq!(util::format("%j", &[JsValue::Undefined]), "undefined");
+    assert_eq!(util::format("%j", &[JsValue::Number(3.0)]).unwrap(), "3");
+    assert_eq!(util::format("%j", &[JsValue::Bool(true)]).unwrap(), "true");
+    assert_eq!(
+        util::format("%j", &[JsValue::Undefined]).unwrap(),
+        "undefined"
+    );
     let cycle = JsValue::object(JsObject::new());
     cycle
         .as_object()
         .unwrap()
         .borrow_mut()
         .set("self", cycle.clone());
-    assert_eq!(util::format("%j", &[cycle]), "[Circular]");
+    assert_eq!(util::format("%j", &[cycle]).unwrap(), "[Circular]");
 
     // %o: inspection (strings stay quoted).
     assert_eq!(
-        util::format("%o", &[JsValue::String("x".to_string())]),
+        util::format("%o", &[JsValue::from("x".to_string())]).unwrap(),
         "\"x\""
     );
-    assert_eq!(util::format("%o", &[JsValue::Number(3.0)]), "3");
+    assert_eq!(util::format("%o", &[JsValue::Number(3.0)]).unwrap(), "3");
 
     // %%: literal percent that consumes no argument.
-    assert_eq!(util::format("%d%%", &[JsValue::Number(100.0)]), "100%");
+    assert_eq!(
+        util::format("%d%%", &[JsValue::Number(100.0)]).unwrap(),
+        "100%"
+    );
 
     // Without substitution arguments the format string is returned as-is.
-    assert_eq!(util::format("%s", &[]), "%s");
-    assert_eq!(util::format("%%", &[]), "%%");
+    assert_eq!(util::format("%s", &[]).unwrap(), "%s");
+    assert_eq!(util::format("%%", &[]).unwrap(), "%%");
 
     // Placeholders beyond the supplied arguments stay literal.
     assert_eq!(
-        util::format("%s %s", &[JsValue::String("a".to_string())]),
+        util::format("%s %s", &[JsValue::from("a".to_string())]).unwrap(),
         "a %s"
     );
 
     // Excess arguments append space-separated: strings verbatim, other
     // values inspected; unknown directives stay literal and keep their arg.
     assert_eq!(
-        util::format(
-            "a",
-            &[JsValue::String("b".to_string()), JsValue::Number(2.0)]
-        ),
+        util::format("a", &[JsValue::from("b".to_string()), JsValue::Number(2.0)]).unwrap(),
         "a b 2"
     );
-    assert_eq!(util::format("", &[JsValue::String("b".to_string())]), " b");
-    assert_eq!(util::format("%x", &[JsValue::Number(1.0)]), "%x 1");
+    assert_eq!(
+        util::format("", &[JsValue::from("b".to_string())]).unwrap(),
+        " b"
+    );
+    assert_eq!(util::format("%x", &[JsValue::Number(1.0)]).unwrap(), "%x 1");
+}
+
+#[test]
+fn util_format_rejects_unrepresentable_exact_strings_at_the_native_boundary() {
+    let exact = JsValue::String(JsString::from_units(vec![0xd800]));
+
+    let error = util::format("%s", &[exact.clone()]).unwrap_err();
+    assert_eq!(error.code(), "ERR_INVALID_ARG_VALUE");
+    assert_eq!(util::format("%d", &[exact]).unwrap(), "NaN");
 }
 
 #[test]
@@ -274,7 +299,7 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert_eq!(symbol.custom, 5);
     let controller = AbortController::new();
     assert!(!util::aborted(&controller.signal()));
-    controller.abort(JsValue::String("stop".to_string()));
+    controller.abort(JsValue::from("stop".to_string()));
     assert!(util::aborted(&controller.signal()));
     assert!(util::transferable_abort_signal(&controller.signal()).aborted());
     assert!(!util::transferable_abort_controller().signal().aborted());
@@ -329,7 +354,7 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     let buffer = ArrayBuffer::new(4);
     let typed = Uint8Array::from_vec(vec![1, 2, 3]);
     let date = JsDate::from_millis(0.0);
-    let regexp = JsRegExp::new("abc", "").unwrap();
+    let regexp = JsRegExp::new(JsString::from_utf8("abc"), JsString::new()).unwrap();
     assert!(util::types::is_array_buffer(&buffer));
     assert!(util::types::is_array_buffer_view(&typed));
     assert!(util::types::is_typed_array(&typed));
@@ -345,10 +370,10 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert!(!util::types::is_proxy(&JsValue::Null));
     assert!(util::types::is_boolean_object(&JsValue::Bool(true)));
     assert!(util::types::is_number_object(&JsValue::Number(1.0)));
-    assert!(util::types::is_string_object(&JsValue::String(
+    assert!(util::types::is_string_object(&JsValue::from(
         "x".to_string()
     )));
-    assert!(util::types::is_boxed_primitive(&JsValue::String(
+    assert!(util::types::is_boxed_primitive(&JsValue::from(
         "x".to_string()
     )));
     assert!(!util::types::is_big_int_object(&JsValue::Null));
