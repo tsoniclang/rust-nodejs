@@ -1,52 +1,105 @@
-pub fn mkdir_sync(path: &str, recursive: bool) -> NodeResult<()> {
-    if recursive {
-        fs::create_dir_all(path).map_err(map_io_error)
-    } else {
-        fs::create_dir(path).map_err(map_io_error)
-    }
+pub fn mkdir_sync(path: &str) -> NodeResult<()> {
+    fs::create_dir(path).map_err(map_io_error)
 }
 
 pub fn mkdir_sync_with_options(path: &str, options: MakeDirectoryOptions) -> NodeResult<()> {
-    mkdir_sync(path, options.recursive)?;
-    chmod_sync(path, options.mode)
+    let mode = options
+        .mode
+        .map(|value| require_non_negative_integer(value, "mode", 0o7777))
+        .transpose()?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(options.recursive.unwrap_or(false));
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(mode as u32);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    builder.create(path).map_err(map_io_error)
 }
 
-pub fn rm_sync(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
+pub fn rm_sync(path: &str) -> NodeResult<()> {
+    remove_path(path, false, false)
+}
+
+fn remove_path(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
     let path_ref = std::path::Path::new(path);
-    if !path_ref.exists() {
-        return if force {
-            Ok(())
-        } else {
-            Err(NodeError::new("ENOENT", "path does not exist"))
-        };
-    }
-    if path_ref.is_dir() {
-        if recursive {
-            fs::remove_dir_all(path_ref).map_err(map_io_error)
-        } else {
-            fs::remove_dir(path_ref).map_err(map_io_error)
+    let metadata = match fs::symlink_metadata(path_ref) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && force => return Ok(()),
+        Err(error) => return Err(map_io_error(error)),
+    };
+    if metadata.file_type().is_dir() {
+        if !recursive {
+            return Err(NodeError::new(
+                "EISDIR",
+                "path is a directory and recursive removal was not requested",
+            ));
         }
+        fs::remove_dir_all(path_ref).map_err(map_io_error)
     } else {
         fs::remove_file(path_ref).map_err(map_io_error)
     }
 }
 
 pub fn rm_sync_with_options(path: &str, options: RmOptions) -> NodeResult<()> {
-    let mut attempts = 0;
+    let recursive = options.recursive.unwrap_or(false);
+    let force = options.force.unwrap_or(false);
+    let configured_max_retries = require_non_negative_integer(
+        options.max_retries.unwrap_or(0.0),
+        "maxRetries",
+        u32::MAX as u64,
+    )? as u32;
+    let max_retries = if recursive { configured_max_retries } else { 0 };
+    let retry_delay = require_non_negative_integer(
+        options.retry_delay_ms.unwrap_or(100.0),
+        "retryDelay",
+        u32::MAX as u64,
+    )?;
+    let mut attempts = 0_u32;
     loop {
-        match rm_sync(path, options.recursive, options.force) {
+        match remove_path(path, recursive, force) {
             Ok(()) => return Ok(()),
-            Err(error) if attempts < options.max_retries => {
+            Err(error) if attempts < max_retries && rm_error_is_retryable(&error) => {
                 attempts += 1;
-                if options.retry_delay_ms > 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(options.retry_delay_ms));
-                }
-                if error.code == "ENOENT" && options.force {
-                    return Ok(());
+                let delay = retry_delay.checked_mul(u64::from(attempts)).ok_or_else(|| {
+                    NodeError::new(
+                        "ERR_OUT_OF_RANGE",
+                        "retryDelay multiplied by the retry count exceeds the supported range",
+                    )
+                })?;
+                if delay > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
             }
             Err(error) => return Err(error),
         }
+    }
+}
+
+fn require_non_negative_integer(value: f64, name: &str, maximum: u64) -> NodeResult<u64> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > maximum as f64 {
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            format!("{name} must be a finite non-negative integer in range"),
+        ));
+    }
+    Ok(value as u64)
+}
+
+fn rm_error_is_retryable(error: &NodeError) -> bool {
+    let standard = matches!(
+        error.code.as_str(),
+        "EBUSY" | "EMFILE" | "ENFILE" | "ENOTEMPTY" | "EPERM"
+    );
+    #[cfg(windows)]
+    {
+        standard || error.code == "EACCES"
+    }
+    #[cfg(not(windows))]
+    {
+        standard
     }
 }
 

@@ -141,8 +141,8 @@ pub fn lstat_with_options(path: &str, options: StatOptions) -> NodeResult<Option
     fs::lstat_sync_with_options(path, options)
 }
 
-pub fn mkdir(path: &str, recursive: bool) -> NodeResult<()> {
-    fs::mkdir_sync(path, recursive)
+pub fn mkdir(path: &str) -> NodeResult<()> {
+    fs::mkdir_sync(path)
 }
 
 pub fn mkdir_with_options(path: &str, options: MakeDirectoryOptions) -> NodeResult<()> {
@@ -160,8 +160,8 @@ pub fn mkdtemp_disposable(prefix: &str) -> NodeResult<DisposableTempDir> {
     })
 }
 
-pub fn rm(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
-    fs::rm_sync(path, recursive, force)
+pub fn rm(path: &str) -> NodeResult<()> {
+    fs::rm_sync(path)
 }
 
 pub fn rm_with_options(path: &str, options: RmOptions) -> NodeResult<()> {
@@ -393,12 +393,23 @@ pub async fn stat_async(path: &str) -> NodeResult<Stats> {
     stat(path)
 }
 
-pub async fn mkdir_async(path: &str, recursive: bool) -> NodeResult<()> {
-    mkdir(path, recursive)
+pub async fn mkdir_async(path: &str) -> NodeResult<()> {
+    mkdir(path)
 }
 
-pub async fn rm_async(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
-    rm(path, recursive, force)
+pub async fn mkdir_with_options_async(
+    path: &str,
+    options: MakeDirectoryOptions,
+) -> NodeResult<()> {
+    mkdir_with_options(path, options)
+}
+
+pub async fn rm_async(path: &str) -> NodeResult<()> {
+    rm(path)
+}
+
+pub async fn rm_with_options_async(path: &str, options: RmOptions) -> NodeResult<()> {
+    rm_with_options(path, options)
 }
 
 pub async fn unlink_async(path: &str) -> NodeResult<()> {

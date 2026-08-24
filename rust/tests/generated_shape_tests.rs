@@ -21,7 +21,14 @@ fn generated_shape_uses_unified_result_and_narrow_helpers() {
         .join(".temp")
         .join("generated-shape");
     let root_text = root.to_string_lossy().to_string();
-    node::abi::fs_mkdir_sync(&root_text, true).unwrap();
+    node::abi::fs_mkdir_sync_with_options(
+        &root_text,
+        node::abi::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let path = root.join("config.json");
     node::abi::fs_write_file_sync_string(&path.to_string_lossy(), r#"{"ok":true}"#, "utf8")
         .unwrap();
@@ -31,7 +38,15 @@ fn generated_shape_uses_unified_result_and_narrow_helpers() {
         panic!("expected object");
     };
     assert_eq!(object.borrow().get("ok"), js::abi::JsValue::Bool(true));
-    node::abi::fs_rm_sync(&root_text, true, true).unwrap();
+    node::abi::fs_rm_sync_with_options(
+        &root_text,
+        node::abi::RmOptions {
+            recursive: Some(true),
+            force: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]

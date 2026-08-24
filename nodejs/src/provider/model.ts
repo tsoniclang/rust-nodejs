@@ -43,6 +43,8 @@ export const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "ru
 export const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
 export const numberArrayCarrier = rustJsArrayTargetType(float64Carrier);
 export const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
+export const makeDirectoryOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MakeDirectoryOptions" };
+export const rmOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.RmOptions" };
 export const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
 export const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
 export const processWriteStreamCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessWriteStream" };
@@ -75,6 +77,13 @@ export const providerNativeFallibility = {
 } as const;
 export const cloneOnlyCarrierTraits = {
   implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
+} as const;
+export const copyDefaultCarrierTraits = {
+  implementations: [
+    { traitPath: "core::clone::Clone", requirements: [] },
+    { traitPath: "core::default::Default", requirements: [] },
+    { traitPath: "core::marker::Copy", requirements: [] },
+  ],
 } as const;
 
 export const stringType = { kind: "string" } as const;
