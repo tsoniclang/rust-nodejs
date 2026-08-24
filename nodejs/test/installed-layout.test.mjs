@@ -17,6 +17,7 @@ const packageRoots = new Map([
   ["tsts", resolve(repoRoot, "../tsonic/packages/tsts")],
   ["target-api", resolve(repoRoot, "../tsonic/packages/target-api")],
   ["source-core", resolve(repoRoot, "../tsonic/packages/source-core")],
+  ["js-source-profile", resolve(repoRoot, "../tsonic/packages/js-source-profile")],
   ["target-rust", resolve(repoRoot, "../tsonic-rust")],
   ["rust-runtime", resolve(repoRoot, "../rust-runtime")],
   ["rust-js", resolve(repoRoot, "../rust-js")],
@@ -55,6 +56,10 @@ function packArtifacts() {
 }
 
 function assertPackInventory(packages) {
+  const sourceProfileFiles = packages.get("js-source-profile").files;
+  assert.ok(sourceProfileFiles.has("dist/index.js"));
+  assert.ok(sourceProfileFiles.has("dist/index.d.ts"));
+
   const targetFiles = packages.get("target-rust").files;
   assert.ok(targetFiles.has("dist/index.js"));
   assert.ok(!targetFiles.has("dist/session/compile-input.js"));

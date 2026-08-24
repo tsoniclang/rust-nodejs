@@ -237,7 +237,7 @@ impl Buffer {
             .map(|byte| JsValue::Number(f64::from(byte)))
             .collect::<Vec<_>>();
         JsValue::object(JsObject::from_pairs([
-            ("type", JsValue::String("Buffer".to_string())),
+            ("type", JsValue::String(JsString::from_utf8("Buffer"))),
             ("data", JsValue::from(values)),
         ]))
     }

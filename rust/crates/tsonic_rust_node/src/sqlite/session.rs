@@ -161,7 +161,9 @@ fn sqlite_value(value: ValueRef<'_>) -> JsValue {
         ValueRef::Null => JsValue::Null,
         ValueRef::Integer(value) => JsValue::Number(value as f64),
         ValueRef::Real(value) => JsValue::Number(value),
-        ValueRef::Text(value) => JsValue::String(String::from_utf8_lossy(value).to_string()),
+        ValueRef::Text(value) => {
+            JsValue::String(JsString::from_utf8(String::from_utf8_lossy(value).as_ref()))
+        }
         ValueRef::Blob(value) => JsValue::from(
             value
                 .iter()

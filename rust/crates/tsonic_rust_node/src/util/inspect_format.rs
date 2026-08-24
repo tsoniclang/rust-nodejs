@@ -9,11 +9,11 @@ impl DebugLogger {
     }
 }
 
-pub fn format(format: &str, args: &[JsValue]) -> String {
+pub fn format(format: &str, args: &[JsValue]) -> crate::error::NodeResult<String> {
     // Node returns the format string untouched when no substitution
     // arguments are provided (placeholders and %% stay literal).
     if args.is_empty() {
-        return format.to_string();
+        return Ok(format.to_string());
     }
     let mut out = String::new();
     let mut chars = format.chars().peekable();
@@ -31,7 +31,7 @@ pub fn format(format: &str, args: &[JsValue]) -> String {
                 out.push('%');
                 out.push(directive);
             }
-            Some('s') => out.push_str(&format_string(next_arg(args, &mut arg_index))),
+            Some('s') => out.push_str(&format_string(next_arg(args, &mut arg_index))?),
             Some('d') => out.push_str(&format_number(next_arg(args, &mut arg_index))),
             Some('j') => {
                 let value = next_arg(args, &mut arg_index);
@@ -54,12 +54,16 @@ pub fn format(format: &str, args: &[JsValue]) -> String {
     // every other value through inspection, matching Node.
     for value in &args[arg_index..] {
         out.push(' ');
-        out.push_str(&format_string(value));
+        out.push_str(&format_string(value)?);
     }
-    out
+    Ok(out)
 }
 
-pub fn format_with_options(_options: &JsValue, format: &str, args: &[JsValue]) -> String {
+pub fn format_with_options(
+    _options: &JsValue,
+    format: &str,
+    args: &[JsValue],
+) -> crate::error::NodeResult<String> {
     self::format(format, args)
 }
 
@@ -67,12 +71,12 @@ pub fn format_with_inspect_options(
     options: &InspectOptions,
     format: &str,
     args: &[JsValue],
-) -> String {
-    let mut text = self::format(format, args);
+) -> crate::error::NodeResult<String> {
+    let mut text = self::format(format, args)?;
     if options.numeric_separator {
         text = text.replace("1000", "1_000");
     }
-    text
+    Ok(text)
 }
 
 pub fn inspect(value: &JsValue) -> String {

@@ -26,8 +26,8 @@ fn event_emitter_dispatches_in_registration_order() {
     });
 
     assert_eq!(emitter.listener_count("data"), 2);
-    assert!(emitter.emit("data", &[JsValue::String("a".to_string())]));
-    assert!(emitter.emit("data", &[JsValue::String("b".to_string())]));
+    assert!(emitter.emit("data", &[JsValue::from("a".to_string())]));
+    assert!(emitter.emit("data", &[JsValue::from("b".to_string())]));
     assert_eq!(
         seen.borrow().as_slice(),
         &[
@@ -120,7 +120,7 @@ fn node_event_target_and_async_resource_shapes_forward_events() {
     });
     target.set_max_listeners(4);
     assert_eq!(target.get_max_listeners(), Some(4));
-    assert!(target.emit("message", &[JsValue::String("hello".to_string())]));
+    assert!(target.emit("message", &[JsValue::from("hello".to_string())]));
     assert_eq!(target.event_names(), vec!["message".to_string()]);
     assert_eq!(target.listener_count("message"), 1);
     assert_eq!(seen.borrow().as_slice(), &["\"hello\"".to_string()]);
@@ -340,7 +340,7 @@ fn diagnostics_channel_publishes_to_named_subscribers() {
         channel.subscribe(move |message| target.borrow_mut().push(message.to_string()));
 
     assert!(channel.has_subscribers());
-    assert!(channel.publish(&JsValue::String("payload".to_string())));
+    assert!(channel.publish(&JsValue::from("payload".to_string())));
     assert_eq!(seen.borrow().as_slice(), &["\"payload\"".to_string()]);
     assert!(diagnostics_channel::channel_names().contains(&name.to_string()));
     assert!(channel.unsubscribe(subscription));
@@ -380,21 +380,17 @@ fn diagnostics_channel_publishes_to_named_subscribers() {
         ..diagnostics_channel::TracingChannelSubscribers::empty()
     });
     assert!(tracing.has_subscribers());
-    assert!(tracing
-        .start()
-        .publish(&JsValue::String("work".to_string())));
-    assert!(tracing
-        .error()
-        .publish(&JsValue::String("boom".to_string())));
+    assert!(tracing.start().publish(&JsValue::from("work".to_string())));
+    assert!(tracing.error().publish(&JsValue::from("boom".to_string())));
     let call = diagnostics_channel::TraceCall {
-        context: JsValue::String("ctx".to_string()),
-        this_arg: Some(JsValue::String("receiver".to_string())),
+        context: JsValue::from("ctx".to_string()),
+        this_arg: Some(JsValue::from("receiver".to_string())),
         position: Some(1),
     };
     assert_eq!(call.position, Some(1));
     assert_eq!(
         call.this_arg.as_ref(),
-        Some(&JsValue::String("receiver".to_string()))
+        Some(&JsValue::from("receiver".to_string()))
     );
     assert_eq!(tracing.trace_sync(&call, || 7), 7);
     assert_eq!(tracing.trace_async(&call, || 8), 8);

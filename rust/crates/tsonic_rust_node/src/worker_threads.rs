@@ -6,7 +6,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 
-use tsonic_rust_js::{JsArray, JsObject, JsValue};
+use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
 
 use crate::error::{NodeError, NodeResult};
 
@@ -22,8 +22,8 @@ pub enum ClonedValue {
     Null,
     Bool(bool),
     Number(f64),
-    String(String),
-    Object(Vec<(String, ClonedValue)>),
+    String(JsString),
+    Object(Vec<(JsString, ClonedValue)>),
     Array {
         length: usize,
         entries: Vec<(usize, ClonedValue)>,
@@ -51,7 +51,7 @@ impl ClonedValue {
                     return Err(data_clone_error());
                 }
                 let mut entries = Vec::new();
-                for (key, entry) in object.borrow().entries() {
+                for (key, entry) in object.borrow().entries_exact() {
                     entries.push((key, Self::from_js_inner(&entry, visiting)?));
                 }
                 visiting.remove(&address);
@@ -86,7 +86,7 @@ impl ClonedValue {
             Self::Object(entries) => {
                 let mut object = JsObject::new();
                 for (key, entry) in entries {
-                    object.set(key.clone(), entry.to_js());
+                    object.set_exact(key.clone(), entry.to_js());
                 }
                 JsValue::object(object)
             }
