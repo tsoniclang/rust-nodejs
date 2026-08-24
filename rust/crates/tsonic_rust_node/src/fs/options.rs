@@ -46,38 +46,18 @@ pub struct StatFsOptions {
     pub bigint: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MakeDirectoryOptions {
-    pub recursive: bool,
-    pub mode: u32,
+    pub recursive: Option<bool>,
+    pub mode: Option<f64>,
 }
 
-impl Default for MakeDirectoryOptions {
-    fn default() -> Self {
-        Self {
-            recursive: false,
-            mode: 0o777,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RmOptions {
-    pub recursive: bool,
-    pub force: bool,
-    pub max_retries: u32,
-    pub retry_delay_ms: u64,
-}
-
-impl Default for RmOptions {
-    fn default() -> Self {
-        Self {
-            recursive: false,
-            force: false,
-            max_retries: 0,
-            retry_delay_ms: 100,
-        }
-    }
+    pub recursive: Option<bool>,
+    pub force: Option<bool>,
+    pub max_retries: Option<f64>,
+    pub retry_delay_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

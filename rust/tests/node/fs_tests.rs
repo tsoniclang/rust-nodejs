@@ -12,7 +12,14 @@ fn fs_sync_file_lifecycle() {
             .as_nanos()
     ));
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("a.txt");
     let file_text = file.to_string_lossy().to_string();
     fs::write_file_sync(&file_text, FsWriteData::String("hello"), Some("utf8")).unwrap();
@@ -41,14 +48,28 @@ fn fs_sync_file_lifecycle() {
     fs::copy_file_sync(&file_text, &copy_text).unwrap();
     fs::rename_sync(&copy_text, &root.join("c.txt").to_string_lossy()).unwrap();
     fs::unlink_sync(&file_text).unwrap();
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_extended_sync_file_lifecycle() {
     let root = temp_root("extended");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let file = root.join("fd.txt");
     let file_text = file.to_string_lossy().to_string();
@@ -279,14 +300,28 @@ fn fs_extended_sync_file_lifecycle() {
         "XYZ"
     );
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_extended_callback_matrix_uses_real_file_io() {
     let root = temp_root("callbacks");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("callback.txt");
     let file_text = file.to_string_lossy().to_string();
 
@@ -445,22 +480,36 @@ fn fs_extended_callback_matrix_uses_real_file_io() {
     });
     unlink_result.unwrap().unwrap();
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_extended_sync_directory_lifecycle() {
     let root = temp_root("directory");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let source = root.join("source");
     let source_text = source.to_string_lossy().to_string();
     fs::mkdir_sync_with_options(
         &source_text,
         fs::MakeDirectoryOptions {
-            recursive: false,
-            mode: 0o755,
+            recursive: Some(false),
+            mode: Some(f64::from(0o755)),
         },
     )
     .unwrap();
@@ -570,14 +619,14 @@ fn fs_extended_sync_directory_lifecycle() {
     assert!(fs::stat_sync(&made).unwrap().is_directory());
     fs::rmdir_sync(&made).unwrap();
     let remove_me = root.join("remove-me");
-    fs::mkdir_sync(&remove_me.to_string_lossy(), false).unwrap();
+    fs::mkdir_sync(&remove_me.to_string_lossy()).unwrap();
     fs::rm_sync_with_options(
         &remove_me.to_string_lossy(),
         fs::RmOptions {
-            recursive: false,
-            force: true,
-            max_retries: 1,
-            retry_delay_ms: 0,
+            recursive: Some(true),
+            force: Some(true),
+            max_retries: Some(1.0),
+            retry_delay_ms: Some(0.0),
         },
     )
     .unwrap();
@@ -598,14 +647,28 @@ fn fs_extended_sync_directory_lifecycle() {
         assert!(fs::lstat_sync(&symlink_text).unwrap().is_symbolic_link());
     }
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_glob_and_watchers_are_closed_polling_apis() {
     let root = temp_root("glob-watch");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let alpha = root.join("alpha.txt");
     let beta = root.join("beta.log");
     fs::write_file_sync_string(&alpha.to_string_lossy(), "a", "utf8").unwrap();
@@ -656,14 +719,28 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     fs::write_file_sync_string(&root.join("new.txt").to_string_lossy(), "new", "utf8").unwrap();
     assert_eq!(file_watcher.poll().unwrap().unwrap().event_type, "rename");
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_stream_option_carriers_are_closed_shapes() {
     let root = temp_root("streams");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("stream.txt");
     let file_text = file.to_string_lossy().to_string();
     fs::write_file_sync_string(&file_text, "abcdef", "utf8").unwrap();
@@ -732,14 +809,28 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     )
     .is_err());
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
 fn fs_utf8_stream_is_a_closed_file_writer_shape() {
     let root = temp_root("utf8-stream");
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("logs").join("out.txt");
     let file_text = file.to_string_lossy().to_string();
 
@@ -782,7 +873,14 @@ fn fs_utf8_stream_is_a_closed_file_writer_shape() {
     assert!(!stream.write(FsWriteData::Bytes(b"ignored")));
     stream.destroy();
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
@@ -802,21 +900,21 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
     assert!(fs::StatFsOptions { bigint: true }.bigint);
 
     let mkdir = fs::MakeDirectoryOptions {
-        recursive: true,
-        mode: 0o755,
+        recursive: Some(true),
+        mode: Some(f64::from(0o755)),
     };
-    assert!(mkdir.recursive);
-    assert_eq!(mkdir.mode, 0o755);
+    assert_eq!(mkdir.recursive, Some(true));
+    assert_eq!(mkdir.mode, Some(f64::from(0o755)));
     let rm = fs::RmOptions {
-        recursive: true,
-        force: true,
-        max_retries: 2,
-        retry_delay_ms: 3,
+        recursive: Some(true),
+        force: Some(true),
+        max_retries: Some(2.0),
+        retry_delay_ms: Some(3.0),
     };
-    assert!(rm.recursive);
-    assert!(rm.force);
-    assert_eq!(rm.max_retries, 2);
-    assert_eq!(rm.retry_delay_ms, 3);
+    assert_eq!(rm.recursive, Some(true));
+    assert_eq!(rm.force, Some(true));
+    assert_eq!(rm.max_retries, Some(2.0));
+    assert_eq!(rm.retry_delay_ms, Some(3.0));
 
     let copy_base = fs::CopyOptionsBase {
         dereference: true,
@@ -1084,6 +1182,115 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
     assert!(std::path::Path::new(&temp_dir.path).exists());
     temp_dir.remove().unwrap();
     assert!(!std::path::Path::new(&temp_dir.path).exists());
+}
+
+#[test]
+fn mkdir_sync_options_create_nested_directories_idempotently() {
+    let root = temp_root("mkdir-options");
+    let nested = root.join("parent").join("child");
+    let nested_text = nested.to_string_lossy().to_string();
+    let options = fs::MakeDirectoryOptions {
+        recursive: Some(true),
+        ..Default::default()
+    };
+
+    fs::mkdir_sync_with_options(&nested_text, options).unwrap();
+    fs::mkdir_sync_with_options(&nested_text, options).unwrap();
+
+    assert!(nested.is_dir());
+    fs::rm_sync_with_options(
+        &root.to_string_lossy(),
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn rm_sync_options_enforce_recursive_force_and_numeric_contracts() {
+    let root = temp_root("rm-options");
+    let root_text = root.to_string_lossy().to_string();
+    let empty = root.join("empty");
+    std::fs::create_dir_all(root.join("nested")).unwrap();
+    std::fs::create_dir_all(&empty).unwrap();
+    std::fs::write(root.join("nested").join("value.txt"), "value").unwrap();
+
+    assert_eq!(
+        fs::rm_sync(&empty.to_string_lossy()).unwrap_err().code,
+        "EISDIR"
+    );
+    assert!(empty.is_dir());
+    assert!(fs::rm_sync(&root_text).is_err());
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(fs::rm_sync(&root_text).unwrap_err().code, "ENOENT");
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            force: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        fs::rm_sync_with_options(
+            &root_text,
+            fs::RmOptions {
+                force: Some(true),
+                max_retries: Some(1.5),
+                ..Default::default()
+            },
+        )
+        .unwrap_err()
+        .code,
+        "ERR_OUT_OF_RANGE",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rm_sync_removes_symbolic_links_without_following_targets() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root("rm-links");
+    let target = root.join("target");
+    let directory_link = root.join("directory-link");
+    let broken_link = root.join("broken-link");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("retained.txt"), "retained").unwrap();
+    symlink(&target, &directory_link).unwrap();
+    symlink(root.join("missing"), &broken_link).unwrap();
+
+    fs::rm_sync_with_options(
+        &directory_link.to_string_lossy(),
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    fs::rm_sync(&broken_link.to_string_lossy()).unwrap();
+
+    assert!(target.join("retained.txt").exists());
+    assert!(std::fs::symlink_metadata(directory_link).is_err());
+    assert!(std::fs::symlink_metadata(broken_link).is_err());
+    fs::rm_sync_with_options(
+        &root.to_string_lossy(),
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 fn temp_root(label: &str) -> std::path::PathBuf {

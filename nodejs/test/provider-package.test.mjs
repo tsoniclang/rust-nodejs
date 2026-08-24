@@ -86,6 +86,8 @@ test("provider type relations carry exact closed target carriers", () => {
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
     ["node:fs::Stats", "rust.node.Stats"],
+    ["node:fs::MakeDirectoryOptions", "rust.node.MakeDirectoryOptions", "struct-default"],
+    ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
     ["node:process::ProcessWriteStream", "rust.node.ProcessWriteStream"],
@@ -102,9 +104,12 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::Server", "rust.node.HttpServer"],
     ["node:timers::Timeout", "rust.node.Timeout"],
     ["node:util::TextDecoder", "rust.node.TextDecoder"],
-  ].map(([exportId, id]) => ({
+  ].map(([exportId, id, objectLiteralConstruction]) => ({
     exportId,
     targetCarrier: { kind: "target-named", id },
+    ...(objectLiteralConstruction === undefined
+      ? {}
+      : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
   })));
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
     implementations: [{

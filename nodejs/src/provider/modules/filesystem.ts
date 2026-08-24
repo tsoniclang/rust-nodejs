@@ -4,18 +4,20 @@ import {
   bufferCarrier,
   float64Carrier,
   fnExport,
+  makeDirectoryOptionsCarrier,
   methodMember,
   numberType,
   propertyMember,
   providerNativeFallibility,
   providerRef,
+  rmOptionsCarrier,
+  rustOptionTargetType,
   rustUint64ToFloat64ValueConversion,
   statsCarrier,
   stringArrayCarrier,
   stringArrayType,
   stringCarrier,
   stringType,
-  trueArgument,
   unsupportedFn,
   voidType,
 } from "../model.js";
@@ -29,6 +31,8 @@ import type {
 export function fsModule(): RustProviderModuleDefinition {
   const m = "node:fs";
   const statsId = "node:fs::Stats";
+  const makeDirectoryOptionsId = `${m}::MakeDirectoryOptions`;
+  const rmOptionsId = `${m}::RmOptions`;
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.fs",
@@ -84,12 +88,50 @@ export function fsModule(): RustProviderModuleDefinition {
       fnExport(m, "statSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
       fnExport(m, "lstatSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
       {
+        id: makeDirectoryOptionsId,
+        name: "MakeDirectoryOptions",
+        kind: "interface" as const,
+        members: [
+          propertyMember(makeDirectoryOptionsId, "recursive", booleanType, {
+            readonly: false,
+            optional: true,
+          }),
+          propertyMember(makeDirectoryOptionsId, "mode", numberType, {
+            readonly: false,
+            optional: true,
+          }),
+        ],
+      },
+      {
+        id: rmOptionsId,
+        name: "RmOptions",
+        kind: "interface" as const,
+        members: [
+          propertyMember(rmOptionsId, "recursive", booleanType, {
+            readonly: false,
+            optional: true,
+          }),
+          propertyMember(rmOptionsId, "force", booleanType, {
+            readonly: false,
+            optional: true,
+          }),
+          propertyMember(rmOptionsId, "maxRetries", numberType, {
+            readonly: false,
+            optional: true,
+          }),
+          propertyMember(rmOptionsId, "retryDelay", numberType, {
+            readonly: false,
+            optional: true,
+          }),
+        ],
+      },
+      {
         id: `${m}::mkdirSync`,
         name: "mkdirSync",
         kind: "function" as const,
         signatures: [
           { id: `${m}::mkdirSync(path)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
-          { id: `${m}::mkdirSync(path,recursive)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }, { name: "recursive", type: booleanType }], returnType: voidType },
+          { id: `${m}::mkdirSync(path,options)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef(m, "MakeDirectoryOptions") }], returnType: voidType },
         ],
       },
       {
@@ -98,7 +140,7 @@ export function fsModule(): RustProviderModuleDefinition {
         kind: "function" as const,
         signatures: [
           { id: `${m}::rmSync(path)`, name: "rmSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
-          { id: `${m}::rmSync(path,recursive)`, name: "rmSync", parameters: [{ name: "path", type: stringType }, { name: "recursive", type: booleanType }], returnType: voidType },
+          { id: `${m}::rmSync(path,options)`, name: "rmSync", parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef(m, "RmOptions") }], returnType: voidType },
         ],
       },
       fnExport(m, "mkdtempSync", [{ name: "prefix", type: stringType }], stringType),
@@ -128,6 +170,10 @@ export function fsModule(): RustProviderModuleDefinition {
 
 export function fsRows(): readonly RustProviderOperationDefinition[] {
   const statsId = "node:fs::Stats";
+  const makeDirectoryOptionsId = "node:fs::MakeDirectoryOptions";
+  const rmOptionsId = "node:fs::RmOptions";
+  const optionBool = rustOptionTargetType(boolCarrier);
+  const optionNumber = rustOptionTargetType(float64Carrier);
   const fallible = (name: string, path: string, resultCarrier: RustTargetTypeRef, parameterCarriers: readonly RustTargetTypeRef[], trailingArguments?: readonly RustProviderConstantArgument[]): RustProviderOperationDefinition => ({
     exportId: `node:fs::${name}`,
     operationKind: "method",
@@ -158,31 +204,43 @@ export function fsRows(): readonly RustProviderOperationDefinition[] {
     fallible("statSync", "node_fs::stat_sync", statsCarrier, [stringCarrier]),
     fallible("lstatSync", "node_fs::lstat_sync", statsCarrier, [stringCarrier]),
     {
-      ...fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier], [{ kind: "boolean", value: false }]),
+      ...fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
       signatureId: "node:fs::mkdirSync(path)",
     },
     {
       exportId: "node:fs::mkdirSync",
-      signatureId: "node:fs::mkdirSync(path,recursive)",
+      signatureId: "node:fs::mkdirSync(path,options)",
       operationKind: "method",
-      target: { form: "call", path: "node_fs::mkdir_sync", argModes: ["ref", "value"] },
+      target: { form: "call", path: "node_fs::mkdir_sync_with_options", argModes: ["ref", "value"] },
       resultCarrier: { kind: "tuple", elements: [] },
-      parameterCarriers: [stringCarrier, boolCarrier],
+      parameterCarriers: [stringCarrier, makeDirectoryOptionsCarrier],
       ...providerNativeFallibility,
     },
     {
-      ...fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier], [{ kind: "boolean", value: false }, trueArgument]),
+      ...fallible("rmSync", "node_fs::rm_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
       signatureId: "node:fs::rmSync(path)",
     },
     {
       exportId: "node:fs::rmSync",
-      signatureId: "node:fs::rmSync(path,recursive)",
+      signatureId: "node:fs::rmSync(path,options)",
       operationKind: "method",
-      target: { form: "call", path: "node_fs::rm_sync", argModes: ["ref", "value"], trailingArguments: [trueArgument] },
+      target: { form: "call", path: "node_fs::rm_sync_with_options", argModes: ["ref", "value"] },
       resultCarrier: { kind: "tuple", elements: [] },
-      parameterCarriers: [stringCarrier, boolCarrier],
+      parameterCarriers: [stringCarrier, rmOptionsCarrier],
       ...providerNativeFallibility,
     },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.recursive`, operationKind: "property", target: { form: "field", name: "recursive" }, resultCarrier: optionBool, receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.recursive`, operationKind: "property-set", target: { form: "field", name: "recursive" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property", target: { form: "field", name: "mode" }, resultCarrier: optionNumber, receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property-set", target: { form: "field", name: "mode" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.recursive`, operationKind: "property", target: { form: "field", name: "recursive" }, resultCarrier: optionBool, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.recursive`, operationKind: "property-set", target: { form: "field", name: "recursive" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.force`, operationKind: "property", target: { form: "field", name: "force" }, resultCarrier: optionBool, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.force`, operationKind: "property-set", target: { form: "field", name: "force" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property", target: { form: "field", name: "max_retries" }, resultCarrier: optionNumber, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property-set", target: { form: "field", name: "max_retries" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: optionNumber, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property-set", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: rmOptionsCarrier },
     fallible("mkdtempSync", "node_fs::mkdtemp_sync", stringCarrier, [stringCarrier]),
     fallible("unlinkSync", "node_fs::unlink_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
     fallible("symlinkSync", "node_fs::symlink_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),

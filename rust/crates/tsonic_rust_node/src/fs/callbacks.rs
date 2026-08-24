@@ -94,8 +94,16 @@ pub fn readdir_callback(path: &str, callback: impl FnOnce(NodeResult<JsArray<Str
     callback(readdir_sync(path));
 }
 
-pub fn mkdir_callback(path: &str, recursive: bool, callback: impl FnOnce(NodeResult<()>)) {
-    callback(mkdir_sync(path, recursive));
+pub fn mkdir_callback(path: &str, callback: impl FnOnce(NodeResult<()>)) {
+    callback(mkdir_sync(path));
+}
+
+pub fn mkdir_with_options_callback(
+    path: &str,
+    options: MakeDirectoryOptions,
+    callback: impl FnOnce(NodeResult<()>),
+) {
+    callback(mkdir_sync_with_options(path, options));
 }
 
 pub fn mkdtemp_callback(prefix: &str, callback: impl FnOnce(NodeResult<String>)) {
@@ -144,11 +152,17 @@ pub fn unlink_callback(path: &str, callback: impl FnOnce(NodeResult<()>)) {
 
 pub fn rm_callback(
     path: &str,
-    recursive: bool,
-    force: bool,
     callback: impl FnOnce(NodeResult<()>),
 ) {
-    callback(rm_sync(path, recursive, force));
+    callback(rm_sync(path));
+}
+
+pub fn rm_with_options_callback(
+    path: &str,
+    options: RmOptions,
+    callback: impl FnOnce(NodeResult<()>),
+) {
+    callback(rm_sync_with_options(path, options));
 }
 
 pub fn open_callback(path: &str, flags: &str, callback: impl FnOnce(NodeResult<i32>)) {

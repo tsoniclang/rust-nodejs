@@ -15,7 +15,14 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
             .as_nanos()
     ));
     let root_text = root.to_string_lossy().to_string();
-    fs_promises::mkdir(&root_text, true).unwrap();
+    fs_promises::mkdir_with_options(
+        &root_text,
+        fs_promises::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("a.txt");
     let file_text = file.to_string_lossy().to_string();
 
@@ -468,8 +475,8 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     fs_promises::mkdir_with_options(
         &nested_text,
         fs_promises::MakeDirectoryOptions {
-            recursive: false,
-            mode: 0o755,
+            recursive: Some(false),
+            mode: Some(f64::from(0o755)),
         },
     )
     .unwrap();
@@ -592,10 +599,10 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     fs_promises::rm_with_options(
         &root_text,
         fs_promises::RmOptions {
-            recursive: true,
-            force: false,
-            max_retries: 0,
-            retry_delay_ms: 0,
+            recursive: Some(true),
+            force: Some(false),
+            max_retries: Some(0.0),
+            retry_delay_ms: Some(0.0),
         },
     )
     .unwrap();
@@ -624,7 +631,14 @@ fn fs_promises_async_wrappers_match_sync_behaviour() {
     ));
     let root_text = root.to_string_lossy().to_string();
 
-    block_on(fs_promises::mkdir_async(&root_text, true)).unwrap();
+    block_on(fs_promises::mkdir_with_options_async(
+        &root_text,
+        fs_promises::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
 
     let file = root.join("async.txt");
     let file_text = file.to_string_lossy().to_string();
@@ -663,6 +677,14 @@ fn fs_promises_async_wrappers_match_sync_behaviour() {
     block_on(fs_promises::unlink_async(&renamed_text)).unwrap();
     assert!(!renamed.exists());
 
-    block_on(fs_promises::rm_async(&root_text, true, false)).unwrap();
+    block_on(fs_promises::rm_with_options_async(
+        &root_text,
+        fs_promises::RmOptions {
+            recursive: Some(true),
+            force: Some(false),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
     assert!(!root.exists());
 }

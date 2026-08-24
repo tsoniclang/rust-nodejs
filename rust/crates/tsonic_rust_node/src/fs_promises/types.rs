@@ -98,7 +98,14 @@ pub struct DisposableTempDir {
 impl DisposableTempDir {
     pub fn remove(&mut self) -> NodeResult<()> {
         if !self.removed {
-            fs::rm_sync(&self.path, true, true)?;
+            fs::rm_sync_with_options(
+                &self.path,
+                RmOptions {
+                    recursive: Some(true),
+                    force: Some(true),
+                    ..Default::default()
+                },
+            )?;
             self.removed = true;
         }
         Ok(())

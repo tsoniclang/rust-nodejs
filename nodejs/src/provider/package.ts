@@ -5,14 +5,17 @@ import type { RustProviderPackageImplementation } from "@tsonic/target-rust/prov
 import {
   bufferCarrier,
   cloneOnlyCarrierTraits,
+  copyDefaultCarrierTraits,
   hashCarrier,
   hmacCarrier,
   httpIncomingMessageCarrier,
   httpServerCarrier,
   httpServerResponseCarrier,
+  makeDirectoryOptionsCarrier,
   processEnvCarrier,
   processMemoryUsageCarrier,
   processWriteStreamCarrier,
+  rmOptionsCarrier,
   searchParamsCarrier,
   statsCarrier,
   timeoutCarrier,
@@ -80,6 +83,16 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     ],
     types: [
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
+      {
+        exportId: "node:fs::MakeDirectoryOptions",
+        targetCarrier: makeDirectoryOptionsCarrier,
+        objectLiteralConstruction: { kind: "struct-default" },
+      },
+      {
+        exportId: "node:fs::RmOptions",
+        targetCarrier: rmOptionsCarrier,
+        objectLiteralConstruction: { kind: "struct-default" },
+      },
       { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
       { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
       { exportId: "node:process::ProcessWriteStream", targetCarrier: processWriteStreamCarrier },
@@ -129,6 +142,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     ],
     carrierPaths: {
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
+      "rust.node.MakeDirectoryOptions": "tsonic_rust_node::fs::MakeDirectoryOptions",
+      "rust.node.RmOptions": "tsonic_rust_node::fs::RmOptions",
       "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
       "rust.node.SpawnSyncResult": "tsonic_rust_node::child_process::SpawnSyncResult",
       "rust.node.Url": "tsonic_rust_node::url::Url",
@@ -148,6 +163,8 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     },
     carrierTraits: {
       "rust.node.Stats": cloneOnlyCarrierTraits,
+      "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
+      "rust.node.RmOptions": copyDefaultCarrierTraits,
       "rust.node.Buffer": cloneOnlyCarrierTraits,
       "rust.node.SpawnSyncResult": cloneOnlyCarrierTraits,
       "rust.node.Url": cloneOnlyCarrierTraits,

@@ -64,6 +64,13 @@ impl DisposableTempDir {
     }
 
     pub fn remove(&self) -> NodeResult<()> {
-        rm_sync(&self.path, true, true)
+        rm_sync_with_options(
+            &self.path,
+            RmOptions {
+                recursive: Some(true),
+                force: Some(true),
+                ..Default::default()
+            },
+        )
     }
 }

@@ -29,7 +29,14 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
             .as_nanos()
     ));
     let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync(&root_text, true).unwrap();
+    fs::mkdir_sync_with_options(
+        &root_text,
+        fs::MakeDirectoryOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let file = root.join("stream.txt");
     let file_text = file.to_string_lossy().to_string();
 
@@ -87,7 +94,14 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     assert!(writable.write(buffer::Buffer::from_string("x", Some("utf8")).unwrap()));
     assert_eq!(writable.chunks().len(), 1);
 
-    fs::rm_sync(&root_text, true, false).unwrap();
+    fs::rm_sync_with_options(
+        &root_text,
+        fs::RmOptions {
+            recursive: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 }
 
 #[test]
