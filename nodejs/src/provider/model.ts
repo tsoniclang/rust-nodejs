@@ -1,11 +1,17 @@
 import {
   rustBorrowedStrToStringValueConversion,
   rustCallableTargetType,
+  rustCloneTrait,
+  rustCopyTrait,
+  rustDefaultTrait,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
+  rustJsValueTargetType,
   rustOptionTargetType,
+  rustProviderPathTargetType,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
+  rustUnitTargetType,
   rustUint32ToInt32ValueConversion,
   rustUint64ToFloat64ValueConversion,
   rustUsizeToInt32ValueConversion,
@@ -15,6 +21,7 @@ import type {
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
   RustTargetTypeRef,
+  RustTraitImplementationEvidence,
 } from "@tsonic/target-rust/provider";
 
 export {
@@ -35,57 +42,122 @@ export type {
   RustProviderOperationDefinition,
   RustTargetTypeRef,
 };
-export const stringCarrier = rustStringTargetType();
-export const boolCarrier = rustSourcePrimitiveTargetType("bool");
-export const int32Carrier = rustSourcePrimitiveTargetType("int32");
-export const float64Carrier = rustSourcePrimitiveTargetType("float64");
-export const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
-export const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
-export const numberArrayCarrier = rustJsArrayTargetType(float64Carrier);
-export const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
-export const makeDirectoryOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MakeDirectoryOptions" };
-export const rmOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.RmOptions" };
-export const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
-export const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
-export const processWriteStreamCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessWriteStream" };
-export const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
-export const spawnSyncResultCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.SpawnSyncResult" };
-export const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
-export const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };
-export const searchParamsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlSearchParams" };
-export const hashCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Hash" };
-export const hmacCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Hmac" };
-export const httpIncomingMessageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpIncomingMessage" };
-export const httpServerResponseCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServerResponse" };
-export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
-export const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
-export const textDecoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextDecoder" };
-export const nodeErrorCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.NodeError" };
-export const unitCarrier: RustTargetTypeRef = { kind: "tuple", elements: [] };
-export const emptyCallbackCarrier = rustCallableTargetType([], unitCarrier);
-export const httpRequestCallbackCarrier = rustCallableTargetType(
+export const stringCarrier: RustTargetTypeRef = rustStringTargetType();
+export const boolCarrier: RustTargetTypeRef = rustSourcePrimitiveTargetType("bool");
+export const int32Carrier: RustTargetTypeRef = rustSourcePrimitiveTargetType("int32");
+export const float64Carrier: RustTargetTypeRef = rustSourcePrimitiveTargetType("float64");
+export const jsValueCarrier: RustTargetTypeRef = rustJsValueTargetType();
+export const stringArrayCarrier: RustTargetTypeRef = rustJsArrayTargetType(stringCarrier);
+export const numberArrayCarrier: RustTargetTypeRef = rustJsArrayTargetType(float64Carrier);
+const providerOwner = {
+  packageId: "@tsonic/rust-nodejs",
+  packageVersion: "0.0.1",
+} as const;
+const cloneTraits = [{ trait: rustCloneTrait, requirements: [] }] as const;
+const cloneCopyTraits = [
+  { trait: rustCloneTrait, requirements: [] },
+  { trait: rustCopyTrait, requirements: [] },
+] as const;
+const cloneCopyDefaultTraits = [
+  ...cloneCopyTraits,
+  { trait: rustDefaultTrait, requirements: [] },
+] as const;
+const cloneDefaultTraits = [
+  ...cloneTraits,
+  { trait: rustDefaultTrait, requirements: [] },
+] as const;
+
+function nodeCarrier(
+  itemId: string,
+  displayPath: string,
+  traitImplementations: readonly RustTraitImplementationEvidence[] = cloneTraits,
+): RustTargetTypeRef {
+  return rustProviderPathTargetType({
+    owner: providerOwner,
+    itemId,
+    displayPath,
+    traitImplementations,
+  });
+}
+
+export const statsCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Stats", "tsonic_rust_node::fs::Stats");
+export const makeDirectoryOptionsCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.MakeDirectoryOptions",
+  "tsonic_rust_node::fs::MakeDirectoryOptions",
+  cloneCopyDefaultTraits,
+);
+export const rmOptionsCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.RmOptions",
+  "tsonic_rust_node::fs::RmOptions",
+  cloneCopyDefaultTraits,
+);
+export const processEnvCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.ProcessEnv",
+  "tsonic_rust_node::process::ProcessEnv",
+  cloneCopyDefaultTraits,
+);
+export const processMemoryUsageCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.MemoryUsage",
+  "tsonic_rust_node::process::MemoryUsage",
+);
+export const processWriteStreamCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.ProcessWriteStream",
+  "tsonic_rust_node::process::ProcessWriteStream",
+  cloneCopyTraits,
+);
+export const bufferCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Buffer", "tsonic_rust_node::buffer::Buffer");
+export const spawnSyncResultCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.SpawnSyncResult",
+  "tsonic_rust_node::child_process::SpawnSyncResult",
+);
+export const urlCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Url", "tsonic_rust_node::url::Url");
+export const urlObjectCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.UrlObject",
+  "tsonic_rust_node::url::LegacyUrlObject",
+);
+export const searchParamsCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.UrlSearchParams",
+  "tsonic_rust_node::url::UrlSearchParams",
+  cloneDefaultTraits,
+);
+export const hashCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Hash", "tsonic_rust_node::crypto::Hash");
+export const hmacCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Hmac", "tsonic_rust_node::crypto::Hmac");
+export const httpIncomingMessageCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.HttpIncomingMessage",
+  "tsonic_rust_node::http::IncomingMessage",
+);
+export const httpServerResponseCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.HttpServerResponse",
+  "tsonic_rust_node::http::ServerResponseHandle",
+);
+export const httpServerCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.HttpServer",
+  "tsonic_rust_node::http::ServerHandle",
+);
+export const timeoutCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Timeout", "tsonic_rust_node::timers::Timeout");
+export const textDecoderCarrier: RustTargetTypeRef = nodeCarrier(
+  "rust.node.TextDecoder",
+  "tsonic_rust_node::util::TextDecoder",
+);
+export const nodeErrorCarrier: RustTargetTypeRef = nodeCarrier("rust.node.NodeError", "tsonic_rust_node::NodeError");
+export const unitCarrier: RustTargetTypeRef = rustUnitTargetType();
+export const emptyCallbackCarrier: RustTargetTypeRef = rustCallableTargetType([], unitCarrier);
+export const httpRequestCallbackCarrier: RustTargetTypeRef = rustCallableTargetType(
   [httpIncomingMessageCarrier, httpServerResponseCarrier],
   unitCarrier,
 );
 export const trueArgument = { kind: "boolean", value: true } as const;
 export const noneArgument = { kind: "none" } as const;
 export const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
-export const providerNativeFallibility = {
+export const providerNativeFallibility: {
+  readonly isFallible: true;
+  readonly errorBoundary: "provider-native";
+  readonly errorCarrier: RustTargetTypeRef;
+} = {
   isFallible: true,
   errorBoundary: "provider-native",
   errorCarrier: nodeErrorCarrier,
 } as const;
-export const cloneOnlyCarrierTraits = {
-  implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
-} as const;
-export const copyDefaultCarrierTraits = {
-  implementations: [
-    { traitPath: "core::clone::Clone", requirements: [] },
-    { traitPath: "core::default::Default", requirements: [] },
-    { traitPath: "core::marker::Copy", requirements: [] },
-  ],
-} as const;
-
 export const stringType = { kind: "string" } as const;
 export const numberType = { kind: "number" } as const;
 export const booleanType = { kind: "boolean" } as const;

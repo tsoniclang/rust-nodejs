@@ -18,6 +18,9 @@ enum ProcessOutput {
     Stderr,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProcessEnv;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessWriteStream {
     output: ProcessOutput,

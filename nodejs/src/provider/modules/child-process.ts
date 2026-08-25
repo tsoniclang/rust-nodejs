@@ -7,6 +7,7 @@ import {
   providerRef,
   rustOptionTargetType,
   spawnSyncResultCarrier,
+  stringArrayCarrier,
   stringArrayType,
   stringCarrier,
   stringType,
@@ -67,10 +68,6 @@ export function childProcessModule(): RustProviderModuleDefinition {
 export function childProcessRows(): readonly RustProviderOperationDefinition[] {
   const moduleSpecifier = "node:child_process";
   const resultId = `${moduleSpecifier}::SpawnSyncReturns`;
-  const argumentsCarrier = {
-    kind: "type-parameter",
-    name: "Arguments",
-  } as const;
   const resultProperty = (
     name: string,
     carrier: RustProviderOperationDefinition["resultCarrier"],
@@ -97,8 +94,7 @@ export function childProcessRows(): readonly RustProviderOperationDefinition[] {
       operationKind: "method",
       target: { form: "call", path: "node_child_process::spawn_sync_result", argModes: ["ref", "ref"] },
       resultCarrier: spawnSyncResultCarrier,
-      parameterCarriers: [stringCarrier, argumentsCarrier],
-      typeParameters: [argumentsCarrier.name],
+      parameterCarriers: [stringCarrier, stringArrayCarrier],
       ...providerNativeFallibility,
     },
     ...resultProperty("stdout", bufferCarrier),

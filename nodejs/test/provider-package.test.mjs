@@ -1,6 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  emptyRustGenerics,
+  rustCloneTrait,
+  rustCopyTrait,
+  rustDefaultTrait,
+  rustJsArrayTargetType,
+  rustJsValueTargetType,
+  rustProviderPathTargetType,
+  rustStringTargetType,
+} from "@tsonic/target-rust/provider";
 import { createTsonicPlugin } from "../../dist/index.js";
+
+const providerOwner = {
+  packageId: "@tsonic/rust-nodejs",
+  packageVersion: "0.0.1",
+};
+const cloneTraits = [{ trait: rustCloneTrait, requirements: [] }];
+const cloneCopyTraits = [
+  ...cloneTraits,
+  { trait: rustCopyTrait, requirements: [] },
+];
+const cloneCopyDefaultTraits = [
+  ...cloneCopyTraits,
+  { trait: rustDefaultTrait, requirements: [] },
+];
+const cloneDefaultTraits = [
+  ...cloneTraits,
+  { trait: rustDefaultTrait, requirements: [] },
+];
+
+function nodeCarrier(itemId, displayPath, traitImplementations = cloneTraits) {
+  return rustProviderPathTargetType({
+    owner: providerOwner,
+    itemId,
+    displayPath,
+    traitImplementations,
+  });
+}
+
+function nodeStructType(exportId, itemId, displayPath, options = {}) {
+  return {
+    exportId,
+    targetDeclarationKind: "struct",
+    sourceGenericBindings: [],
+    targetGenerics: emptyRustGenerics,
+    targetCarrier: nodeCarrier(itemId, displayPath, options.traitImplementations),
+    ...(options.objectLiteralConstruction === true
+      ? { objectLiteralConstruction: { kind: "struct-default" } }
+      : {}),
+  };
+}
 
 const expectedModules = [
   "node:assert",
@@ -85,43 +135,83 @@ test("provider type relations carry exact closed target carriers", () => {
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
-    ["node:fs::Stats", "rust.node.Stats"],
-    ["node:fs::MakeDirectoryOptions", "rust.node.MakeDirectoryOptions", "struct-default"],
-    ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
-    ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
-    ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
-    ["node:process::ProcessWriteStream", "rust.node.ProcessWriteStream"],
-    ["node:buffer::Buffer", "rust.node.Buffer"],
-    ["node:url::URL", "rust.node.Url"],
-    ["node:url::UrlObject", "rust.node.UrlObject"],
-    ["node:url::Url", "rust.node.UrlObject"],
-    ["node:url::UrlWithStringQuery", "rust.node.UrlObject"],
-    ["node:url::URLSearchParams", "rust.node.UrlSearchParams"],
-    ["node:crypto::Hash", "rust.node.Hash"],
-    ["node:crypto::Hmac", "rust.node.Hmac"],
-    ["node:http::IncomingMessage", "rust.node.HttpIncomingMessage"],
-    ["node:http::ServerResponse", "rust.node.HttpServerResponse"],
-    ["node:http::Server", "rust.node.HttpServer"],
-    ["node:timers::Timeout", "rust.node.Timeout"],
-    ["node:util::TextDecoder", "rust.node.TextDecoder"],
-  ].map(([exportId, id, objectLiteralConstruction]) => ({
-    exportId,
-    targetCarrier: { kind: "target-named", id },
-    ...(objectLiteralConstruction === undefined
-      ? {}
-      : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
-  })));
-  assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
-    implementations: [{
-      traitPath: "core::clone::Clone",
-      requirements: [],
-    }],
-  });
-  assert.equal(
-    Object.keys(contribution.definition.carrierTraits).every((id) =>
-      contribution.definition.carrierPaths[id] !== undefined),
-    true,
-  );
+    nodeStructType("node:fs::Stats", "rust.node.Stats", "tsonic_rust_node::fs::Stats"),
+    nodeStructType(
+      "node:fs::MakeDirectoryOptions",
+      "rust.node.MakeDirectoryOptions",
+      "tsonic_rust_node::fs::MakeDirectoryOptions",
+      { objectLiteralConstruction: true, traitImplementations: cloneCopyDefaultTraits },
+    ),
+    nodeStructType(
+      "node:fs::RmOptions",
+      "rust.node.RmOptions",
+      "tsonic_rust_node::fs::RmOptions",
+      { objectLiteralConstruction: true, traitImplementations: cloneCopyDefaultTraits },
+    ),
+    nodeStructType(
+      "node:process::ProcessEnv",
+      "rust.node.ProcessEnv",
+      "tsonic_rust_node::process::ProcessEnv",
+      { traitImplementations: cloneCopyDefaultTraits },
+    ),
+    nodeStructType(
+      "node:process::MemoryUsage",
+      "rust.node.MemoryUsage",
+      "tsonic_rust_node::process::MemoryUsage",
+    ),
+    nodeStructType(
+      "node:process::ProcessWriteStream",
+      "rust.node.ProcessWriteStream",
+      "tsonic_rust_node::process::ProcessWriteStream",
+      { traitImplementations: cloneCopyTraits },
+    ),
+    nodeStructType("node:buffer::Buffer", "rust.node.Buffer", "tsonic_rust_node::buffer::Buffer"),
+    nodeStructType("node:url::URL", "rust.node.Url", "tsonic_rust_node::url::Url"),
+    nodeStructType(
+      "node:url::UrlObject",
+      "rust.node.UrlObject",
+      "tsonic_rust_node::url::LegacyUrlObject",
+    ),
+    nodeStructType(
+      "node:url::Url",
+      "rust.node.UrlObject",
+      "tsonic_rust_node::url::LegacyUrlObject",
+    ),
+    nodeStructType(
+      "node:url::UrlWithStringQuery",
+      "rust.node.UrlObject",
+      "tsonic_rust_node::url::LegacyUrlObject",
+    ),
+    nodeStructType(
+      "node:url::URLSearchParams",
+      "rust.node.UrlSearchParams",
+      "tsonic_rust_node::url::UrlSearchParams",
+      { traitImplementations: cloneDefaultTraits },
+    ),
+    nodeStructType("node:crypto::Hash", "rust.node.Hash", "tsonic_rust_node::crypto::Hash"),
+    nodeStructType("node:crypto::Hmac", "rust.node.Hmac", "tsonic_rust_node::crypto::Hmac"),
+    nodeStructType(
+      "node:http::IncomingMessage",
+      "rust.node.HttpIncomingMessage",
+      "tsonic_rust_node::http::IncomingMessage",
+    ),
+    nodeStructType(
+      "node:http::ServerResponse",
+      "rust.node.HttpServerResponse",
+      "tsonic_rust_node::http::ServerResponseHandle",
+    ),
+    nodeStructType(
+      "node:http::Server",
+      "rust.node.HttpServer",
+      "tsonic_rust_node::http::ServerHandle",
+    ),
+    nodeStructType("node:timers::Timeout", "rust.node.Timeout", "tsonic_rust_node::timers::Timeout"),
+    nodeStructType(
+      "node:util::TextDecoder",
+      "rust.node.TextDecoder",
+      "tsonic_rust_node::util::TextDecoder",
+    ),
+  ]);
 });
 
 test("provider package maps exact assert.ok overloads", () => {
@@ -151,7 +241,10 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
   assert.equal(parse.isFallible, true);
   assert.equal(parse.target.form, "call");
   assert.equal(parse.target.path, "node_url::parse_legacy");
-  assert.deepEqual(parse.resultCarrier, { kind: "target-named", id: "rust.node.UrlObject" });
+  assert.deepEqual(parse.resultCarrier, nodeCarrier(
+    "rust.node.UrlObject",
+    "tsonic_rust_node::url::LegacyUrlObject",
+  ));
   const properties = ["href", "protocol", "host", "hostname", "port", "pathname", "search", "hash"];
   for (const name of properties) {
     const property = rows.find((row) => row.memberId === `node:url::UrlObject.${name}`);
@@ -162,10 +255,6 @@ test("provider package maps legacy url parse to a fallible UrlObject row", () =>
   const format = rows.find((row) => row.exportId === "node:url::format");
   assert.ok(format !== undefined, "missing node:url::format row");
   assert.equal(format.target.path, "node_url::format_legacy");
-  assert.equal(
-    contribution.definition.carrierPaths["rust.node.UrlObject"],
-    "tsonic_rust_node::url::LegacyUrlObject",
-  );
 });
 
 test("provider package closes child-process and text-decoder operations", () => {
@@ -182,15 +271,17 @@ test("provider package closes child-process and text-decoder operations", () => 
       path: "node_child_process::spawn_sync_result",
       argModes: ["ref", "ref"],
     },
-    resultCarrier: { kind: "target-named", id: "rust.node.SpawnSyncResult" },
+    resultCarrier: nodeCarrier(
+      "rust.node.SpawnSyncResult",
+      "tsonic_rust_node::child_process::SpawnSyncResult",
+    ),
     parameterCarriers: [
-      { kind: "target-named", id: "rust.std.String" },
-      { kind: "type-parameter", name: "Arguments" },
+      rustStringTargetType(),
+      rustJsArrayTargetType(rustStringTargetType()),
     ],
-    typeParameters: ["Arguments"],
     isFallible: true,
     errorBoundary: "provider-native",
-    errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
+    errorCarrier: nodeCarrier("rust.node.NodeError", "tsonic_rust_node::NodeError"),
   });
   const childProcessExports = contribution.definition.modules
     .find((module) => module.moduleSpecifier === "node:child_process")?.exports ?? [];
@@ -348,8 +439,8 @@ test("provider package maps util format to the generic value-slice call form", (
   assert.deepEqual(format.target, {
     form: "call-value-slice",
     path: "node_util::format",
-    leadingArguments: [{ carrier: { kind: "target-named", id: "rust.std.String" }, mode: "ref" }],
-    elementCarrier: { kind: "target-named", id: "rust.js.JsValue" },
+    leadingArguments: [{ carrier: rustStringTargetType(), mode: "ref" }],
+    elementCarrier: rustJsValueTargetType(),
   });
   assert.equal(format.isFallible, true);
   assert.equal(format.errorBoundary, "provider-native");
@@ -486,13 +577,9 @@ test("provider package closes process identity, timing, and memory contracts", (
       id: "js-number-from-u64",
     });
   }
-  assert.equal(
-    contribution.definition.carrierPaths["rust.node.MemoryUsage"],
-    "tsonic_rust_node::process::MemoryUsage",
-  );
   assert.deepEqual(
-    contribution.definition.carrierTraits["rust.node.MemoryUsage"],
-    contribution.definition.carrierTraits["rust.node.Buffer"],
+    rows.find((row) => row.exportId === "node:process::memoryUsage")?.resultCarrier,
+    nodeCarrier("rust.node.MemoryUsage", "tsonic_rust_node::process::MemoryUsage"),
   );
 });
 
@@ -536,9 +623,14 @@ test("provider package closes process stdout and stderr output contracts", () =>
     ["node:process::ProcessWriteStream.write(buffer)", "write_buffer"],
   ]);
   assert.equal(writeRows.every((row) => row.isFallible === true), true);
-  assert.equal(
-    contribution.definition.carrierPaths["rust.node.ProcessWriteStream"],
-    "tsonic_rust_node::process::ProcessWriteStream",
+  assert.deepEqual(
+    contribution.definition.operations.find((row) => row.exportId === "node:process::stdout")
+      ?.resultCarrier,
+    nodeCarrier(
+      "rust.node.ProcessWriteStream",
+      "tsonic_rust_node::process::ProcessWriteStream",
+      cloneCopyTraits,
+    ),
   );
 });
 
@@ -591,8 +683,8 @@ test("provider package preserves fluent hash identity for string and buffer upda
     "node:crypto::Hash.update(buffer)",
   ]);
   assert.deepEqual(rows.map((row) => row.resultCarrier), [
-    { kind: "target-named", id: "rust.node.Hash" },
-    { kind: "target-named", id: "rust.node.Hash" },
+    nodeCarrier("rust.node.Hash", "tsonic_rust_node::crypto::Hash"),
+    nodeCarrier("rust.node.Hash", "tsonic_rust_node::crypto::Hash"),
   ]);
   assert.deepEqual(rows.map((row) => row.target.name), ["update_str_owned", "update_buffer_owned"]);
 });
@@ -675,7 +767,7 @@ test("provider package closes Buffer views, copies, swaps, and numeric operation
 test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
-  const { operations, binaryEpilogues, carrierPaths } = contribution.definition;
+  const { operations, binaryEpilogues } = contribution.definition;
 
   const statusRead = operations.find((row) =>
     row.memberId === "node:http::ServerResponse.statusCode" && row.operationKind === "property");
@@ -699,8 +791,14 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   assert.deepEqual(listenRows.map((row) => row.immediateCallback), [undefined, undefined]);
   const createServer = operations.find((row) => row.exportId === "node:http::createServer");
   assert.equal(createServer?.immediateCallback, undefined);
-  assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
-    "tsonic_rust_node::http::ServerResponseHandle");
+  assert.deepEqual(
+    contribution.definition.types.find((row) => row.exportId === "node:http::ServerResponse")
+      ?.targetCarrier,
+    nodeCarrier(
+      "rust.node.HttpServerResponse",
+      "tsonic_rust_node::http::ServerResponseHandle",
+    ),
+  );
   assert.deepEqual(binaryEpilogues, [
     {
       id: "node-event-loop",
@@ -733,6 +831,11 @@ test("provider package maps timers to the shared Node event loop", () => {
   ]);
   assert.equal(rows.every((row) => row.operationKind === "method"), true);
   assert.equal(rows.every((row) => row.immediateCallback === undefined), true);
-  assert.equal(rows.every((row) =>
-    JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout" })), true);
+  assert.deepEqual(
+    rows.map((row) => row.resultCarrier),
+    [
+      nodeCarrier("rust.node.Timeout", "tsonic_rust_node::timers::Timeout"),
+      nodeCarrier("rust.node.Timeout", "tsonic_rust_node::timers::Timeout"),
+    ],
+  );
 });

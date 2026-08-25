@@ -5,6 +5,7 @@ import {
   providerNativeFallibility,
   stringCarrier,
   stringType,
+  unitCarrier,
   voidType,
 } from "../model.js";
 
@@ -55,7 +56,7 @@ export function assertRows(): readonly RustProviderOperationDefinition[] {
         path: "node_assert::ok",
         trailingArguments: [noneArgument],
       },
-      resultCarrier: { kind: "tuple", elements: [] },
+      resultCarrier: unitCarrier,
       parameterCarriers: [boolCarrier],
       ...providerNativeFallibility,
     },
@@ -68,7 +69,7 @@ export function assertRows(): readonly RustProviderOperationDefinition[] {
         path: "node_assert::ok_with_message",
         argModes: ["value", "ref"],
       },
-      resultCarrier: { kind: "tuple", elements: [] },
+      resultCarrier: unitCarrier,
       parameterCarriers: [boolCarrier, stringCarrier],
       ...providerNativeFallibility,
     },

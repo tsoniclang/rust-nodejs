@@ -1,11 +1,16 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
+import {
+  createRustProviderPackage,
+  emptyRustGenerics,
+} from "@tsonic/target-rust/provider";
+import type {
+  RustProviderPackageImplementation,
+  RustProviderTypeDefinition,
+  RustTargetTypeRef,
+} from "@tsonic/target-rust/provider";
 import {
   bufferCarrier,
-  cloneOnlyCarrierTraits,
-  copyDefaultCarrierTraits,
   hashCarrier,
   hmacCarrier,
   httpIncomingMessageCarrier,
@@ -43,6 +48,23 @@ import { utilModule, utilRows } from "./modules/util.js";
 // Compiled layout is dist/provider/package.js, so the installed package root
 // is two directories up from this module.
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+function rustNodeStruct(
+  exportId: string,
+  targetCarrier: RustTargetTypeRef,
+  objectLiteralConstruction = false,
+): RustProviderTypeDefinition {
+  return {
+    exportId,
+    targetDeclarationKind: "struct",
+    sourceGenericBindings: [],
+    targetGenerics: emptyRustGenerics,
+    targetCarrier,
+    ...(objectLiteralConstruction
+      ? { objectLiteralConstruction: { kind: "struct-default" } as const }
+      : {}),
+  };
+}
 
 export function createRustNodejsProviderPackage(): RustProviderPackageImplementation {
   return createRustProviderPackage({
@@ -82,33 +104,25 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       timersModule(),
     ],
     types: [
-      { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
-      {
-        exportId: "node:fs::MakeDirectoryOptions",
-        targetCarrier: makeDirectoryOptionsCarrier,
-        objectLiteralConstruction: { kind: "struct-default" },
-      },
-      {
-        exportId: "node:fs::RmOptions",
-        targetCarrier: rmOptionsCarrier,
-        objectLiteralConstruction: { kind: "struct-default" },
-      },
-      { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier },
-      { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
-      { exportId: "node:process::ProcessWriteStream", targetCarrier: processWriteStreamCarrier },
-      { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
-      { exportId: "node:url::URL", targetCarrier: urlCarrier },
-      { exportId: "node:url::UrlObject", targetCarrier: urlObjectCarrier },
-      { exportId: "node:url::Url", targetCarrier: urlObjectCarrier },
-      { exportId: "node:url::UrlWithStringQuery", targetCarrier: urlObjectCarrier },
-      { exportId: "node:url::URLSearchParams", targetCarrier: searchParamsCarrier },
-      { exportId: "node:crypto::Hash", targetCarrier: hashCarrier },
-      { exportId: "node:crypto::Hmac", targetCarrier: hmacCarrier },
-      { exportId: "node:http::IncomingMessage", targetCarrier: httpIncomingMessageCarrier },
-      { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
-      { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
-      { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
-      { exportId: "node:util::TextDecoder", targetCarrier: textDecoderCarrier },
+      rustNodeStruct("node:fs::Stats", statsCarrier),
+      rustNodeStruct("node:fs::MakeDirectoryOptions", makeDirectoryOptionsCarrier, true),
+      rustNodeStruct("node:fs::RmOptions", rmOptionsCarrier, true),
+      rustNodeStruct("node:process::ProcessEnv", processEnvCarrier),
+      rustNodeStruct("node:process::MemoryUsage", processMemoryUsageCarrier),
+      rustNodeStruct("node:process::ProcessWriteStream", processWriteStreamCarrier),
+      rustNodeStruct("node:buffer::Buffer", bufferCarrier),
+      rustNodeStruct("node:url::URL", urlCarrier),
+      rustNodeStruct("node:url::UrlObject", urlObjectCarrier),
+      rustNodeStruct("node:url::Url", urlObjectCarrier),
+      rustNodeStruct("node:url::UrlWithStringQuery", urlObjectCarrier),
+      rustNodeStruct("node:url::URLSearchParams", searchParamsCarrier),
+      rustNodeStruct("node:crypto::Hash", hashCarrier),
+      rustNodeStruct("node:crypto::Hmac", hmacCarrier),
+      rustNodeStruct("node:http::IncomingMessage", httpIncomingMessageCarrier),
+      rustNodeStruct("node:http::ServerResponse", httpServerResponseCarrier),
+      rustNodeStruct("node:http::Server", httpServerCarrier),
+      rustNodeStruct("node:timers::Timeout", timeoutCarrier),
+      rustNodeStruct("node:util::TextDecoder", textDecoderCarrier),
     ],
     operations: [
       ...assertRows(),
@@ -140,47 +154,6 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { alias: "node_http", path: "tsonic_rust_node::http" },
       { alias: "node_timers", path: "tsonic_rust_node::timers" },
     ],
-    carrierPaths: {
-      "rust.node.Stats": "tsonic_rust_node::fs::Stats",
-      "rust.node.MakeDirectoryOptions": "tsonic_rust_node::fs::MakeDirectoryOptions",
-      "rust.node.RmOptions": "tsonic_rust_node::fs::RmOptions",
-      "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
-      "rust.node.SpawnSyncResult": "tsonic_rust_node::child_process::SpawnSyncResult",
-      "rust.node.Url": "tsonic_rust_node::url::Url",
-      "rust.node.UrlObject": "tsonic_rust_node::url::LegacyUrlObject",
-      "rust.node.UrlSearchParams": "tsonic_rust_node::url::UrlSearchParams",
-      "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
-      "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
-      "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
-      "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
-      "rust.node.ProcessWriteStream": "tsonic_rust_node::process::ProcessWriteStream",
-      "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
-      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
-      "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
-      "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
-      "rust.node.TextDecoder": "tsonic_rust_node::util::TextDecoder",
-      "rust.node.NodeError": "tsonic_rust_node::NodeError",
-    },
-    carrierTraits: {
-      "rust.node.Stats": cloneOnlyCarrierTraits,
-      "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
-      "rust.node.RmOptions": copyDefaultCarrierTraits,
-      "rust.node.Buffer": cloneOnlyCarrierTraits,
-      "rust.node.SpawnSyncResult": cloneOnlyCarrierTraits,
-      "rust.node.Url": cloneOnlyCarrierTraits,
-      "rust.node.UrlObject": cloneOnlyCarrierTraits,
-      "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
-      "rust.node.Hash": cloneOnlyCarrierTraits,
-      "rust.node.Hmac": cloneOnlyCarrierTraits,
-      "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
-      "rust.node.ProcessWriteStream": cloneOnlyCarrierTraits,
-      "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
-      "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
-      "rust.node.HttpServer": cloneOnlyCarrierTraits,
-      "rust.node.Timeout": cloneOnlyCarrierTraits,
-      "rust.node.TextDecoder": cloneOnlyCarrierTraits,
-      "rust.node.NodeError": cloneOnlyCarrierTraits,
-    },
     binaryEpilogues: [{
       id: "node-event-loop",
       path: "tsonic_rust_node::run_event_loop",

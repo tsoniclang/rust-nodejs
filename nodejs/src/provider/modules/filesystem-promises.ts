@@ -9,6 +9,7 @@ import {
   stringArrayType,
   stringCarrier,
   stringType,
+  unitCarrier,
   voidType,
 } from "../model.js";
 
@@ -73,7 +74,7 @@ export function fsPromisesRows(): readonly RustProviderOperationDefinition[] {
     ...providerNativeFallibility,
     isAsync: true,
   });
-  const unit: RustTargetTypeRef = { kind: "tuple", elements: [] };
+  const unit: RustTargetTypeRef = unitCarrier;
   return [
     row("readFile", "node_fs_promises::read_file_string_async", stringCarrier, 2),
     row("writeFile", "node_fs_promises::write_file_string_async", unit, 3),
