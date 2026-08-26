@@ -9,6 +9,7 @@ import {
   rustJsValueTargetType,
   rustOptionTargetType,
   rustProviderPathTargetType,
+  rustProviderTypeIdentity,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
   rustUnitTargetType,
@@ -20,6 +21,7 @@ import type {
   RustProviderConstantArgument,
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
+  RustNamedTypeTraitContractEntry,
   RustTargetTypeRef,
   RustTraitImplementationEvidence,
 } from "@tsonic/target-rust/provider";
@@ -52,49 +54,82 @@ export const numberArrayCarrier: RustTargetTypeRef = rustJsArrayTargetType(float
 const providerOwner = {
   packageId: "@tsonic/rust-nodejs",
   packageVersion: "0.0.1",
+  compilationSnapshotId: "@tsonic/rust-nodejs@0.0.1",
 } as const;
-const cloneTraits = [{ trait: rustCloneTrait, requirements: [] }] as const;
+const cloneTraits = [{
+  trait: rustCloneTrait,
+  genericBindings: [],
+  requirements: [],
+}] as const;
 const cloneCopyTraits = [
-  { trait: rustCloneTrait, requirements: [] },
-  { trait: rustCopyTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustCopyTrait, genericBindings: [], requirements: [] },
 ] as const;
 const cloneCopyDefaultTraits = [
-  ...cloneCopyTraits,
-  { trait: rustDefaultTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
+  { trait: rustCopyTrait, genericBindings: [], requirements: [] },
 ] as const;
 const cloneDefaultTraits = [
-  ...cloneTraits,
-  { trait: rustDefaultTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
 ] as const;
 
 function nodeCarrier(
   itemId: string,
   displayPath: string,
-  traitImplementations: readonly RustTraitImplementationEvidence[] = cloneTraits,
 ): RustTargetTypeRef {
   return rustProviderPathTargetType({
     owner: providerOwner,
     itemId,
     displayPath,
-    traitImplementations,
   });
 }
+
+function nodeTraitContract(
+  itemId: string,
+  implementations: readonly RustTraitImplementationEvidence[] = cloneTraits,
+): RustNamedTypeTraitContractEntry {
+  return {
+    typeIdentity: rustProviderTypeIdentity(providerOwner, itemId),
+    contract: { implementations },
+  };
+}
+
+export const nodeTraitContracts: readonly RustNamedTypeTraitContractEntry[] = [
+  nodeTraitContract("rust.node.Buffer"),
+  nodeTraitContract("rust.node.Hash"),
+  nodeTraitContract("rust.node.Hmac"),
+  nodeTraitContract("rust.node.HttpIncomingMessage"),
+  nodeTraitContract("rust.node.HttpServer"),
+  nodeTraitContract("rust.node.HttpServerResponse"),
+  nodeTraitContract("rust.node.MakeDirectoryOptions", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.MemoryUsage"),
+  nodeTraitContract("rust.node.NodeError"),
+  nodeTraitContract("rust.node.ProcessEnv", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.ProcessWriteStream", cloneCopyTraits),
+  nodeTraitContract("rust.node.RmOptions", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.SpawnSyncResult"),
+  nodeTraitContract("rust.node.Stats"),
+  nodeTraitContract("rust.node.TextDecoder"),
+  nodeTraitContract("rust.node.Timeout"),
+  nodeTraitContract("rust.node.Url"),
+  nodeTraitContract("rust.node.UrlObject"),
+  nodeTraitContract("rust.node.UrlSearchParams", cloneDefaultTraits),
+];
 
 export const statsCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Stats", "tsonic_rust_node::fs::Stats");
 export const makeDirectoryOptionsCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.MakeDirectoryOptions",
   "tsonic_rust_node::fs::MakeDirectoryOptions",
-  cloneCopyDefaultTraits,
 );
 export const rmOptionsCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.RmOptions",
   "tsonic_rust_node::fs::RmOptions",
-  cloneCopyDefaultTraits,
 );
 export const processEnvCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.ProcessEnv",
   "tsonic_rust_node::process::ProcessEnv",
-  cloneCopyDefaultTraits,
 );
 export const processMemoryUsageCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.MemoryUsage",
@@ -103,7 +138,6 @@ export const processMemoryUsageCarrier: RustTargetTypeRef = nodeCarrier(
 export const processWriteStreamCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.ProcessWriteStream",
   "tsonic_rust_node::process::ProcessWriteStream",
-  cloneCopyTraits,
 );
 export const bufferCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Buffer", "tsonic_rust_node::buffer::Buffer");
 export const spawnSyncResultCarrier: RustTargetTypeRef = nodeCarrier(
@@ -118,7 +152,6 @@ export const urlObjectCarrier: RustTargetTypeRef = nodeCarrier(
 export const searchParamsCarrier: RustTargetTypeRef = nodeCarrier(
   "rust.node.UrlSearchParams",
   "tsonic_rust_node::url::UrlSearchParams",
-  cloneDefaultTraits,
 );
 export const hashCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Hash", "tsonic_rust_node::crypto::Hash");
 export const hmacCarrier: RustTargetTypeRef = nodeCarrier("rust.node.Hmac", "tsonic_rust_node::crypto::Hmac");

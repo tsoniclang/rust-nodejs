@@ -6,9 +6,9 @@ static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =
 
 type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
 type RuntimeRequestHandler =
-    tsonic_rust_runtime::Callable<RuntimeRequestArguments, tsonic_rust_runtime::TsonicResult<()>>;
+    tsonic_rust_runtime::OwnedLocalCallable<RuntimeRequestArguments, tsonic_rust_runtime::TsonicResult<()>>;
 type RuntimeListenCallback =
-    tsonic_rust_runtime::Callable<(), tsonic_rust_runtime::TsonicResult<()>>;
+    tsonic_rust_runtime::OwnedLocalCallable<(), tsonic_rust_runtime::TsonicResult<()>>;
 
 struct RuntimeServer {
     listener: std::net::TcpListener,
@@ -45,7 +45,7 @@ impl ServerHandle {
         &self,
         port: i32,
         host: &str,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::OwnedLocalCallable<(), Result<(), E>>,
     ) -> NodeResult<Self>
     where
         E: std::fmt::Display + 'static,
@@ -79,7 +79,7 @@ impl ServerHandle {
     pub fn listen_default_host<E>(
         &self,
         port: i32,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::OwnedLocalCallable<(), Result<(), E>>,
     ) -> NodeResult<Self>
     where
         E: std::fmt::Display + 'static,
@@ -172,7 +172,7 @@ impl ServerResponseHandle {
 }
 
 pub fn create_server_callable<E>(
-    handler: tsonic_rust_runtime::Callable<RuntimeRequestArguments, Result<(), E>>,
+    handler: tsonic_rust_runtime::OwnedLocalCallable<RuntimeRequestArguments, Result<(), E>>,
 ) -> ServerHandle
 where
     E: std::fmt::Display + 'static,
@@ -181,13 +181,13 @@ where
 }
 
 fn adapt_runtime_callback<TArguments, E>(
-    callback: tsonic_rust_runtime::Callable<TArguments, Result<(), E>>,
-) -> tsonic_rust_runtime::Callable<TArguments, tsonic_rust_runtime::TsonicResult<()>>
+    callback: tsonic_rust_runtime::OwnedLocalCallable<TArguments, Result<(), E>>,
+) -> tsonic_rust_runtime::OwnedLocalCallable<TArguments, tsonic_rust_runtime::TsonicResult<()>>
 where
     TArguments: 'static,
     E: std::fmt::Display + 'static,
 {
-    tsonic_rust_runtime::Callable::new(move |arguments| {
+    tsonic_rust_runtime::OwnedLocalCallable::new(move |arguments| {
         callback
             .call(arguments)
             .map_err(crate::error::callback_runtime_error)

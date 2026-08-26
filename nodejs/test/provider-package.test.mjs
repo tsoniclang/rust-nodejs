@@ -8,6 +8,7 @@ import {
   rustJsArrayTargetType,
   rustJsValueTargetType,
   rustProviderPathTargetType,
+  rustProviderTypeIdentity,
   rustStringTargetType,
 } from "@tsonic/target-rust/provider";
 import { createTsonicPlugin } from "../../dist/index.js";
@@ -15,29 +16,63 @@ import { createTsonicPlugin } from "../../dist/index.js";
 const providerOwner = {
   packageId: "@tsonic/rust-nodejs",
   packageVersion: "0.0.1",
+  compilationSnapshotId: "@tsonic/rust-nodejs@0.0.1",
 };
-const cloneTraits = [{ trait: rustCloneTrait, requirements: [] }];
+const cloneTraits = [{
+  trait: rustCloneTrait,
+  genericBindings: [],
+  requirements: [],
+}];
 const cloneCopyTraits = [
-  ...cloneTraits,
-  { trait: rustCopyTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustCopyTrait, genericBindings: [], requirements: [] },
 ];
 const cloneCopyDefaultTraits = [
-  ...cloneCopyTraits,
-  { trait: rustDefaultTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
+  { trait: rustCopyTrait, genericBindings: [], requirements: [] },
 ];
 const cloneDefaultTraits = [
-  ...cloneTraits,
-  { trait: rustDefaultTrait, requirements: [] },
+  { trait: rustCloneTrait, genericBindings: [], requirements: [] },
+  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
 ];
 
-function nodeCarrier(itemId, displayPath, traitImplementations = cloneTraits) {
+function nodeCarrier(itemId, displayPath) {
   return rustProviderPathTargetType({
     owner: providerOwner,
     itemId,
     displayPath,
-    traitImplementations,
   });
 }
+
+function nodeTraitContract(itemId, implementations = cloneTraits) {
+  return {
+    typeIdentity: rustProviderTypeIdentity(providerOwner, itemId),
+    contract: { implementations },
+  };
+}
+
+const expectedTraitContracts = [
+  nodeTraitContract("rust.node.Buffer"),
+  nodeTraitContract("rust.node.Hash"),
+  nodeTraitContract("rust.node.Hmac"),
+  nodeTraitContract("rust.node.HttpIncomingMessage"),
+  nodeTraitContract("rust.node.HttpServer"),
+  nodeTraitContract("rust.node.HttpServerResponse"),
+  nodeTraitContract("rust.node.MakeDirectoryOptions", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.MemoryUsage"),
+  nodeTraitContract("rust.node.NodeError"),
+  nodeTraitContract("rust.node.ProcessEnv", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.ProcessWriteStream", cloneCopyTraits),
+  nodeTraitContract("rust.node.RmOptions", cloneCopyDefaultTraits),
+  nodeTraitContract("rust.node.SpawnSyncResult"),
+  nodeTraitContract("rust.node.Stats"),
+  nodeTraitContract("rust.node.TextDecoder"),
+  nodeTraitContract("rust.node.Timeout"),
+  nodeTraitContract("rust.node.Url"),
+  nodeTraitContract("rust.node.UrlObject"),
+  nodeTraitContract("rust.node.UrlSearchParams", cloneDefaultTraits),
+];
 
 function nodeStructType(exportId, itemId, displayPath, options = {}) {
   return {
@@ -45,7 +80,7 @@ function nodeStructType(exportId, itemId, displayPath, options = {}) {
     targetDeclarationKind: "struct",
     sourceGenericBindings: [],
     targetGenerics: emptyRustGenerics,
-    targetCarrier: nodeCarrier(itemId, displayPath, options.traitImplementations),
+    targetCarrier: nodeCarrier(itemId, displayPath),
     ...(options.objectLiteralConstruction === true
       ? { objectLiteralConstruction: { kind: "struct-default" } }
       : {}),
@@ -140,19 +175,18 @@ test("provider type relations carry exact closed target carriers", () => {
       "node:fs::MakeDirectoryOptions",
       "rust.node.MakeDirectoryOptions",
       "tsonic_rust_node::fs::MakeDirectoryOptions",
-      { objectLiteralConstruction: true, traitImplementations: cloneCopyDefaultTraits },
+      { objectLiteralConstruction: true },
     ),
     nodeStructType(
       "node:fs::RmOptions",
       "rust.node.RmOptions",
       "tsonic_rust_node::fs::RmOptions",
-      { objectLiteralConstruction: true, traitImplementations: cloneCopyDefaultTraits },
+      { objectLiteralConstruction: true },
     ),
     nodeStructType(
       "node:process::ProcessEnv",
       "rust.node.ProcessEnv",
       "tsonic_rust_node::process::ProcessEnv",
-      { traitImplementations: cloneCopyDefaultTraits },
     ),
     nodeStructType(
       "node:process::MemoryUsage",
@@ -163,7 +197,6 @@ test("provider type relations carry exact closed target carriers", () => {
       "node:process::ProcessWriteStream",
       "rust.node.ProcessWriteStream",
       "tsonic_rust_node::process::ProcessWriteStream",
-      { traitImplementations: cloneCopyTraits },
     ),
     nodeStructType("node:buffer::Buffer", "rust.node.Buffer", "tsonic_rust_node::buffer::Buffer"),
     nodeStructType("node:url::URL", "rust.node.Url", "tsonic_rust_node::url::Url"),
@@ -186,7 +219,6 @@ test("provider type relations carry exact closed target carriers", () => {
       "node:url::URLSearchParams",
       "rust.node.UrlSearchParams",
       "tsonic_rust_node::url::UrlSearchParams",
-      { traitImplementations: cloneDefaultTraits },
     ),
     nodeStructType("node:crypto::Hash", "rust.node.Hash", "tsonic_rust_node::crypto::Hash"),
     nodeStructType("node:crypto::Hmac", "rust.node.Hmac", "tsonic_rust_node::crypto::Hmac"),
@@ -212,6 +244,7 @@ test("provider type relations carry exact closed target carriers", () => {
       "tsonic_rust_node::util::TextDecoder",
     ),
   ]);
+  assert.deepEqual(contribution.definition.traitContracts, expectedTraitContracts);
 });
 
 test("provider package maps exact assert.ok overloads", () => {

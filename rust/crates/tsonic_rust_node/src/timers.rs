@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use tsonic_rust_runtime::{Callable, TsonicResult};
+use tsonic_rust_runtime::{OwnedLocalCallable, TsonicResult};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -159,7 +159,7 @@ pub fn set_interval_with_options(
     )
 }
 
-pub fn set_interval_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: i32) -> Timeout
+pub fn set_interval_callable<E>(callback: OwnedLocalCallable<(), Result<(), E>>, delay_ms: i32) -> Timeout
 where
     E: std::fmt::Display + 'static,
 {
@@ -176,7 +176,7 @@ where
     )
 }
 
-pub fn set_timeout_callable<E>(callback: Callable<(), Result<(), E>>, delay_ms: i32) -> Timeout
+pub fn set_timeout_callable<E>(callback: OwnedLocalCallable<(), Result<(), E>>, delay_ms: i32) -> Timeout
 where
     E: std::fmt::Display + 'static,
 {

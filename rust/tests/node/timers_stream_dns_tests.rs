@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use tsonic_rust_node::{buffer::Buffer, dns, stream, timers};
-use tsonic_rust_runtime::Callable;
+use tsonic_rust_runtime::OwnedLocalCallable;
 
 #[test]
 fn timers_run_callbacks_and_expose_handle_state() {
@@ -18,7 +18,7 @@ fn timers_run_callbacks_and_expose_handle_state() {
     assert!(!timeout.has_ref());
 
     timers::set_timeout_callable(
-        Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
+        OwnedLocalCallable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
         0,
     );
     tsonic_rust_node::run_event_loop().unwrap();
@@ -56,7 +56,7 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
     let callback_count = Rc::clone(&count);
     let callback_slot = Rc::clone(&interval_slot);
     let interval = timers::set_interval_callable(
-        Callable::new(move |()| {
+        OwnedLocalCallable::new(move |()| {
             callback_count.set(callback_count.get() + 1);
             if callback_count.get() == 2 {
                 callback_slot.borrow_mut().as_mut().unwrap().close();
@@ -147,7 +147,7 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
 #[test]
 fn interval_callable_propagates_fallible_callback_errors() {
     timers::set_interval_callable(
-        Callable::new(|()| Err(std::io::Error::other("timer failed"))),
+        OwnedLocalCallable::new(|()| Err(std::io::Error::other("timer failed"))),
         1,
     );
     let error = tsonic_rust_node::run_event_loop().unwrap_err();

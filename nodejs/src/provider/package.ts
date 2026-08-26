@@ -17,6 +17,7 @@ import {
   httpServerCarrier,
   httpServerResponseCarrier,
   makeDirectoryOptionsCarrier,
+  nodeTraitContracts,
   processEnvCarrier,
   processMemoryUsageCarrier,
   processWriteStreamCarrier,
@@ -71,6 +72,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
     id: "@tsonic/rust-nodejs",
     displayName: "Node.js for Rust",
     version: "0.0.1",
+    compilationSnapshotId: "@tsonic/rust-nodejs@0.0.1",
     moduleAliases: [
       { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
       { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
@@ -124,6 +126,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       rustNodeStruct("node:timers::Timeout", timeoutCarrier),
       rustNodeStruct("node:util::TextDecoder", textDecoderCarrier),
     ],
+    traitContracts: nodeTraitContracts,
     operations: [
       ...assertRows(),
       ...pathRows(),
