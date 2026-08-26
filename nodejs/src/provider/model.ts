@@ -67,8 +67,8 @@ const cloneCopyTraits = [
 ] as const;
 const cloneCopyDefaultTraits = [
   { trait: rustCloneTrait, genericBindings: [], requirements: [] },
-  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
   { trait: rustCopyTrait, genericBindings: [], requirements: [] },
+  { trait: rustDefaultTrait, genericBindings: [], requirements: [] },
 ] as const;
 const cloneDefaultTraits = [
   { trait: rustCloneTrait, genericBindings: [], requirements: [] },
