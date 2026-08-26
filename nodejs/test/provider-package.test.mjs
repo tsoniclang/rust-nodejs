@@ -662,7 +662,6 @@ test("provider package closes process stdout and stderr output contracts", () =>
     nodeCarrier(
       "rust.node.ProcessWriteStream",
       "tsonic_rust_node::process::ProcessWriteStream",
-      cloneCopyTraits,
     ),
   );
 });
