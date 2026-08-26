@@ -98,7 +98,7 @@ export function childProcessRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_child_process::spawn_sync_result", argModes: ["ref", "ref"] },
       resultCarrier: spawnSyncResultCarrier,
       parameterCarriers: [stringCarrier, argumentsCarrier],
-      typeParameters: [argumentsCarrier.name],
+      genericParameters: [{ kind: "type", sourceName: argumentsCarrier.name }],
       ...providerNativeFallibility,
     },
     ...resultProperty("stdout", bufferCarrier),

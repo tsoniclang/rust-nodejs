@@ -70,7 +70,11 @@ export const httpRequestCallbackCarrier = rustCallableTargetType(
 export const trueArgument = { kind: "boolean", value: true } as const;
 export const noneArgument = { kind: "none" } as const;
 export const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
-export const providerNativeFallibility = {
+export const providerNativeFallibility: {
+  readonly isFallible: true;
+  readonly errorBoundary: "provider-native";
+  readonly errorCarrier: RustTargetTypeRef;
+} = {
   isFallible: true,
   errorBoundary: "provider-native",
   errorCarrier: nodeErrorCarrier,

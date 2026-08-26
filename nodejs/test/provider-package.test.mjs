@@ -187,7 +187,7 @@ test("provider package closes child-process and text-decoder operations", () => 
       { kind: "target-named", id: "rust.std.String" },
       { kind: "type-parameter", name: "Arguments" },
     ],
-    typeParameters: ["Arguments"],
+    genericParameters: [{ kind: "type", sourceName: "Arguments" }],
     isFallible: true,
     errorBoundary: "provider-native",
     errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
