@@ -1713,23 +1713,23 @@ NODE-QUERYSTRING-PARSE-OPTIONS-MAXKEYS	querystring	ParseOptions.maxKeys	implemen
 NODE-QUERYSTRING-STRINGIFY-OPTIONS-ENCODE	querystring	StringifyOptions.encodeURIComponent	implemented	N69	tsonic_rust_node::querystring::StringifyOptions::encode_uri_component	NODE-QUERYSTRING-001	custom query encoder callback field
 NODE-STRING-DECODER-CARRIER	string_decoder	StringDecoder	implemented	N69	tsonic_rust_node::string_decoder::StringDecoder	NODE-STRING-DECODER-001	closed streaming string decoder carrier
 NODE-READLINE-INTERFACE-CARRIER	readline	Interface	implemented	N72	tsonic_rust_node::readline::Interface	NODE-READLINE-002	closed buffered readline Interface carrier
-NODE-READLINE-INTERFACE-NEW	readline	Interface.new	implemented	N72	tsonic_rust_node::readline::Interface::new	NODE-READLINE-001	constructs Interface over explicit line queue
-NODE-READLINE-INTERFACE-PAUSE	readline	Interface.pause	implemented	N72	tsonic_rust_node::readline::Interface::pause	NODE-READLINE-002	pauses line consumption
-NODE-READLINE-INTERFACE-RESUME	readline	Interface.resume	implemented	N72	tsonic_rust_node::readline::Interface::resume	NODE-READLINE-002	resumes line consumption
-NODE-READLINE-INTERFACE-IS-PAUSED	readline	Interface.isPaused	implemented	N72	tsonic_rust_node::readline::Interface::paused	NODE-READLINE-002	reads paused state
+NODE-READLINE-INTERFACE-NEW	readline	Interface.new	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	Interface construction remains factory-owned until Node's public constructor contract is modeled exactly
+NODE-READLINE-INTERFACE-PAUSE	readline	Interface.pause	implemented	N72	tsonic_rust_node::readline::Interface::pause_chain	NODE-READLINE-002	pauses line consumption and returns the selected receiver
+NODE-READLINE-INTERFACE-RESUME	readline	Interface.resume	implemented	N72	tsonic_rust_node::readline::Interface::resume_chain	NODE-READLINE-002	resumes line consumption and returns the selected receiver
+NODE-READLINE-INTERFACE-IS-PAUSED	readline	Interface.isPaused	implemented	N72	tsonic_rust_node::readline::Interface::is_paused	NODE-READLINE-002	reads paused state
 NODE-READLINE-INTERFACE-CLOSE	readline	Interface.close	implemented	N72	tsonic_rust_node::readline::Interface::close	NODE-READLINE-002	closes interface
-NODE-READLINE-INTERFACE-CLOSED	readline	Interface.closed	implemented	N72	tsonic_rust_node::readline::Interface::closed	NODE-READLINE-002	reads closed state
+NODE-READLINE-INTERFACE-CLOSED	readline	Interface.closed	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	closed-state observation is absent from the accepted source declaration contract
 NODE-READLINE-INTERFACE-SET-PROMPT	readline	Interface.setPrompt	implemented	N72	tsonic_rust_node::readline::Interface::set_prompt	NODE-READLINE-002	sets explicit prompt text
 NODE-READLINE-INTERFACE-GET-PROMPT	readline	Interface.getPrompt	implemented	N72	tsonic_rust_node::readline::Interface::get_prompt	NODE-READLINE-002	reads prompt text
 NODE-READLINE-INTERFACE-PROMPT-CALL	readline	Interface.prompt	implemented	N72	tsonic_rust_node::readline::Interface::prompt	NODE-READLINE-002	writes prompt to output buffer
 NODE-READLINE-INTERFACE-LINE	readline	Interface.line	implemented	N72	tsonic_rust_node::readline::Interface::line	NODE-READLINE-002	reads line buffer
-NODE-READLINE-INTERFACE-CURSOR	readline	Interface.cursor	implemented	N72	tsonic_rust_node::readline::Interface::cursor	NODE-READLINE-002	reads cursor index
-NODE-READLINE-INTERFACE-GET-CURSOR-POS	readline	Interface.getCursorPos	implemented	N72	tsonic_rust_node::readline::Interface::get_cursor_pos	NODE-READLINE-002	returns closed cursor position carrier
-NODE-READLINE-INTERFACE-NEXT-LINE	readline	Interface.nextLine	implemented	N72	tsonic_rust_node::readline::Interface::next_line	NODE-READLINE-002	pops next explicit input line
-NODE-READLINE-INTERFACE-REMAINING-LINES	readline	Interface.remainingLines	implemented	N72	tsonic_rust_node::readline::Interface::remaining_lines	NODE-READLINE-002	returns remaining input lines
-NODE-READLINE-PROMISES-READLINE-NEW	readline/promises	Readline.new	implemented	N72	tsonic_rust_node::readline::Readline::new	NODE-READLINE-002	constructs promises Readline queue
-NODE-READLINE-PROMISES-STREAM	readline/promises	Readline.stream	implemented	N72	tsonic_rust_node::readline::Readline::stream	NODE-READLINE-002	reads committed command stream
-NODE-READLINE-PROMISES-PENDING	readline/promises	Readline.pending	implemented	N72	tsonic_rust_node::readline::Readline::pending	NODE-READLINE-002	reads pending command queue
+NODE-READLINE-INTERFACE-CURSOR	readline	Interface.cursor	implemented	N72	tsonic_rust_node::readline::Interface::cursor_number	NODE-READLINE-002	reads the UTF-16 source cursor index
+NODE-READLINE-INTERFACE-GET-CURSOR-POS	readline	Interface.getCursorPos	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	terminal cursor-position semantics are outside the accepted line-oriented contract
+NODE-READLINE-INTERFACE-NEXT-LINE	readline	Interface.nextLine	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	next-line is an internal stream operation and is not exposed as a source API
+NODE-READLINE-INTERFACE-REMAINING-LINES	readline	Interface.remainingLines	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	remaining-line queue inspection is not a Node source API
+NODE-READLINE-PROMISES-READLINE-NEW	readline/promises	Readline.new	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise terminal control requires exact asynchronous command and cancellation semantics
+NODE-READLINE-PROMISES-STREAM	readline/promises	Readline.stream	later	N72	n/a	LATER-NODE-READLINE-PROMISES	no synthetic command-log stream substitutes for terminal output
+NODE-READLINE-PROMISES-PENDING	readline/promises	Readline.pending	later	N72	n/a	LATER-NODE-READLINE-PROMISES	no synthetic pending-command queue substitutes for terminal state
 NODE-MODULE-PATH	path	module	implemented	J	tsonic_rust_node::path	NODE-PATH-001	path/posix/win32 helpers
 NODE-MODULE-PERF-HOOKS	perf_hooks	module	implemented	N1	tsonic_rust_node::perf_hooks	NODE-MISC-001	performance.now subset
 NODE-PERF-RESOURCE-TIMING-TO-ENTRY	perf_hooks	PerformanceResourceTiming.toEntry	implemented	N61	tsonic_rust_node::perf_hooks::PerformanceResourceTiming::to_entry	NODE-PERF-001	converts resource timing into PerformanceEntry
@@ -4698,21 +4698,21 @@ NODE-OS-ERRNO-EIO	os	errno.EIO	implemented	N91	tsonic_rust_node::os::errno_const
 NODE-OS-ERRNO-WSAENETUNREACH	os	errno.WSAENETUNREACH	implemented	N91	tsonic_rust_node::os::errno_constant("WSAENETUNREACH")	NODE-OS-CONSTANTS-002	WSAENETUNREACH errno constant from closed os.constants.errno table
 NODE-OS-ERRNO-EROFS	os	errno.EROFS	implemented	N91	tsonic_rust_node::os::errno_constant("EROFS")	NODE-OS-CONSTANTS-002	EROFS errno constant from closed os.constants.errno table
 NODE-READLINE-CREATE-INTERFACE	readline	createInterface	implemented	N72	tsonic_rust_node::readline::create_interface	NODE-READLINE-001	closed readline interface factory over explicit input lines
-NODE-READLINE-INTERFACE-QUESTION	readline	Interface.question	implemented	N72	tsonic_rust_node::readline::Interface::question	NODE-READLINE-002	question writes prompt and consumes next explicit input line
+NODE-READLINE-INTERFACE-QUESTION	readline	Interface.question	implemented	N72	tsonic_rust_node::readline::Interface::question_callable	NODE-READLINE-002	question writes the prompt and schedules the exact selected callback with the next stream line
 NODE-READLINE-INTERFACE-WRITE	readline	Interface.write	implemented	N72	tsonic_rust_node::readline::Interface::write	NODE-READLINE-002	write appends explicit output and line buffer text
-NODE-READLINE-INTERFACE-WRITE-KEY	readline	Interface.writeKey	implemented	N72	tsonic_rust_node::readline::Interface::write_key	NODE-READLINE-002	writeKey writes explicit text or key sequence
-NODE-READLINE-INTERFACE-OUTPUT	readline	Interface output	implemented	N72	tsonic_rust_node::readline::Interface::output	NODE-READLINE-002	output exposes deterministic written prompt/text buffer
-NODE-READLINE-INTERFACE-TERMINAL	readline	Interface terminal	implemented	N72	tsonic_rust_node::readline::Interface::{terminal,set_terminal}	NODE-READLINE-002	terminal flag is explicit carrier state
-NODE-READLINE-CURSOR-POS	readline	CursorPos	implemented	N72	tsonic_rust_node::readline::CursorPos	NODE-READLINE-002	closed cursor position carrier
-NODE-READLINE-KEY	readline	Key	implemented	N72	tsonic_rust_node::readline::Key	NODE-READLINE-002	closed key carrier with sequence/name/modifier fields
-NODE-READLINE-PROMISES-CREATE-READLINE	readline/promises	createReadline	implemented	N72	tsonic_rust_node::readline::promises::create_readline	NODE-READLINE-002	promises controller factory
-NODE-READLINE-PROMISES-READLINE	readline/promises	Readline	implemented	N72	tsonic_rust_node::readline::Readline	NODE-READLINE-002	closed promises Readline command queue carrier
-NODE-READLINE-PROMISES-CLEAR-LINE	readline/promises	Readline.clearLine	implemented	N72	tsonic_rust_node::readline::Readline::clear_line	NODE-READLINE-002	clearLine queues deterministic terminal command
-NODE-READLINE-PROMISES-CLEAR-SCREEN-DOWN	readline/promises	Readline.clearScreenDown	implemented	N72	tsonic_rust_node::readline::Readline::clear_screen_down	NODE-READLINE-002	clearScreenDown queues deterministic terminal command
-NODE-READLINE-PROMISES-CURSOR-TO	readline/promises	Readline.cursorTo	implemented	N72	tsonic_rust_node::readline::Readline::cursor_to	NODE-READLINE-002	cursorTo queues deterministic cursor command
-NODE-READLINE-PROMISES-MOVE-CURSOR	readline/promises	Readline.moveCursor	implemented	N72	tsonic_rust_node::readline::Readline::move_cursor	NODE-READLINE-002	moveCursor queues deterministic cursor command
-NODE-READLINE-PROMISES-COMMIT	readline/promises	Readline.commit	implemented	N72	tsonic_rust_node::readline::Readline::commit	NODE-READLINE-002	commit flushes pending terminal commands
-NODE-READLINE-PROMISES-ROLLBACK	readline/promises	Readline.rollback	implemented	N72	tsonic_rust_node::readline::Readline::rollback	NODE-READLINE-002	rollback clears pending terminal commands
+NODE-READLINE-INTERFACE-WRITE-KEY	readline	Interface.writeKey	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	keypress metadata requires an exact selected key-event contract
+NODE-READLINE-INTERFACE-OUTPUT	readline	Interface output	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	output is the selected Writable stream rather than a synthetic inspection log
+NODE-READLINE-INTERFACE-TERMINAL	readline	Interface terminal	implemented	N72	tsonic_rust_node::readline::Interface::terminal	NODE-READLINE-002	reads the explicit terminal option
+NODE-READLINE-CURSOR-POS	readline	CursorPos	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	cursor-position source carrier is not exposed by the accepted provider declaration
+NODE-READLINE-KEY	readline	Key	later	N72	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
+NODE-READLINE-PROMISES-CREATE-READLINE	readline/promises	createReadline	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise terminal control requires exact asynchronous command and cancellation semantics
+NODE-READLINE-PROMISES-READLINE	readline/promises	Readline	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise terminal carrier is not exposed until its operations are exact
+NODE-READLINE-PROMISES-CLEAR-LINE	readline/promises	Readline.clearLine	later	N72	n/a	LATER-NODE-READLINE-PROMISES	clearLine requires target terminal command semantics
+NODE-READLINE-PROMISES-CLEAR-SCREEN-DOWN	readline/promises	Readline.clearScreenDown	later	N72	n/a	LATER-NODE-READLINE-PROMISES	clearScreenDown requires target terminal command semantics
+NODE-READLINE-PROMISES-CURSOR-TO	readline/promises	Readline.cursorTo	later	N72	n/a	LATER-NODE-READLINE-PROMISES	cursorTo requires target terminal command semantics
+NODE-READLINE-PROMISES-MOVE-CURSOR	readline/promises	Readline.moveCursor	later	N72	n/a	LATER-NODE-READLINE-PROMISES	moveCursor requires target terminal command semantics
+NODE-READLINE-PROMISES-COMMIT	readline/promises	Readline.commit	later	N72	n/a	LATER-NODE-READLINE-PROMISES	commit requires exact asynchronous terminal ordering
+NODE-READLINE-PROMISES-ROLLBACK	readline/promises	Readline.rollback	later	N72	n/a	LATER-NODE-READLINE-PROMISES	rollback requires exact asynchronous terminal ordering
 NODE-PERF-HISTOGRAM-CARRIER	perf_hooks	Histogram	implemented	N61	tsonic_rust_node::perf_hooks::Histogram	NODE-PERF-001	closed histogram carrier
 NODE-PERF-HISTOGRAM-RECORD	perf_hooks	Histogram.record	implemented	N61	tsonic_rust_node::perf_hooks::Histogram::record	NODE-PERF-001	records explicit histogram value
 NODE-PERF-HISTOGRAM-RECORD-DELTA	perf_hooks	Histogram.recordDelta	implemented	N61	tsonic_rust_node::perf_hooks::Histogram::record_delta	NODE-PERF-001	records elapsed delta value
@@ -4757,7 +4757,7 @@ NODE-ALIAS-PROCESS	node:process	module alias	implemented	N75	tsonic_rust_node::p
 NODE-ALIAS-PUNYCODE	node:punycode	module alias	implemented	N75	tsonic_rust_node::punycode	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
 NODE-ALIAS-QUERYSTRING	node:querystring	module alias	implemented	N75	tsonic_rust_node::querystring	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
 NODE-ALIAS-READLINE	node:readline	module alias	implemented	N75	tsonic_rust_node::readline	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
-NODE-ALIAS-READLINE-PROMISES	node:readline/promises	module alias	implemented	N75	tsonic_rust_node::readline	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
+NODE-ALIAS-READLINE-PROMISES	node:readline/promises	module alias	later	N75	n/a	LATER-NODE-READLINE-PROMISES	the canonical promises module is not aliased to a semantically different callback module
 NODE-ALIAS-SQLITE	node:sqlite	module alias	implemented	N75	tsonic_rust_node::sqlite	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
 NODE-ALIAS-STREAM	node:stream	module alias	implemented	N75	tsonic_rust_node::stream	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
 NODE-ALIAS-STREAM-CONSUMERS	node:stream/consumers	module alias	implemented	N75	tsonic_rust_node::stream::consumers	NODE-ALIAS-001	explicit node: specifier alias to the same closed runtime module
@@ -4792,11 +4792,11 @@ NODE-EXACT-WEB-IMPORTMETA-0179FCCC	web-globals/importmeta	ImportMeta.dirname	imp
 NODE-EXACT-ASSERT-04A49448	assert	AssertionError.expected	implemented	N68	tsonic_rust_node::assert::AssertionError::expected	NODE-ASSERT-002	exact Node declaration row NODEAPI-04a49448 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-07E39BAD	stream/promises	inline-type-literal.transform4	implemented	N77	tsonic_rust_node::stream::promises::pipeline_transforms	NODE-STREAM-003	exact Node declaration row NODEAPI-07e39bad mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-089DDFC2	stream/promises	inline-type-literal.destination	implemented	N77	tsonic_rust_node::stream::Writable	NODE-STREAM-003	exact Node declaration row NODEAPI-089ddfc2 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-091E5F73	readline/promises	inline-type-literal.completer	implemented	N72	tsonic_rust_node::readline::ReadlineOptions::completer	NODE-READLINE-002	exact Node declaration row NODEAPI-091e5f73 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-091E5F73	readline/promises	inline-type-literal.completer	later	N72	n/a	LATER-NODE-READLINE-PROMISES	completer callbacks require exact asynchronous readline semantics
 NODE-EXACT-WEB-IMPORTMETA-0B63952F	web-globals/importmeta	ImportMeta.main	implemented	W1	tsonic_rust_js::web::ImportMeta::main	JS-WEB-010	exact Node declaration row NODEAPI-0b63952f mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-0C98F8E9	stream/promises	inline-type-literal.transform3	implemented	N77	tsonic_rust_node::stream::promises::pipeline_transforms	NODE-STREAM-003	exact Node declaration row NODEAPI-0c98f8e9 mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-0EBB4B5B	diagnostics_channel	inline-type-literal.nameOrChannels	implemented	N79	tsonic_rust_node::diagnostics_channel::tracing_channel	NODE-DIAG-002	exact Node declaration row NODEAPI-0ebb4b5b mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-118D5E9E	readline/promises	Readline.options	implemented	N72	tsonic_rust_node::readline::ReadlineOptions	NODE-READLINE-002	exact Node declaration row NODEAPI-118d5e9e mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-118D5E9E	readline/promises	Readline.options	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise readline options are absent until the carrier is exact
 NODE-EXACT-STREAM-PROMISES-12A02E17	stream/promises	inline-type-literal.destination	implemented	N77	tsonic_rust_node::stream::Writable	NODE-STREAM-003	exact Node declaration row NODEAPI-12a02e17 mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-15E1E75B	diagnostics_channel	TracingChannelSubscribers.error	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::error	NODE-DIAG-002	exact Node declaration row NODEAPI-15e1e75b mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-17E1EA81	diagnostics_channel	TracingChannelSubscribers.error	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::error	NODE-DIAG-002	exact Node declaration row NODEAPI-17e1ea81 mapped to closed Rust runtime API
@@ -4809,7 +4809,7 @@ NODE-EXACT-STREAM-PROMISES-23F51342	stream/promises	inline-type-literal.source	i
 NODE-EXACT-DIAGNOSTICS-CHANNEL-25CE7245	diagnostics_channel	TracingChannelSubscribers.message	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::message	NODE-DIAG-002	exact Node declaration row NODEAPI-25ce7245 mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-25D045DE	assert	AssertionError.code	implemented	N68	tsonic_rust_node::assert::AssertionError::code	NODE-ASSERT-002	exact Node declaration row NODEAPI-25d045de mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-2DE4265F	assert	AssertionErrorOptions.stackStartFn	implemented	N68	tsonic_rust_node::assert::AssertionErrorOptions::stack_start_fn	NODE-ASSERT-002	exact Node declaration row NODEAPI-2de4265f mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-2E3D71BD	readline/promises	inline-type-literal.terminal	implemented	N72	tsonic_rust_node::readline::ReadlineOptions::terminal	NODE-READLINE-002	exact Node declaration row NODEAPI-2e3d71bd mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-2E3D71BD	readline/promises	inline-type-literal.terminal	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise readline options are absent until the carrier is exact
 NODE-EXACT-DIAGNOSTICS-CHANNEL-314B6D10	diagnostics_channel	TracingChannelSubscribers.message	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::message	NODE-DIAG-002	exact Node declaration row NODEAPI-314b6d10 mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-31805967	assert	inline-type-literal.message	implemented	N68	tsonic_rust_node::assert::{throws,does_not_throw,rejects,does_not_reject}	NODE-ASSERT-002	exact Node declaration row NODEAPI-31805967 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-32EF7A78	stream/promises	inline-type-literal.stream	implemented	N77	tsonic_rust_node::stream::promises::finished	NODE-STREAM-003	exact Node declaration row NODEAPI-32ef7a78 mapped to closed Rust runtime API
@@ -4819,10 +4819,10 @@ NODE-EXACT-ASSERT-359012F3	assert	inline-type-literal.error	implemented	N68	tson
 NODE-EXACT-DIAGNOSTICS-CHANNEL-3887CE5A	diagnostics_channel	TracingChannel.position	implemented	N79	tsonic_rust_node::diagnostics_channel::TraceCall::position	NODE-DIAG-002	exact Node declaration row NODEAPI-3887ce5a mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-3B4DBB65	diagnostics_channel	TracingChannelSubscribers.message	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::message	NODE-DIAG-002	exact Node declaration row NODEAPI-3b4dbb65 mapped to closed Rust runtime API
 NODE-EXACT-WEB-TIMERS-44A0FBC2	web-globals/timers	inline-type-literal.callback	implemented	N71	tsonic_rust_node::timers::Timeout	NODE-TIMERS-002	exact Node declaration row NODEAPI-44a0fbc2 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-467BDBD7	readline/promises	Interface.question	implemented	N72	tsonic_rust_node::readline::Interface::question	NODE-READLINE-002	exact Node declaration row NODEAPI-467bdbd7 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-477BDD6A	readline/promises	Interface.question	implemented	N72	tsonic_rust_node::readline::Interface::question	NODE-READLINE-002	exact Node declaration row NODEAPI-477bdd6a mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-467BDBD7	readline/promises	Interface.question	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise question requires exact promise settlement and cancellation semantics
+NODE-EXACT-READLINE-PROMISES-477BDD6A	readline/promises	Interface.question	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise question requires exact promise settlement and cancellation semantics
 NODE-EXACT-STREAM-PROMISES-4A2E3006	stream/promises	inline-type-literal.options	implemented	N77	tsonic_rust_node::stream::promises::PipelineOptions	NODE-STREAM-003	exact Node declaration row NODEAPI-4a2e3006 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-50D09AB9	readline/promises	Readline.autoCommit	implemented	N72	tsonic_rust_node::readline::Readline::auto_commit	NODE-READLINE-002	exact Node declaration row NODEAPI-50d09ab9 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-50D09AB9	readline/promises	Readline.autoCommit	later	N72	n/a	LATER-NODE-READLINE-PROMISES	autoCommit is absent until terminal command ordering is exact
 NODE-EXACT-STREAM-PROMISES-526777A2	stream/promises	inline-type-literal.options	implemented	N77	tsonic_rust_node::stream::promises::PipelineOptions	NODE-STREAM-003	exact Node declaration row NODEAPI-526777a2 mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-5461080E	diagnostics_channel	TracingChannelCollection.asyncEnd	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelCollection::async_end	NODE-DIAG-002	exact Node declaration row NODEAPI-5461080e mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-591D7D9D	assert	AssertionError.constructor	implemented	N68	tsonic_rust_node::assert::AssertionError::new	NODE-ASSERT-002	exact Node declaration row NODEAPI-591d7d9d mapped to closed Rust runtime API
@@ -4854,7 +4854,7 @@ NODE-EXACT-DIAGNOSTICS-CHANNEL-8F2EF3CD	diagnostics_channel	TracingChannelCollec
 NODE-EXACT-DIAGNOSTICS-CHANNEL-90209904	diagnostics_channel	TracingChannelSubscribers.asyncEnd	implemented	N79	tsonic_rust_node::diagnostics_channel::TracingChannelSubscribers::async_end	NODE-DIAG-002	exact Node declaration row NODEAPI-90209904 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-91D0A5C6	stream/promises	inline-type-literal.streams	implemented	N77	tsonic_rust_node::stream::promises::pipeline_transforms	NODE-STREAM-003	exact Node declaration row NODEAPI-91d0a5c6 mapped to closed Rust runtime API
 NODE-EXACT-DIAGNOSTICS-CHANNEL-951667CB	diagnostics_channel	TracingChannel.thisArg	implemented	N79	tsonic_rust_node::diagnostics_channel::TraceCall::this_arg	NODE-DIAG-002	exact Node declaration row NODEAPI-951667cb mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-96094D45	readline/promises	Readline.constructor	implemented	N72	tsonic_rust_node::readline::Readline::with_options	NODE-READLINE-002	exact Node declaration row NODEAPI-96094d45 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-96094D45	readline/promises	Readline.constructor	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise terminal construction is absent until its complete contract is exact
 NODE-EXACT-DIAGNOSTICS-CHANNEL-9688C57C	diagnostics_channel	TracingChannel.thisArg	implemented	N79	tsonic_rust_node::diagnostics_channel::TraceCall::this_arg	NODE-DIAG-002	exact Node declaration row NODEAPI-9688c57c mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-9E78B639	assert	inline-type-literal.message	implemented	N68	tsonic_rust_node::assert::{throws,does_not_throw,rejects,does_not_reject}	NODE-ASSERT-002	exact Node declaration row NODEAPI-9e78b639 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-9EEFC4B5	stream/promises	inline-type-literal.source	implemented	N77	tsonic_rust_node::stream::Readable	NODE-STREAM-003	exact Node declaration row NODEAPI-9eefc4b5 mapped to closed Rust runtime API
@@ -4865,7 +4865,7 @@ NODE-EXACT-DIAGNOSTICS-CHANNEL-A2F5F9F6	diagnostics_channel	Channel.thisArg	impl
 NODE-EXACT-ASSERT-A78A0D85	assert	inline-type-literal.message	implemented	N68	tsonic_rust_node::assert::{throws,does_not_throw,rejects,does_not_reject}	NODE-ASSERT-002	exact Node declaration row NODEAPI-a78a0d85 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-AB4AA675	stream/promises	inline-type-literal.transform2	implemented	N77	tsonic_rust_node::stream::promises::pipeline_transforms	NODE-STREAM-003	exact Node declaration row NODEAPI-ab4aa675 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-ABE5A895	stream/promises	FinishedOptions.cleanup	implemented	N77	tsonic_rust_node::stream::FinishedOptions::cleanup	NODE-STREAM-003	exact Node declaration row NODEAPI-abe5a895 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-B4677027	readline/promises	inline-type-literal.input	implemented	N72	tsonic_rust_node::readline::ReadlineOptions::input	NODE-READLINE-002	exact Node declaration row NODEAPI-b4677027 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-B4677027	readline/promises	inline-type-literal.input	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise readline options are absent until the carrier is exact
 NODE-EXACT-STREAM-PROMISES-B96B102A	stream/promises	inline-type-literal.transform2	implemented	N77	tsonic_rust_node::stream::promises::pipeline_transforms	NODE-STREAM-003	exact Node declaration row NODEAPI-b96b102a mapped to closed Rust runtime API
 NODE-EXACT-WEB-IMPORTMETA-BD89C021	web-globals/importmeta	ImportMeta.url	implemented	W1	tsonic_rust_js::web::ImportMeta::url	JS-WEB-010	exact Node declaration row NODEAPI-bd89c021 mapped to closed Rust runtime API
 NODE-EXACT-STREAM-PROMISES-BE5B55B3	stream/promises	inline-type-literal.options	implemented	N77	tsonic_rust_node::stream::promises::PipelineOptions	NODE-STREAM-003	exact Node declaration row NODEAPI-be5b55b3 mapped to closed Rust runtime API
@@ -4896,13 +4896,13 @@ NODE-EXACT-WEB-TIMERS-E430EB6F	web-globals/timers	inline-type-literal.delay	impl
 NODE-EXACT-STREAM-PROMISES-E49537E4	stream/promises	inline-type-literal.options	implemented	N77	tsonic_rust_node::stream::promises::PipelineOptions	NODE-STREAM-003	exact Node declaration row NODEAPI-e49537e4 mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-E6B5950D	assert	AssertionErrorOptions.message	implemented	N68	tsonic_rust_node::assert::AssertionErrorOptions::message	NODE-ASSERT-002	exact Node declaration row NODEAPI-e6b5950d mapped to closed Rust runtime API
 NODE-EXACT-WEB-IMPORTMETA-E8C99455	web-globals/importmeta	ImportMeta.resolve	implemented	W1	tsonic_rust_js::web::ImportMeta::resolve	JS-WEB-010	exact Node declaration row NODEAPI-e8c99455 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-EA206181	readline/promises	ReadLineOptions.completer	implemented	N72	tsonic_rust_node::readline::ReadlineOptions::completer	NODE-READLINE-002	exact Node declaration row NODEAPI-ea206181 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-EA206181	readline/promises	ReadLineOptions.completer	later	N72	n/a	LATER-NODE-READLINE-PROMISES	completer callbacks require exact asynchronous readline semantics
 NODE-EXACT-UTIL-TYPES-EB416664	util/types	inline-type-literal.object	implemented	N75	tsonic_rust_node::util::types::*	NODE-UTIL-001	exact Node declaration row NODEAPI-eb416664 mapped to closed Rust runtime API
 NODE-EXACT-ASSERT-ED7525A0	assert	inline-type-literal.block	implemented	N68	tsonic_rust_node::assert::{throws,rejects}	NODE-ASSERT-002	exact Node declaration row NODEAPI-ed7525a0 mapped to closed Rust runtime API
 NODE-EXACT-WEB-TIMERS-EE30FB2D	web-globals/timers	inline-type-literal.delay	implemented	N71	tsonic_rust_node::timers::TimerOptions	NODE-TIMERS-002	exact Node declaration row NODEAPI-ee30fb2d mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-F7D6AB8C	readline/promises	inline-type-literal.output	implemented	N72	tsonic_rust_node::readline::ReadlineOptions::output	NODE-READLINE-002	exact Node declaration row NODEAPI-f7d6ab8c mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-F7D6AB8C	readline/promises	inline-type-literal.output	later	N72	n/a	LATER-NODE-READLINE-PROMISES	promise readline options are absent until the carrier is exact
 NODE-EXACT-ASSERT-F9753884	assert	inline-type-literal.block	implemented	N68	tsonic_rust_node::assert::{throws,rejects}	NODE-ASSERT-002	exact Node declaration row NODEAPI-f9753884 mapped to closed Rust runtime API
-NODE-EXACT-READLINE-PROMISES-FFAB0FF5	readline/promises	module	implemented	N72	tsonic_rust_node::readline::promises	NODE-READLINE-002	exact Node declaration row NODEAPI-ffab0ff5 mapped to closed Rust runtime API
+NODE-EXACT-READLINE-PROMISES-FFAB0FF5	readline/promises	module	later	N72	n/a	LATER-NODE-READLINE-PROMISES	the promises module is absent until its complete contract is exact
 NODE-EXACT-WEB-DOMEXCEPTION-0090ADE7	web-globals/domexception	inline-type-literal.new	implemented	W1	tsonic_rust_js::web::DomException::new	JS-WEB-002	exact Node declaration row NODEAPI-0090ade7 mapped to closed Rust runtime API
 NODE-EXACT-URL-07B63E92	url	URLPatternInit.username	implemented	N87	tsonic_rust_node::url::UrlPatternInit::username	NODE-URL-012	exact Node declaration row NODEAPI-07b63e92 mapped to closed Rust runtime API
 NODE-EXACT-WEB-DOMEXCEPTION-0B44E09F	web-globals/domexception	inline-type-literal.INVALID_NODE_TYPE_ERR	implemented	W1	tsonic_rust_js::web::DomException::INVALID_NODE_TYPE_ERR	JS-WEB-002	exact Node declaration row NODEAPI-0b44e09f mapped to closed Rust runtime API
@@ -5460,30 +5460,30 @@ NODE-EXACT-DNS-F3F7C7E4	dns	CaaRecord.iodef	implemented	N100	tsonic_rust_node::d
 NODE-EXACT-DNS-F6E6EA1C	dns	AnyARecord.type	implemented	N100	tsonic_rust_node::dns::AnyARecord::record_type	NODE-DNS-003	exact DNS declaration AnyARecord.type maps to closed Rust DNS carrier
 NODE-EXACT-ALIAS-0874D5FA	node:dns	module	implemented	N101	tsonic_rust_node::dns	NODE-ALIAS-002	exact node:dns declaration module maps to closed Rust runtime ABI
 NODE-EXACT-ALIAS-1166AD27	node:readline	module	implemented	N101	tsonic_rust_node::readline	NODE-ALIAS-002	exact node:readline declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-1A18F7E9	readline	Key.sequence	implemented	N101	tsonic_rust_node::readline::Key::sequence	NODE-READLINE-003	exact readline declaration Key.sequence maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-1A18F7E9	readline	Key.sequence	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
 NODE-EXACT-ALIAS-23984CB3	node:http2	module	implemented	N101	tsonic_rust_node::http2	NODE-ALIAS-002	exact node:http2 declaration module maps to closed Rust runtime ABI
 NODE-EXACT-ALIAS-27E67DDD	node:buffer	module	implemented	N101	tsonic_rust_node::buffer	NODE-ALIAS-002	exact node:buffer declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-2D64106C	readline	Key.meta	implemented	N101	tsonic_rust_node::readline::Key::meta	NODE-READLINE-003	exact readline declaration Key.meta maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-2E831FDD	readline	ReadLineOptions.signal	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::signal	NODE-READLINE-003	exact readline declaration ReadLineOptions.signal maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-403AFB54	readline	ReadLineOptions.historySize	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::history_size	NODE-READLINE-003	exact readline declaration ReadLineOptions.historySize maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-4072AB03	readline	Key.ctrl	implemented	N101	tsonic_rust_node::readline::Key::ctrl	NODE-READLINE-003	exact readline declaration Key.ctrl maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-4A2A45E5	readline	CursorPos.cols	implemented	N101	tsonic_rust_node::readline::CursorPos::cols	NODE-READLINE-003	exact readline declaration CursorPos.cols maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-512B5140	readline	ReadLineOptions.history	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::history	NODE-READLINE-003	exact readline declaration ReadLineOptions.history maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-2D64106C	readline	Key.meta	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
+NODE-EXACT-READLINE-2E831FDD	readline	ReadLineOptions.signal	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	abort-signal cancellation requires an exact selected cancellation contract
+NODE-EXACT-READLINE-403AFB54	readline	ReadLineOptions.historySize	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	history semantics are outside the accepted line-oriented contract
+NODE-EXACT-READLINE-4072AB03	readline	Key.ctrl	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
+NODE-EXACT-READLINE-4A2A45E5	readline	CursorPos.cols	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	cursor-position source carrier is not exposed by the accepted provider declaration
+NODE-EXACT-READLINE-512B5140	readline	ReadLineOptions.history	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	history semantics are outside the accepted line-oriented contract
 NODE-EXACT-ALIAS-65CE8D03	node:buffer	module	implemented	N101	tsonic_rust_node::buffer	NODE-ALIAS-002	exact node:buffer declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-699713DC	readline	CursorPos.rows	implemented	N101	tsonic_rust_node::readline::CursorPos::rows	NODE-READLINE-003	exact readline declaration CursorPos.rows maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-6FBA9262	readline	Key.shift	implemented	N101	tsonic_rust_node::readline::Key::shift	NODE-READLINE-003	exact readline declaration Key.shift maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-78900ECE	readline	ReadLineOptions.removeHistoryDuplicates	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::remove_history_duplicates	NODE-READLINE-003	exact readline declaration ReadLineOptions.removeHistoryDuplicates maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-699713DC	readline	CursorPos.rows	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	cursor-position source carrier is not exposed by the accepted provider declaration
+NODE-EXACT-READLINE-6FBA9262	readline	Key.shift	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
+NODE-EXACT-READLINE-78900ECE	readline	ReadLineOptions.removeHistoryDuplicates	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	history semantics are outside the accepted line-oriented contract
 NODE-EXACT-ALIAS-8D81DC8E	node:http2	module	implemented	N101	tsonic_rust_node::http2	NODE-ALIAS-002	exact node:http2 declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-9069FD88	readline	ReadLineOptions.terminal	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::terminal	NODE-READLINE-003	exact readline declaration ReadLineOptions.terminal maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-9069FD88	readline	ReadLineOptions.terminal	implemented	N101	tsonic_rust_node::readline::SourceInterfaceOptions::terminal	NODE-READLINE-003	exact optional terminal selection maps to the closed source options carrier
 NODE-EXACT-ALIAS-940B85F5	node:dns	module	implemented	N101	tsonic_rust_node::dns	NODE-ALIAS-002	exact node:dns declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-98ED97AE	readline	ReadLineOptions.escapeCodeTimeout	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::escape_code_timeout	NODE-READLINE-003	exact readline declaration ReadLineOptions.escapeCodeTimeout maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-9D00A592	readline	ReadLineOptions.output	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::output	NODE-READLINE-003	exact readline declaration ReadLineOptions.output maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-B24E0461	readline	ReadLineOptions.prompt	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::prompt	NODE-READLINE-003	exact readline declaration ReadLineOptions.prompt maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-BC35B772	readline	ReadLineOptions.crlfDelay	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::crlf_delay	NODE-READLINE-003	exact readline declaration ReadLineOptions.crlfDelay maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-98ED97AE	readline	ReadLineOptions.escapeCodeTimeout	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	escape-sequence timing is outside the accepted line-oriented contract
+NODE-EXACT-READLINE-9D00A592	readline	ReadLineOptions.output	implemented	N101	tsonic_rust_node::readline::SourceInterfaceOptions::output	NODE-READLINE-003	exact optional output stream maps to the closed source options carrier
+NODE-EXACT-READLINE-B24E0461	readline	ReadLineOptions.prompt	implemented	N101	tsonic_rust_node::readline::SourceInterfaceOptions::prompt	NODE-READLINE-003	exact optional prompt maps to the closed source options carrier
+NODE-EXACT-READLINE-BC35B772	readline	ReadLineOptions.crlfDelay	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	configurable CRLF timing is outside the accepted line-oriented contract
 NODE-EXACT-ALIAS-C1DF1C1A	node:fs	module	implemented	N101	tsonic_rust_node::fs	NODE-ALIAS-002	exact node:fs declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-C33DBB2C	readline	ReadLineOptions.tabSize	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::tab_size	NODE-READLINE-003	exact readline declaration ReadLineOptions.tabSize maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-C554816F	readline	ReadLineOptions.input	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::input	NODE-READLINE-003	exact readline declaration ReadLineOptions.input maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-C62C1231	readline	ReadLineOptions.completer	implemented	N101	tsonic_rust_node::readline::ReadlineOptions::completer	NODE-READLINE-003	exact readline declaration ReadLineOptions.completer maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-C33DBB2C	readline	ReadLineOptions.tabSize	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	terminal tab-width behavior is outside the accepted line-oriented contract
+NODE-EXACT-READLINE-C554816F	readline	ReadLineOptions.input	implemented	N101	tsonic_rust_node::readline::SourceInterfaceOptions::input	NODE-READLINE-003	exact readable input stream maps to the closed source options carrier
+NODE-EXACT-READLINE-C62C1231	readline	ReadLineOptions.completer	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	completer callbacks require exact asynchronous readline semantics
 NODE-EXACT-ALIAS-D1B82579	node:readline	module	implemented	N101	tsonic_rust_node::readline	NODE-ALIAS-002	exact node:readline declaration module maps to closed Rust runtime ABI
-NODE-EXACT-READLINE-DD750098	readline	Key.name	implemented	N101	tsonic_rust_node::readline::Key::name	NODE-READLINE-003	exact readline declaration Key.name maps to closed Rust runtime ABI
+NODE-EXACT-READLINE-DD750098	readline	Key.name	later	N101	n/a	LATER-NODE-READLINE-EXTENDED	keypress source carrier is not exposed by the accepted provider declaration
 NODE-EXACT-ALIAS-F0D1048E	node:fs	module	implemented	N101	tsonic_rust_node::fs	NODE-ALIAS-002	exact node:fs declaration module maps to closed Rust runtime ABI

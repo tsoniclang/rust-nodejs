@@ -1,100 +1,58 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use tsonic_rust_js::equality::JsStrictEqual;
 use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
+use tsonic_rust_node::buffer::Buffer;
+use tsonic_rust_node::stream::{Readable, Writable};
 use tsonic_rust_node::{process, readline, worker_threads};
+use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn readline_interface_uses_explicit_input_and_output_buffers() {
-    let mut interface = readline::create_interface(vec!["answer".to_string(), "line2".to_string()]);
-    assert_eq!(interface.question("name?").as_deref(), Some("answer"));
-    interface.write("done");
-    assert_eq!(
-        interface.output(),
-        &["name?".to_string(), "done".to_string()]
-    );
-    assert_eq!(interface.line(), "done");
-    assert_eq!(interface.cursor(), 4);
-    assert_eq!(interface.get_cursor_pos().cols, 4);
+    let input = Readable::from_chunks(vec![
+        Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap(),
+    ]);
+    let output = Writable::new();
+    let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
+        input,
+        output: Some(output),
+        terminal: Some(true),
+        prompt: Some("name? ".to_string()),
+    });
+
+    let answer = Rc::new(RefCell::new(None::<String>));
+    let callback_answer = Rc::clone(&answer);
+    interface
+        .question_callable(
+            "name? ",
+            Callable::new(move |(value,)| {
+                *callback_answer.borrow_mut() = Some(value);
+                Ok::<(), TsonicError>(())
+            }),
+        )
+        .unwrap();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert_eq!(answer.borrow().as_deref(), Some("answer"));
+
+    interface.write("done😀").unwrap();
+    assert_eq!(interface.line(), "done😀");
+    assert_eq!(interface.cursor_number(), 6.0);
+    assert_eq!(interface.get_cursor_pos().cols, 6);
     interface.set_prompt("next> ");
     assert_eq!(interface.get_prompt(), "next> ");
-    interface.prompt(false);
-    assert_eq!(interface.output().last().unwrap(), "next> ");
-    interface.write_key(
-        None,
-        Some(readline::Key {
-            sequence: Some("!".to_string()),
-            name: Some("bang".to_string()),
-            ctrl: false,
-            meta: false,
-            shift: true,
-        }),
-    );
-    assert_eq!(interface.line(), "done!");
-    interface.set_terminal(true);
+    interface.prompt().unwrap();
     assert!(interface.terminal());
-    assert_eq!(interface.next_line().as_deref(), Some("line2"));
-    interface.pause();
-    assert!(interface.paused());
-    interface.write("ignored");
-    assert_eq!(interface.next_line(), None);
-    interface.resume();
-    assert!(!interface.paused());
-    assert!(interface.remaining_lines().is_empty());
+    assert_eq!(interface.next_line().unwrap().as_deref(), Some("line2"));
+    assert!(interface.next_line().unwrap().is_none());
+    interface.pause_chain();
+    assert!(interface.is_paused());
+    interface.write("ignored").unwrap();
+    assert!(interface.next_line().unwrap().is_none());
+    interface.resume_chain();
+    assert!(!interface.is_paused());
     interface.close();
-    assert!(interface.closed());
-    assert_eq!(interface.question("again?"), None);
-
-    let mut terminal = readline::promises::create_readline(false);
-    terminal
-        .clear_line(0)
-        .cursor_to(2, Some(1))
-        .move_cursor(-1, 0);
-    assert_eq!(terminal.stream().len(), 0);
-    assert_eq!(terminal.pending().len(), 3);
-    terminal.rollback();
-    assert_eq!(terminal.pending().len(), 0);
-    terminal.clear_screen_down().commit();
-    assert_eq!(terminal.stream(), &["clearScreenDown".to_string()]);
-
-    let mut auto = readline::Readline::new(true);
-    assert!(auto.auto_commit());
-    auto.cursor_to(1, None);
-    assert_eq!(auto.stream(), &["cursorTo:1:0".to_string()]);
-
-    let configured = readline::Readline::with_options(readline::ReadlineOptions {
-        input: Some("stdin".to_string()),
-        output: Some("stdout".to_string()),
-        terminal: true,
-        completer: Some("word-completer".to_string()),
-        auto_commit: true,
-        signal: Some("abort-signal".to_string()),
-        history_size: Some(32),
-        history: Some(vec!["old".to_string()]),
-        remove_history_duplicates: true,
-        escape_code_timeout: Some(500),
-        prompt: Some("prompt> ".to_string()),
-        crlf_delay: Some(100),
-        tab_size: Some(4),
-    });
-    assert_eq!(configured.options().input.as_deref(), Some("stdin"));
-    assert_eq!(configured.options().output.as_deref(), Some("stdout"));
-    assert!(configured.options().terminal);
-    assert_eq!(
-        configured.options().completer.as_deref(),
-        Some("word-completer")
-    );
-    assert_eq!(configured.options().signal.as_deref(), Some("abort-signal"));
-    assert_eq!(configured.options().history_size, Some(32));
-    assert_eq!(
-        configured.options().history.as_deref(),
-        Some(&["old".to_string()][..])
-    );
-    assert!(configured.options().remove_history_duplicates);
-    assert_eq!(configured.options().escape_code_timeout, Some(500));
-    assert_eq!(configured.options().prompt.as_deref(), Some("prompt> "));
-    assert_eq!(configured.options().crlf_delay, Some(100));
-    assert_eq!(configured.options().tab_size, Some(4));
+    assert!(interface.next_line().unwrap().is_none());
 }
 
 #[test]

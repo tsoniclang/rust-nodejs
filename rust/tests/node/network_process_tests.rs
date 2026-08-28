@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::thread;
+use std::time::{Duration, Instant};
 
-use tsonic_rust_node::{child_process, http, module, net};
+use tsonic_rust_node::{child_process, http, module, net, tls};
+use tsonic_rust_runtime::Callable;
 
 #[test]
 fn net_socket_and_http_client_use_real_local_tcp() {
@@ -58,6 +60,43 @@ fn net_socket_and_http_client_use_real_local_tcp() {
     assert!(socket.has_ref());
     socket.end(None).unwrap();
     handle.join().unwrap();
+}
+
+#[test]
+fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || {
+        let (_stream, _) = listener.accept().unwrap();
+        thread::sleep(Duration::from_secs(1));
+    });
+    let callback_called = std::rc::Rc::new(std::cell::Cell::new(false));
+    let callback_state = std::rc::Rc::clone(&callback_called);
+    let started = Instant::now();
+    let mut socket = tls::connect_callable(
+        tls::SourceConnectOptions {
+            host: Some("127.0.0.1".to_string()),
+            servername: Some("localhost".to_string()),
+            port: Some(f64::from(port)),
+            reject_unauthorized: Some(false),
+            timeout: Some(500.0),
+            ..tls::SourceConnectOptions::default()
+        },
+        Callable::new(move |()| {
+            callback_state.set(true);
+            Ok::<(), String>(())
+        }),
+    )
+    .unwrap();
+
+    assert!(started.elapsed() < Duration::from_millis(250));
+    assert!(!callback_called.get());
+    assert_eq!(socket.write_string("early").unwrap_err().code, "ERR_SOCKET_CONNECTING");
+
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert!(!callback_called.get());
+    assert_eq!(socket.write_string("late").unwrap_err().code, "ERR_TLS_IO");
+    server.join().unwrap();
 }
 
 #[test]
