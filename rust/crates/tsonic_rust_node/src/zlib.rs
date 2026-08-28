@@ -807,10 +807,15 @@ fn compress_callable<E>(
 where
     E: std::fmt::Display + 'static,
 {
-    let input = input.clone();
-    crate::event_loop::enqueue_runtime_task(move || {
-        let arguments = match compress(&input) {
-            Ok(output) => (None, output),
+    let input = input.as_bytes();
+    crate::background::spawn(
+        move || {
+            let input = Buffer::from_bytes(input);
+            compress(&input).map(|output| output.as_bytes())
+        },
+        move |result| {
+        let arguments = match result {
+            Ok(output) => (None, Buffer::from_bytes(output)),
             Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
         };
         callback
@@ -828,11 +833,16 @@ fn compress_options_callable<E>(
 where
     E: std::fmt::Display + 'static,
 {
-    let input = input.clone();
+    let input = input.as_bytes();
     let options = options.into_runtime()?;
-    crate::event_loop::enqueue_runtime_task(move || {
-        let arguments = match compress(&input, &options) {
-            Ok(output) => (None, output),
+    crate::background::spawn(
+        move || {
+            let input = Buffer::from_bytes(input);
+            compress(&input, &options).map(|output| output.as_bytes())
+        },
+        move |result| {
+        let arguments = match result {
+            Ok(output) => (None, Buffer::from_bytes(output)),
             Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
         };
         callback

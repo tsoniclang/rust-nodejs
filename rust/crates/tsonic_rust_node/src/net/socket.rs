@@ -71,7 +71,7 @@ impl Socket {
     }
 
     pub fn write_buffer(&mut self, data: &crate::buffer::Buffer) -> NodeResult<bool> {
-        self.write(&data.as_bytes())
+        data.with_bytes(|bytes| self.write(bytes))
     }
 
     pub fn write_string(&mut self, data: &str) -> NodeResult<bool> {
@@ -109,7 +109,7 @@ impl Socket {
     }
 
     pub fn end_buffer(&mut self, data: &crate::buffer::Buffer) -> NodeResult<()> {
-        self.end(Some(&data.as_bytes()))
+        data.with_bytes(|bytes| self.end(Some(bytes)))
     }
 
     pub fn end_string(&mut self, data: &str) -> NodeResult<()> {

@@ -53,6 +53,28 @@ impl Interface {
         E: std::fmt::Display + 'static,
     {
         self.write_output(query)?;
+        if self.input.is_stdin_source() {
+            return crate::background::spawn(
+                || {
+                    let mut answer = String::new();
+                    std::io::stdin()
+                        .read_line(&mut answer)
+                        .map_err(|error| NodeError::new("EIO", error.to_string()))?;
+                    if answer.ends_with('\n') {
+                        answer.pop();
+                        if answer.ends_with('\r') {
+                            answer.pop();
+                        }
+                    }
+                    Ok(answer)
+                },
+                move |answer| {
+                    callback
+                        .call((answer.map_err(tsonic_rust_runtime::TsonicError::from)?,))
+                        .map_err(crate::error::callback_runtime_error)
+                },
+            );
+        }
         let answer = self.next_line()?.ok_or_else(|| NodeError::new(
             "ERR_READLINE_EOF",
             "readline input ended before an answer was available",

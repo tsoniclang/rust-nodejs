@@ -35,8 +35,10 @@ where
     E: std::fmt::Display + 'static,
 {
     let hostname = hostname.to_string();
-    crate::event_loop::enqueue_runtime_task(move || {
-        let arguments = match lookup(&hostname) {
+    crate::background::spawn(
+        move || lookup(&hostname),
+        move |result| {
+        let arguments = match result {
             Ok(result) => (None, result.address, result.family as f64),
             Err(error) => (Some(error), String::new(), 0.0),
         };
@@ -97,8 +99,10 @@ where
     E: std::fmt::Display + 'static,
 {
     let input = input.to_string();
-    crate::event_loop::enqueue_runtime_task(move || {
-        let arguments = match resolve(&input) {
+    crate::background::spawn(
+        move || resolve(&input),
+        move |result| {
+        let arguments = match result {
             Ok(result) => (None, tsonic_rust_js::JsArray::from_dense(result)),
             Err(error) => (Some(error), tsonic_rust_js::JsArray::new()),
         };

@@ -1,4 +1,6 @@
 import {
+  boolCarrier,
+  booleanType,
   bufferCarrier,
   emptyCallbackCarrier,
   fnExport,
@@ -76,6 +78,9 @@ export function httpModule(): RustProviderModuleDefinition {
             { name: "name", type: stringType },
             { name: "value", type: stringType },
           ], voidType),
+          methodMember(responseId, "write", [
+            { name: "chunk", type: providerRef("node:buffer", "Buffer") },
+          ], booleanType),
           {
             id: `${responseId}.end`,
             name: "end",
@@ -193,11 +198,22 @@ export function httpRows(): readonly RustProviderOperationDefinition[] {
     },
     {
       exportId: responseId,
+      memberId: `${responseId}.write`,
+      operationKind: "method",
+      target: { form: "receiver-method", name: "write_buffer", argModes: ["value"] },
+      resultCarrier: boolCarrier,
+      receiverCarrier: httpServerResponseCarrier,
+      parameterCarriers: [bufferCarrier],
+      ...providerNativeFallibility,
+    },
+    {
+      exportId: responseId,
       memberId: `${responseId}.end`,
       signatureId: `${responseId}.end()`,
       operationKind: "method",
       target: { form: "receiver-method", name: "end_empty" },
       resultCarrier: unitCarrier,
+      ...providerNativeFallibility,
     },
     {
       exportId: responseId,
@@ -207,6 +223,7 @@ export function httpRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "receiver-method", name: "end_string", argModes: ["ref"] },
       resultCarrier: unitCarrier,
       parameterCarriers: [stringCarrier],
+      ...providerNativeFallibility,
     },
     {
       exportId: responseId,
@@ -216,6 +233,7 @@ export function httpRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "receiver-method", name: "end_buffer" },
       resultCarrier: unitCarrier,
       parameterCarriers: [bufferCarrier],
+      ...providerNativeFallibility,
     },
     {
       exportId: serverId,

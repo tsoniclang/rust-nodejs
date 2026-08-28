@@ -251,8 +251,19 @@ impl Writable {
         true
     }
 
-    pub fn end(&mut self) {
+    pub fn end(&mut self) -> &mut Self {
         self.ended = true;
+        self
+    }
+
+    pub fn end_string(&mut self, value: &str) -> NodeResult<&mut Self> {
+        self.write_string(value)?;
+        Ok(self.end())
+    }
+
+    pub fn end_buffer(&mut self, value: &Buffer) -> NodeResult<&mut Self> {
+        self.write_buffer(value)?;
+        Ok(self.end())
     }
 
     pub fn destroy(&mut self) {

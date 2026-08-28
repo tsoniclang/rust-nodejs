@@ -42,6 +42,10 @@ impl Readable {
         }
     }
 
+    pub(crate) fn is_stdin_source(&self) -> bool {
+        matches!(self.source, Some(ReadableSource::Stdin))
+    }
+
     pub fn from_chunks_with_options(chunks: Vec<Buffer>, options: StreamOptions) -> Self {
         Self {
             options,
@@ -139,11 +143,11 @@ impl Readable {
         Self::from_chunks(chunks)
     }
 
-    pub fn pipe(&mut self, writable: &mut Writable) -> NodeResult<()> {
+    pub fn pipe<W: WritableTarget>(&mut self, writable: &mut W) -> NodeResult<()> {
         pipeline(self, writable)
     }
 
-    pub fn pipe_to<'a>(&mut self, writable: &'a mut Writable) -> NodeResult<&'a mut Writable> {
+    pub fn pipe_to<'a, W: WritableTarget>(&mut self, writable: &'a mut W) -> NodeResult<&'a mut W> {
         pipeline(self, writable)?;
         Ok(writable)
     }

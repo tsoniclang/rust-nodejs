@@ -56,11 +56,14 @@ impl Utf8Stream {
         if self.destroyed {
             return false;
         }
-        let bytes = match data {
-            FsWriteData::String(value) => value.as_bytes().to_vec(),
-            FsWriteData::Buffer(value) => value.as_bytes().to_vec(),
-            FsWriteData::Bytes(value) => value.to_vec(),
-        };
+        match data {
+            FsWriteData::String(value) => self.write_bytes(value.as_bytes()),
+            FsWriteData::Buffer(value) => value.with_bytes(|bytes| self.write_bytes(bytes)),
+            FsWriteData::Bytes(value) => self.write_bytes(value),
+        }
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> bool {
         if self.buffer.len().saturating_add(bytes.len()) > self.max_length {
             return false;
         }
@@ -205,13 +208,11 @@ impl ReadStream {
         self.bytes_read as f64
     }
 
-    pub fn pipe_to<'a>(&mut self, writable: &'a mut WriteStream) -> NodeResult<&'a mut WriteStream> {
-        while let Some(chunk) = self.read()? {
-            if !writable.write(chunk)? {
-                writable.flush()?;
-            }
-        }
-        writable.close()?;
+    pub fn pipe_to<'a, W: crate::stream::WritableTarget>(
+        &mut self,
+        writable: &'a mut W,
+    ) -> NodeResult<&'a mut W> {
+        crate::stream::pipe_chunks(|| self.read(), writable)?;
         Ok(writable)
     }
 
@@ -228,7 +229,7 @@ impl ReadStream {
     pub fn text(&mut self, encoding: Option<&str>) -> NodeResult<String> {
         let mut bytes = Vec::new();
         while let Some(chunk) = self.read()? {
-            bytes.extend_from_slice(&chunk.as_bytes());
+            chunk.with_bytes(|chunk_bytes| bytes.extend_from_slice(chunk_bytes));
         }
         crate::buffer::decode_bytes(&bytes, encoding)
     }
@@ -333,7 +334,7 @@ impl WriteStream {
             .file
             .as_mut()
             .ok_or_else(|| NodeError::new("ERR_STREAM_CLOSED", "write stream is closed"))?;
-        file.write_all(&chunk.as_bytes()).map_err(map_io_error)?;
+        chunk.with_bytes(|bytes| file.write_all(bytes).map_err(map_io_error))?;
         if self.flush_each_write {
             file.flush().map_err(map_io_error)?;
         }
@@ -419,6 +420,20 @@ impl WriteStream {
 
     pub fn emit(&self, event: &str) -> bool {
         self.events.emit(event)
+    }
+}
+
+impl crate::stream::WritableTarget for WriteStream {
+    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool> {
+        self.write(chunk)
+    }
+
+    fn drain_target(&mut self) -> NodeResult<()> {
+        self.flush()
+    }
+
+    fn finish_target(&mut self) -> NodeResult<()> {
+        self.close()
     }
 }
 

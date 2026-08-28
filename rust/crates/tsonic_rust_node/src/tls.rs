@@ -114,7 +114,7 @@ impl TlsSocket {
     }
 
     pub fn write_buffer(&mut self, value: &Buffer) -> NodeResult<bool> {
-        self.write_bytes(&value.as_bytes())?;
+        value.with_bytes(|bytes| self.write_bytes(bytes))?;
         Ok(true)
     }
 

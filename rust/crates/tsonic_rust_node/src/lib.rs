@@ -2,6 +2,7 @@
 
 pub mod abi;
 pub mod assert;
+mod background;
 pub mod async_hooks;
 pub mod buffer;
 pub mod child_process;

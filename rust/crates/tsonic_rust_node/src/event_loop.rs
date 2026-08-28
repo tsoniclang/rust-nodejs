@@ -44,6 +44,7 @@ fn has_runtime_tasks() -> bool {
 
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
     loop {
+        let background_work = crate::background::poll()?;
         let task_work = poll_runtime_tasks()?;
         let js_timer_work = tsonic_rust_js::timers::poll_timers()?;
         let timer_work = crate::timers::poll_runtime_timers()?;
@@ -53,7 +54,7 @@ pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
         let watcher_work = crate::fs::poll_runtime_watchers()?;
         let worker_work = crate::worker_threads::poll_runtime_workers()?;
         let port_work = crate::worker_threads::poll_runtime_ports()?;
-        if !has_runtime_tasks() && !tsonic_rust_js::timers::has_timers() &&
+        if !crate::background::has_pending_work() && !has_runtime_tasks() && !tsonic_rust_js::timers::has_timers() &&
             !crate::http::has_active_runtime_servers() &&
             !crate::net::has_refed_runtime_servers() &&
             !crate::tls::has_refed_runtime_servers() &&
@@ -64,7 +65,7 @@ pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
         {
             return Ok(());
         }
-        if !task_work && !js_timer_work && !timer_work && !server_work && !net_work && !tls_work && !watcher_work &&
+        if !background_work && !task_work && !js_timer_work && !timer_work && !server_work && !net_work && !tls_work && !watcher_work &&
             !worker_work && !port_work
         {
             let timer_delay = [

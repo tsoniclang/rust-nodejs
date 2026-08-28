@@ -20,9 +20,9 @@ pub struct FsWatchEvent {
 struct FsWatcherState {
     path: String,
     watcher: Option<notify::RecommendedWatcher>,
-    receiver: std::sync::mpsc::Receiver<notify::Result<notify::Event>>,
+    receiver: Option<std::sync::mpsc::Receiver<notify::Result<notify::Event>>>,
+    pending_events: std::collections::VecDeque<FsWatchEvent>,
     previous: Option<Stats>,
-    pending_stat_event: bool,
     stat_interval: Option<std::time::Duration>,
     last_stat_check: std::time::Instant,
     closed: bool,
@@ -52,16 +52,27 @@ impl FsWatcher {
         if state.closed {
             return Err(NodeError::new("ERR_WATCHER_CLOSED", "watcher is closed"));
         }
-        match state.receiver.try_recv() {
-            Ok(Ok(event)) => Ok(Some(FsWatchEvent {
-                event_type: watch_event_type(&event.kind).to_string(),
-                filename: event
-                    .paths
-                    .first()
-                    .and_then(|path| path.file_name())
-                    .map(|value| value.to_string_lossy().to_string())
-                    .unwrap_or_else(|| state.path.clone()),
-            })),
+        if let Some(event) = state.pending_events.pop_front() {
+            return Ok(Some(event));
+        }
+        let received = state
+            .receiver
+            .as_ref()
+            .ok_or_else(|| NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "stat watchers do not expose filesystem event polling",
+            ))?
+            .try_recv();
+        match received {
+            Ok(Ok(event)) => {
+                let event_type = watch_event_type(&event.kind).to_string();
+                let filenames = watch_event_filenames(&state.path, &event.paths);
+                state.pending_events.extend(filenames.into_iter().map(|filename| FsWatchEvent {
+                    event_type: event_type.clone(),
+                    filename,
+                }));
+                Ok(state.pending_events.pop_front())
+            }
             Ok(Err(error)) => Err(NodeError::new("EIO", error.to_string())),
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(NodeError::new(
@@ -124,9 +135,9 @@ pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWat
         state: std::rc::Rc::new(std::cell::RefCell::new(FsWatcherState {
             path: path.to_string(),
             watcher: Some(watcher),
-            receiver,
+            receiver: Some(receiver),
+            pending_events: std::collections::VecDeque::new(),
             previous: Some(stats_for_watch_path(path)),
-            pending_stat_event: false,
             stat_interval: None,
             last_stat_check: std::time::Instant::now(),
             closed: false,
@@ -200,13 +211,12 @@ pub(crate) fn poll_runtime_watchers() -> tsonic_rust_runtime::TsonicResult<bool>
         watchers.retain(|_, watcher| !watcher.state.borrow().closed);
         watchers
             .values()
-            .filter_map(|watcher| {
+            .map(|watcher| {
                 let state = std::rc::Rc::clone(&watcher.state);
-                let refed = state.borrow().refed;
-                refed.then(|| (FsWatcher { state }, match &watcher.callback {
+                (FsWatcher { state }, match &watcher.callback {
                     RuntimeWatcherCallback::Event(callback) => RuntimeWatcherCallback::Event(callback.clone()),
                     RuntimeWatcherCallback::Stat(callback) => RuntimeWatcherCallback::Stat(callback.clone()),
-                }))
+                })
             })
             .collect::<Vec<_>>()
     });
@@ -241,18 +251,53 @@ fn watch_event_type(kind: &notify::EventKind) -> &'static str {
     }
 }
 
+fn watch_event_filenames(path: &str, event_paths: &[std::path::PathBuf]) -> Vec<String> {
+    if event_paths.is_empty() {
+        return vec![path.to_string()];
+    }
+    let watched_path = std::path::Path::new(path);
+    event_paths
+        .iter()
+        .map(|event_path| {
+            event_path
+                .strip_prefix(watched_path)
+                .ok()
+                .filter(|relative| !relative.as_os_str().is_empty())
+                .map(|relative| relative.to_string_lossy().to_string())
+                .or_else(|| {
+                    event_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| path.to_string())
+        })
+        .collect()
+}
+
 pub fn watch_file(path: &str) -> NodeResult<FsWatcher> {
     watch(path)
 }
 
 pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeResult<FsWatcher> {
-    let watcher = watch(path)?;
-    {
-        let mut state = watcher.state.borrow_mut();
-        state.refed = options.persistent;
-        state.stat_interval = Some(std::time::Duration::from_millis(options.interval_ms));
+    if options.interval_ms == 0 {
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "watchFile interval must be greater than zero",
+        ));
     }
-    Ok(watcher)
+    Ok(FsWatcher {
+        state: std::rc::Rc::new(std::cell::RefCell::new(FsWatcherState {
+            path: path.to_string(),
+            watcher: None,
+            receiver: None,
+            pending_events: std::collections::VecDeque::new(),
+            previous: Some(stats_for_watch_path(path)),
+            stat_interval: Some(std::time::Duration::from_millis(options.interval_ms)),
+            last_stat_check: std::time::Instant::now(),
+            closed: false,
+            refed: options.persistent,
+        })),
+    })
 }
 
 pub type StatWatcher = FsWatcher;
@@ -312,22 +357,13 @@ impl FsWatcher {
         if state.closed {
             return Err(NodeError::new("ERR_WATCHER_CLOSED", "watcher is closed"));
         }
-        loop {
-            match state.receiver.try_recv() {
-                Ok(Ok(_)) => state.pending_stat_event = true,
-                Ok(Err(error)) => return Err(NodeError::new("EIO", error.to_string())),
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Err(NodeError::new(
-                    "ERR_WATCHER_CLOSED",
-                    "filesystem notification channel is closed",
-                )),
-            }
-        }
-        let interval = state.stat_interval.unwrap_or_default();
-        if !state.pending_stat_event || state.last_stat_check.elapsed() < interval {
+        let interval = state.stat_interval.ok_or_else(|| NodeError::new(
+            "ERR_INVALID_ARG_TYPE",
+            "filesystem event watchers do not expose stat polling",
+        ))?;
+        if state.last_stat_check.elapsed() < interval {
             return Ok(None);
         }
-        state.pending_stat_event = false;
         state.last_stat_check = std::time::Instant::now();
         let current = stats_for_watch_path(&state.path);
         let previous = state.previous.clone().unwrap_or_else(empty_watch_stats);

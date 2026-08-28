@@ -74,12 +74,21 @@ impl ClientRequest {
         if self.ended {
             return Ok(());
         }
+        let options = self.options.clone();
+        let body = std::mem::take(&mut self.body);
+        let callback = self.response_callback.clone();
+        let response_url = options.url.clone();
+        crate::background::spawn(
+            move || request(&options, &body),
+            move |response| {
+                let response = response.map_err(tsonic_rust_runtime::TsonicError::from)?;
+                if let Some(callback) = callback {
+                    callback.call(incoming_response(&response_url, response))?;
+                }
+                Ok(())
+            },
+        )?;
         self.ended = true;
-        let response = request(&self.options, &self.body)?;
-        if let Some(callback) = self.response_callback.clone() {
-            let message = incoming_response(&self.options.url, response);
-            crate::event_loop::enqueue_runtime_task(move || callback.call(message))?;
-        }
         Ok(())
     }
 }
