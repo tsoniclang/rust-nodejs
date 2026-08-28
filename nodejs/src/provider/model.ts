@@ -146,13 +146,26 @@ export const httpResponseCallbackCarrier = rustCallableTargetType(
 export const trueArgument = { kind: "boolean", value: true } as const;
 export const noneArgument = { kind: "none" } as const;
 export const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
-export const providerNativeFallibility = {
+export const providerNativeFallibility: {
+  readonly isFallible: true;
+  readonly errorBoundary: "provider-native";
+  readonly errorCarrier: RustTargetTypeRef;
+} = {
   isFallible: true,
   errorBoundary: "provider-native",
   errorCarrier: nodeErrorCarrier,
-} as const;
+};
 export const cloneOnlyCarrierTraits = {
   implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
+} as const;
+export const closedJsValueCarrierTraits = {
+  implementations: [
+    { traitPath: "core::clone::Clone", requirements: [] },
+    {
+      traitPath: "tsonic_rust_js::value::JsClosedValueCarrier",
+      requirements: [],
+    },
+  ],
 } as const;
 export const copyDefaultCarrierTraits = {
   implementations: [
@@ -228,6 +241,19 @@ export function providerRef(
     moduleSpecifier,
     exportName,
     ...(typeArguments === undefined ? {} : { typeArguments }),
+  };
+}
+
+export function providerCallbackType(
+  signatureId: string,
+  parameterName: string,
+  parameters: readonly { readonly name: string; readonly type: ProviderTypeExpr }[],
+): ProviderTypeExpr {
+  return {
+    kind: "function",
+    id: `${signatureId}::parameter:${parameterName}`,
+    parameters,
+    returnType: voidType,
   };
 }
 

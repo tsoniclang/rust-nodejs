@@ -7,6 +7,7 @@ import {
   httpRequestCallbackCarrier,
   httpIncomingMessageCarrier,
   httpServerCarrier,
+  httpServerResponseCarrier,
   int32Carrier,
   int32Type,
   methodMember,

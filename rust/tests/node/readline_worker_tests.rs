@@ -11,7 +11,7 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 #[test]
 fn readline_interface_uses_explicit_input_and_output_buffers() {
     let input = Readable::from_chunks(vec![
-        Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap(),
+        Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap()
     ]);
     let output = Writable::new();
     let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
@@ -64,12 +64,12 @@ fn process_next_tick_executes_without_event_loop_guessing() {
 
 #[test]
 fn worker_message_channel_structured_clones_js_values() {
-    let channel = worker_threads::MessageChannel::new();
+    let mut channel = worker_threads::MessageChannel::new();
     channel.port1.start();
     assert!(channel.port1.has_ref());
     channel.port1.unref();
     assert!(!channel.port1.has_ref());
-    channel.port1.r#ref();
+    channel.port1.ref_chain();
     assert!(channel.port1.has_ref());
     channel
         .port1

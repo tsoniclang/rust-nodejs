@@ -275,45 +275,41 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     assert_eq!(readable_web_with_options.chunks().len(), 1);
     assert!(!handle.writable_web_stream().closed());
     let mut read_stream = handle.create_read_stream().unwrap();
-    assert!(!read_stream.read().unwrap().is_empty());
+    assert!(read_stream.read().unwrap().is_some());
     let mut ranged_stream = handle
         .create_read_stream_with_options(fs_promises::ReadStreamOptions {
-            stream: fs_promises::FsStreamOptions {
-                start: Some(0),
-                end: Some(4),
-                ..fs_promises::FsStreamOptions::default()
-            },
+            start: Some(0.0),
+            end: Some(4.0),
+            ..fs_promises::ReadStreamOptions::default()
         })
         .unwrap();
     assert_eq!(
         ranged_stream
             .read()
             .unwrap()
+            .unwrap()
             .to_string(Some("utf8"))
             .unwrap(),
         "hello"
     );
-    let mut write_stream = handle.create_write_stream();
-    assert!(write_stream.write(Buffer::from_string("stream", Some("utf8")).unwrap()));
-    assert_eq!(write_stream.chunks().len(), 1);
-    let write_stream_with_options = handle
+    let mut write_stream = handle
+        .create_write_stream_with_options(fs_promises::WriteStreamOptions {
+            start: Some(14.0),
+            ..fs_promises::WriteStreamOptions::default()
+        })
+        .unwrap();
+    assert!(write_stream
+        .write(Buffer::from_string("stream", Some("utf8")).unwrap())
+        .unwrap());
+    write_stream.close().unwrap();
+    let mut write_stream_with_options = handle
         .create_write_stream_with_options(fs_promises::WriteStreamOptions::default())
         .unwrap();
     assert!(!write_stream_with_options.closed());
+    write_stream_with_options.close().unwrap();
     assert_eq!(
         handle.read_lines("utf8").unwrap(),
-        vec!["hello rust!!?#".to_string()]
-    );
-    assert_eq!(
-        handle
-            .read_lines_with_options(fs_promises::ReadStreamOptions {
-                stream: fs_promises::FsStreamOptions {
-                    encoding: Some("utf8".to_string()),
-                    ..fs_promises::FsStreamOptions::default()
-                },
-            })
-            .unwrap(),
-        vec!["hello rust!!?#".to_string()]
+        vec!["hello rust!!?#stream".to_string()]
     );
     let pulled = handle.pull(4).unwrap().to_vec();
     assert!(pulled.len() >= 3);

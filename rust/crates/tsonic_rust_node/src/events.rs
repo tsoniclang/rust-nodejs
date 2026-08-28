@@ -6,7 +6,7 @@ use tsonic_rust_js::{JsArray, JsString, JsSymbol, JsValue};
 use tsonic_rust_runtime::Callable;
 
 use crate::async_hooks::{AsyncResource, AsyncResourceOptions};
-use crate::error::{callback_runtime_error, NodeError, NodeResult};
+use crate::error::{callback_node_error, NodeError, NodeResult};
 
 type Listener = Box<dyn FnMut(&[JsValue])>;
 type ListenerMap = HashMap<String, Vec<ListenerEntry>>;
@@ -135,29 +135,41 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, false, {
-            let listener = listener.clone();
-            move |_| listener.call(()).map_err(callback_runtime_error)
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            false,
+            {
+                let listener = listener.clone();
+                move |_| listener.call(()).map_err(callback_node_error)
+            },
+        );
         Ok(self)
     }
 
     pub fn on_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call(arguments.first().cloned().unwrap_or(JsValue::Undefined))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -169,17 +181,23 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -191,18 +209,24 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -214,29 +238,41 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, false, {
-            let listener = listener.clone();
-            move |_| listener.call(()).map_err(callback_runtime_error)
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            false,
+            {
+                let listener = listener.clone();
+                move |_| listener.call(()).map_err(callback_node_error)
+            },
+        );
         Ok(self)
     }
 
     pub fn once_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call(arguments.first().cloned().unwrap_or(JsValue::Undefined))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -248,17 +284,23 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -270,18 +312,24 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, false, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            false,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -293,29 +341,41 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, true, {
-            let listener = listener.clone();
-            move |_| listener.call(()).map_err(callback_runtime_error)
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            true,
+            {
+                let listener = listener.clone();
+                move |_| listener.call(()).map_err(callback_node_error)
+            },
+        );
         Ok(self)
     }
 
     pub fn prepend_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call(arguments.first().cloned().unwrap_or(JsValue::Undefined))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -327,17 +387,23 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -349,18 +415,24 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), false, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            false,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -372,29 +444,41 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, true, {
-            let listener = listener.clone();
-            move |_| listener.call(()).map_err(callback_runtime_error)
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            true,
+            {
+                let listener = listener.clone();
+                move |_| listener.call(()).map_err(callback_node_error)
+            },
+        );
         Ok(self)
     }
 
     pub fn prepend_once_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call(arguments.first().cloned().unwrap_or(JsValue::Undefined))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -406,17 +490,23 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -428,18 +518,24 @@ impl EventEmitter {
     where
         E: std::fmt::Display + 'static,
     {
-        self.add_callable_listener(EventKey::from_value(event)?, listener.identity_key(), true, true, {
-            let listener = listener.clone();
-            move |arguments| {
-                listener
-                    .call((
-                        arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                        arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
-                    ))
-                    .map_err(callback_runtime_error)
-            }
-        });
+        self.add_callable_listener(
+            EventKey::from_value(event)?,
+            listener.identity_key(),
+            true,
+            true,
+            {
+                let listener = listener.clone();
+                move |arguments| {
+                    listener
+                        .call((
+                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                        ))
+                        .map_err(callback_node_error)
+                }
+            },
+        );
         Ok(self)
     }
 
@@ -458,7 +554,7 @@ impl EventEmitter {
     pub fn off_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: 'static,
@@ -554,13 +650,11 @@ impl EventEmitter {
         self
     }
 
-    pub fn remove_all_callable_listeners_for(
-        &mut self,
-        event: &JsValue,
-    ) -> NodeResult<&mut Self> {
+    pub fn remove_all_callable_listeners_for(&mut self, event: &JsValue) -> NodeResult<&mut Self> {
         let event = EventKey::from_value(event)?;
         self.callable_listeners.remove(&event);
-        self.callable_event_order.retain(|candidate| candidate != &event);
+        self.callable_event_order
+            .retain(|candidate| candidate != &event);
         Ok(self)
     }
 
@@ -604,7 +698,8 @@ impl EventEmitter {
             listeners.retain(|entry| entry.identity != identity);
             if listeners.is_empty() {
                 self.callable_listeners.remove(event);
-                self.callable_event_order.retain(|candidate| candidate != event);
+                self.callable_event_order
+                    .retain(|candidate| candidate != event);
             }
         }
     }
@@ -614,7 +709,8 @@ impl EventEmitter {
             listeners.retain(|entry| !entry.once);
             if listeners.is_empty() {
                 self.callable_listeners.remove(event);
-                self.callable_event_order.retain(|candidate| candidate != event);
+                self.callable_event_order
+                    .retain(|candidate| candidate != event);
             }
         }
     }
@@ -670,7 +766,8 @@ impl EventEmitter {
             listeners.retain(|listener| listener.id != listener_id);
             if listeners.is_empty() {
                 self.listeners.remove(event);
-                self.listener_event_order.retain(|candidate| candidate != event);
+                self.listener_event_order
+                    .retain(|candidate| candidate != event);
             }
         }
         self
@@ -756,7 +853,8 @@ impl EventEmitter {
         }
         listeners.retain(|listener| !listener.once);
         if listeners.is_empty() {
-            self.listener_event_order.retain(|candidate| candidate != event);
+            self.listener_event_order
+                .retain(|candidate| candidate != event);
         } else {
             self.listeners.insert(event.to_string(), listeners);
         }
@@ -778,7 +876,8 @@ impl EventEmitter {
     pub fn remove_all_listeners(&mut self, event: Option<&str>) -> &mut Self {
         if let Some(event) = event {
             self.listeners.remove(event);
-            self.listener_event_order.retain(|candidate| candidate != event);
+            self.listener_event_order
+                .retain(|candidate| candidate != event);
         } else {
             self.listeners.clear();
             self.listener_event_order.clear();
@@ -821,10 +920,7 @@ fn unhandled_error(arguments: &[JsValue]) -> NodeError {
     )
 }
 
-pub fn listener_count_callable(
-    emitter: &EventEmitter,
-    event: &JsValue,
-) -> NodeResult<usize> {
+pub fn listener_count_callable(emitter: &EventEmitter, event: &JsValue) -> NodeResult<usize> {
     emitter.callable_listener_count(event)
 }
 

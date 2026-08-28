@@ -1,7 +1,8 @@
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, SyncSender};
+use std::sync::mpsc::SyncSender;
+use std::sync::{Arc, Mutex, OnceLock};
 
 const BACKGROUND_WORKER_COUNT: usize = 4;
 const MAX_PENDING_BACKGROUND_WORK: usize = 16 * 1024;
@@ -60,17 +61,20 @@ where
                 "pending background work exceeds the finite limit",
             ));
         }
-        completions.insert(id, Box::new(move |result| {
-            let typed = result.and_then(|value| {
-                value.downcast::<T>().map(|value| *value).map_err(|_| {
-                    crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_RESULT",
-                        "background work returned an incompatible result carrier",
-                    )
-                })
-            });
-            completion(typed)
-        }));
+        completions.insert(
+            id,
+            Box::new(move |result| {
+                let typed = result.and_then(|value| {
+                    value.downcast::<T>().map(|value| *value).map_err(|_| {
+                        crate::NodeError::new(
+                            "ERR_NODE_BACKGROUND_RESULT",
+                            "background work returned an incompatible result carrier",
+                        )
+                    })
+                });
+                completion(typed)
+            }),
+        );
         Ok(())
     })?;
 
@@ -127,14 +131,14 @@ pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
     };
     let did_work = !completed.is_empty();
     for completed in completed {
-        let callback = COMPLETIONS.with(|completions| {
-            completions.borrow_mut().remove(&completed.id)
-        }).ok_or_else(|| tsonic_rust_runtime::TsonicError::from(
-            crate::NodeError::new(
-                "ERR_NODE_BACKGROUND_RESULT",
-                "background work completed without its exact callback",
-            ),
-        ))?;
+        let callback = COMPLETIONS
+            .with(|completions| completions.borrow_mut().remove(&completed.id))
+            .ok_or_else(|| {
+                tsonic_rust_runtime::TsonicError::from(crate::NodeError::new(
+                    "ERR_NODE_BACKGROUND_RESULT",
+                    "background work completed without its exact callback",
+                ))
+            })?;
         PENDING_WORK_COUNT.fetch_sub(1, Ordering::AcqRel);
         callback(completed.result)?;
     }
@@ -164,20 +168,21 @@ fn runtime() -> crate::NodeResult<&'static BackgroundRuntime> {
         std::thread::Builder::new()
             .name(format!("tsonic-node-worker-{worker_index}"))
             .spawn(move || worker_loop(work_receiver, completion_sender))
-            .map_err(|error| crate::NodeError::new(
-                "ERR_NODE_BACKGROUND_WORKER",
-                error.to_string(),
-            ))?;
+            .map_err(|error| {
+                crate::NodeError::new("ERR_NODE_BACKGROUND_WORKER", error.to_string())
+            })?;
     }
     let created = BackgroundRuntime {
         work_sender,
         completion_receiver: Mutex::new(completion_receiver),
     };
     let _ = RUNTIME.set(created);
-    RUNTIME.get().ok_or_else(|| crate::NodeError::new(
-        "ERR_NODE_BACKGROUND_WORKER",
-        "background worker pool initialization failed",
-    ))
+    RUNTIME.get().ok_or_else(|| {
+        crate::NodeError::new(
+            "ERR_NODE_BACKGROUND_WORKER",
+            "background worker pool initialization failed",
+        )
+    })
 }
 
 fn worker_loop(
@@ -193,11 +198,19 @@ fn worker_loop(
             return;
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(request.work))
-            .unwrap_or_else(|_| Err(crate::NodeError::new(
-                "ERR_NODE_BACKGROUND_PANIC",
-                "background provider work panicked",
-            )));
-        if completion_sender.send(WorkCompletion { id: request.id, result }).is_err() {
+            .unwrap_or_else(|_| {
+                Err(crate::NodeError::new(
+                    "ERR_NODE_BACKGROUND_PANIC",
+                    "background provider work panicked",
+                ))
+            });
+        if completion_sender
+            .send(WorkCompletion {
+                id: request.id,
+                result,
+            })
+            .is_err()
+        {
             return;
         }
     }

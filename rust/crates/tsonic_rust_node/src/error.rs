@@ -48,3 +48,7 @@ pub(crate) fn callback_runtime_error(error: impl fmt::Display) -> tsonic_rust_ru
         message: error.to_string(),
     }
 }
+
+pub(crate) fn callback_node_error(error: impl fmt::Display) -> NodeError {
+    NodeError::new("ERR_TSONIC_CALLBACK", error.to_string())
+}

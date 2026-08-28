@@ -8,6 +8,7 @@ import {
   httpResponseCallbackCarrier,
   httpRequestCallbackCarrier,
   propertyMember,
+  providerCallbackType,
   providerNativeFallibility,
   providerRef,
   rustOptionTargetType,
@@ -33,27 +34,15 @@ const clientRequestId = `${moduleSpecifier}::ClientRequest`;
 const optionsType = providerRef(moduleSpecifier, "ServerOptions");
 const serverType = providerRef(moduleSpecifier, "Server");
 const clientRequestType = providerRef(moduleSpecifier, "ClientRequest");
-const emptyCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.ListenCallback`,
-  parameters: [],
-  returnType: voidType,
-};
-const requestCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.RequestListener`,
-  parameters: [
+const requestCallbackType = (signatureId: string): ProviderTypeExpr =>
+  providerCallbackType(signatureId, "handler", [
     { name: "request", type: providerRef("node:http", "IncomingMessage") },
     { name: "response", type: providerRef("node:http", "ServerResponse") },
-  ],
-  returnType: voidType,
-};
-const responseCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.ResponseListener`,
-  parameters: [{ name: "response", type: providerRef("node:http", "IncomingMessage") }],
-  returnType: voidType,
-};
+  ]);
+const responseCallbackType = (signatureId: string): ProviderTypeExpr =>
+  providerCallbackType(signatureId, "callback", [
+    { name: "response", type: providerRef("node:http", "IncomingMessage") },
+  ]);
 
 export function httpsModule(): RustProviderModuleDefinition {
   return {
@@ -94,7 +83,7 @@ export function httpsModule(): RustProviderModuleDefinition {
                 id: `${serverId}.listen(port,callback)`,
                 parameters: [
                   { name: "port", type: { kind: "number" } },
-                  { name: "callback", type: emptyCallbackType },
+                  { name: "callback", type: providerCallbackType(`${serverId}.listen(port,callback)`, "callback", []) },
                 ],
                 returnType: serverType,
               },
@@ -103,15 +92,15 @@ export function httpsModule(): RustProviderModuleDefinition {
                 parameters: [
                   { name: "port", type: { kind: "number" } },
                   { name: "host", type: stringType },
-                  { name: "callback", type: emptyCallbackType },
+                  { name: "callback", type: providerCallbackType(`${serverId}.listen(port,host,callback)`, "callback", []) },
                 ],
                 returnType: serverType,
               },
             ],
           },
-          method("close", voidType),
-          method("ref", serverType),
-          method("unref", serverType),
+          method(serverId, "close", voidType),
+          method(serverId, "ref", serverType),
+          method(serverId, "unref", serverType),
           propertyMember(serverId, "listening", booleanType),
         ],
       },
@@ -120,8 +109,8 @@ export function httpsModule(): RustProviderModuleDefinition {
         name: "ClientRequest",
         kind: "class",
         members: [
-          method("write", booleanType, [{ name: "chunk", type: stringType }]),
-          method("end", voidType),
+          method(clientRequestId, "write", booleanType, [{ name: "chunk", type: stringType }]),
+          method(clientRequestId, "end", voidType),
         ],
       },
       {
@@ -132,7 +121,7 @@ export function httpsModule(): RustProviderModuleDefinition {
           id: `${moduleSpecifier}::createServer(options,handler)`,
           parameters: [
             { name: "options", type: optionsType },
-            { name: "handler", type: requestCallbackType },
+            { name: "handler", type: requestCallbackType(`${moduleSpecifier}::createServer(options,handler)`) },
           ],
           returnType: serverType,
         }],
@@ -145,7 +134,7 @@ export function httpsModule(): RustProviderModuleDefinition {
           id: `${moduleSpecifier}::request(url,callback)`,
           parameters: [
             { name: "url", type: stringType },
-            { name: "callback", type: responseCallbackType },
+            { name: "callback", type: responseCallbackType(`${moduleSpecifier}::request(url,callback)`) },
           ],
           returnType: clientRequestType,
         }],
@@ -158,7 +147,7 @@ export function httpsModule(): RustProviderModuleDefinition {
           id: `${moduleSpecifier}::get(url,callback)`,
           parameters: [
             { name: "url", type: stringType },
-            { name: "callback", type: responseCallbackType },
+            { name: "callback", type: responseCallbackType(`${moduleSpecifier}::get(url,callback)`) },
           ],
           returnType: clientRequestType,
         }],
@@ -219,11 +208,11 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       parameterCarriers: [],
       ...providerNativeFallibility,
     },
-    serverMethod("listen", "port,callback", "listen_default_host", [float64Carrier, emptyCallbackCarrier], mutableServer, true),
-    serverMethod("listen", "port,host,callback", "listen", [float64Carrier, stringCarrier, emptyCallbackCarrier], mutableServer, true),
-    serverMethod("close", undefined, "close", [], unitCarrier, false),
-    serverMethod("ref", undefined, "ref_chain", [], mutableServer, false),
-    serverMethod("unref", undefined, "unref_chain", [], mutableServer, false),
+    serverMethod("listen", "port,callback", "listen_default_host", [float64Carrier, emptyCallbackCarrier], ["value", "value"], mutableServer, true),
+    serverMethod("listen", "port,host,callback", "listen", [float64Carrier, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], mutableServer, true),
+    serverMethod("close", undefined, "close", [], [], unitCarrier, false),
+    serverMethod("ref", undefined, "ref_chain", [], [], mutableServer, false),
+    serverMethod("unref", undefined, "unref_chain", [], [], mutableServer, false),
     {
       exportId: serverId,
       memberId: `${serverId}.listening`,
@@ -236,16 +225,17 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
 }
 
 function method(
+  ownerId: string,
   name: string,
   returnType: ProviderTypeExpr,
   parameters: readonly { readonly name: string; readonly type: ProviderTypeExpr }[] = [],
 ) {
   return {
-    id: `${serverId}.${name}`,
+    id: `${ownerId}.${name}`,
     name,
     kind: "method" as const,
     signatures: [{
-      id: `${serverId}.${name}()`,
+      id: `${ownerId}.${name}()`,
       parameters,
       returnType,
     }],
@@ -287,18 +277,26 @@ function serverMethod(
   signature: string | undefined,
   name: string,
   parameters: readonly RustTargetTypeRef[],
+  argModes: readonly ("value" | "ref" | "mut-ref")[],
   resultCarrier: RustTargetTypeRef,
   fallible: boolean,
 ): RustProviderOperationDefinition {
-  return {
+  const operation = {
     exportId: serverId,
     memberId: `${serverId}.${member}`,
     ...(signature === undefined ? {} : { signatureId: `${serverId}.${member}(${signature})` }),
     operationKind: "method",
-    target: { form: "receiver-method", name, mutatesReceiver: true },
+    target: {
+      form: "receiver-method",
+      name,
+      ...(argModes.length === 0 ? {} : { argModes }),
+      mutatesReceiver: true,
+    },
     resultCarrier,
     receiverCarrier: httpsServerCarrier,
     parameterCarriers: parameters,
-    ...(fallible ? providerNativeFallibility : {}),
-  };
+  } as const;
+  return fallible
+    ? { ...operation, ...providerNativeFallibility }
+    : operation;
 }

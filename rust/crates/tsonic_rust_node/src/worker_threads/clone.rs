@@ -91,13 +91,11 @@ impl ClonedValue {
     }
 }
 
-fn clone_slot(
-    value: &JsValue,
-    depth: usize,
-    state: &mut EncodingState,
-) -> NodeResult<ClonedSlot> {
+fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeResult<ClonedSlot> {
     if depth > MAXIMUM_DEPTH {
-        return Err(data_clone_error("structured-clone depth exceeds the finite limit"));
+        return Err(data_clone_error(
+            "structured-clone depth exceeds the finite limit",
+        ));
     }
     match value {
         JsValue::Undefined => Ok(ClonedSlot::Undefined),
@@ -108,7 +106,7 @@ fn clone_slot(
             reserve_string(value, state)?;
             Ok(ClonedSlot::String(value.clone()))
         }
-        JsValue::Symbol(_) | JsValue::JsonProjection(_) => {
+        JsValue::Symbol(_) | JsValue::Closed(_) | JsValue::JsonProjection(_) => {
             Err(data_clone_error("value cannot be structured-cloned"))
         }
         JsValue::Object(object) => {
@@ -140,9 +138,12 @@ fn clone_slot(
                 return Ok(ClonedSlot::Reference(*index));
             }
             let length = values.len();
-            reserve_entries(length.checked_add(1).ok_or_else(|| {
-                data_clone_error("structured-clone array length overflowed")
-            })?, state)?;
+            reserve_entries(
+                length
+                    .checked_add(1)
+                    .ok_or_else(|| data_clone_error("structured-clone array length overflowed"))?,
+                state,
+            )?;
             let index = state.containers.len();
             state.identities.insert(identity, index);
             state.containers.push(ClonedContainer::Array {
@@ -205,7 +206,9 @@ pub(crate) fn encode(value: &ClonedValue) -> NodeResult<Vec<u8>> {
 pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
     let mut reader = Reader::new(input);
     if reader.byte()? != FORMAT_VERSION {
-        return Err(data_clone_error("structured-clone payload version is unsupported"));
+        return Err(data_clone_error(
+            "structured-clone payload version is unsupported",
+        ));
     }
     let container_count = reader.count()?;
     let root = reader.slot()?;
@@ -243,9 +246,7 @@ pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
                 for _ in 0..count {
                     let index = reader.count()?;
                     if index >= length || !indexes.insert(index) {
-                        return Err(data_clone_error(
-                            "structured-clone array index is invalid",
-                        ));
+                        return Err(data_clone_error("structured-clone array index is invalid"));
                     }
                     values.push((index, reader.slot()?));
                 }
@@ -322,9 +323,7 @@ fn validate_graph(value: &ClonedValue) -> NodeResult<()> {
                 let mut indexes = BTreeSet::new();
                 for (entry_index, slot) in entries {
                     if *entry_index >= *length || !indexes.insert(*entry_index) {
-                        return Err(data_clone_error(
-                            "structured-clone array index is invalid",
-                        ));
+                        return Err(data_clone_error("structured-clone array index is invalid"));
                     }
                     collect_reference(slot, container_count, &mut pending)?;
                 }
@@ -472,7 +471,8 @@ impl<'a> Reader<'a> {
     }
 
     fn count(&mut self) -> NodeResult<usize> {
-        let value = usize::try_from(self.u32()).expect("u32 must fit usize");
+        let value = usize::try_from(self.u32()?)
+            .map_err(|_| data_clone_error("structured-clone count is not representable"))?;
         if value > MAXIMUM_ENTRIES {
             return Err(data_clone_error(
                 "structured-clone count exceeds the finite limit",

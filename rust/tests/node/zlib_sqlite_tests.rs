@@ -191,7 +191,6 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
             .unwrap(),
         "class payload"
     );
-
 }
 
 #[test]

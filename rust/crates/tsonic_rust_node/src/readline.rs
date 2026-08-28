@@ -75,10 +75,12 @@ impl Interface {
                 },
             );
         }
-        let answer = self.next_line()?.ok_or_else(|| NodeError::new(
-            "ERR_READLINE_EOF",
-            "readline input ended before an answer was available",
-        ))?;
+        let answer = self.next_line()?.ok_or_else(|| {
+            NodeError::new(
+                "ERR_READLINE_EOF",
+                "readline input ended before an answer was available",
+            )
+        })?;
         crate::event_loop::enqueue_runtime_task(move || {
             callback
                 .call((answer,))

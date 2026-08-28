@@ -5,6 +5,7 @@ import type { RustProviderPackageImplementation } from "@tsonic/target-rust/prov
 import {
   bufferCarrier,
   cloneOnlyCarrierTraits,
+  closedJsValueCarrierTraits,
   cloneDefaultCarrierTraits,
   copyDefaultCarrierTraits,
   hashCarrier,
@@ -327,7 +328,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.Stats": cloneOnlyCarrierTraits,
       "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
       "rust.node.RmOptions": copyDefaultCarrierTraits,
-      "rust.node.Buffer": cloneOnlyCarrierTraits,
+      "rust.node.Buffer": closedJsValueCarrierTraits,
       "rust.node.SpawnSyncResult": cloneOnlyCarrierTraits,
       "rust.node.Url": cloneOnlyCarrierTraits,
       "rust.node.UrlObject": cloneOnlyCarrierTraits,

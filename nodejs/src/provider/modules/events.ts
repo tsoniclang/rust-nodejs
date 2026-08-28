@@ -224,6 +224,7 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
     {
       exportId: emitterId,
       memberId: `${emitterId}.removeAllListeners`,
+      signatureId: `${emitterId}.removeAllListeners()`,
       operationKind: "method",
       target: { form: "receiver-method", name: "remove_all_callable_listeners", mutatesReceiver: true },
       resultCarrier: mutableEventEmitterCarrier,

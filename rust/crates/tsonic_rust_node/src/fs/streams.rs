@@ -134,8 +134,6 @@ pub struct ReadStream {
 
 impl ReadStream {
     pub fn open(path: &str, options: &ReadStreamOptions) -> NodeResult<Self> {
-        use std::io::{Seek, SeekFrom};
-
         let mut open = OpenOptions::new();
         match options.flags.as_deref().unwrap_or("r") {
             "r" => {
@@ -149,20 +147,28 @@ impl ReadStream {
         if let Some(mode) = options.mode {
             apply_open_mode(&mut open, mode)?;
         }
-        let mut file = open.open(path).map_err(map_io_error)?;
+        let file = open.open(path).map_err(map_io_error)?;
+        Self::from_file(path.to_string(), file, options)
+    }
+
+    pub(crate) fn from_file(
+        path: String,
+        mut file: File,
+        options: &ReadStreamOptions,
+    ) -> NodeResult<Self> {
+        use std::io::{Seek, SeekFrom};
+
         let start = optional_non_negative_integer(options.start, "start")?.unwrap_or(0);
         let end = optional_non_negative_integer(options.end, "end")?;
         if end.is_some_and(|end| end < start) {
             return Err(NodeError::new("ERR_OUT_OF_RANGE", "end must be greater than or equal to start"));
         }
-        if start != 0 {
-            file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
-        }
+        file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
         let remaining = end.map(|end| end - start + 1);
         let chunk_size = optional_positive_usize(options.high_water_mark, "highWaterMark")?
             .unwrap_or(64 * 1024);
         Ok(Self {
-            path: path.to_string(),
+            path,
             pending: false,
             bytes_read: 0,
             file: Some(file),
@@ -303,19 +309,27 @@ pub struct WriteStream {
 
 impl WriteStream {
     pub fn open(path: &str, options: &WriteStreamOptions) -> NodeResult<Self> {
-        use std::io::{Seek, SeekFrom};
-
         let mut open = OpenOptions::new();
         configure_write_stream_open(&mut open, options.flags.as_deref().unwrap_or("w"))?;
         if let Some(mode) = options.mode {
             apply_open_mode(&mut open, mode)?;
         }
-        let mut file = open.open(path).map_err(map_io_error)?;
+        let file = open.open(path).map_err(map_io_error)?;
+        Self::from_file(path.to_string(), file, options)
+    }
+
+    pub(crate) fn from_file(
+        path: String,
+        mut file: File,
+        options: &WriteStreamOptions,
+    ) -> NodeResult<Self> {
+        use std::io::{Seek, SeekFrom};
+
         if let Some(start) = optional_non_negative_integer(options.start, "start")? {
             file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
         }
         Ok(Self {
-            path: path.to_string(),
+            path,
             pending: false,
             bytes_written: 0,
             file: Some(file),

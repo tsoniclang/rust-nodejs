@@ -90,9 +90,12 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
 
     let mut readable = fs::create_read_stream(&file_text).unwrap();
     assert_eq!(readable.text(Some("utf8")).unwrap(), "hello");
-    let mut writable = fs::create_write_stream(&file_text);
-    assert!(writable.write(buffer::Buffer::from_string("x", Some("utf8")).unwrap()));
-    assert_eq!(writable.chunks().len(), 1);
+    let mut writable = fs::create_write_stream(&file_text).unwrap();
+    assert!(writable
+        .write(buffer::Buffer::from_string("x", Some("utf8")).unwrap())
+        .unwrap());
+    assert_eq!(writable.bytes_written, 1);
+    writable.close().unwrap();
 
     fs::rm_sync_with_options(
         &root_text,
@@ -106,12 +109,12 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
 
 #[test]
 fn process_stdio_helpers_are_closed_stream_shapes() {
-    let stdout = process::stdout();
+    let mut stdout = process::stdout();
     assert_eq!(stdout.fd(), 1);
     assert!(stdout
         .write_buffer(&buffer::Buffer::from_bytes(Vec::new()))
         .unwrap());
-    let stderr = process::stderr();
+    let mut stderr = process::stderr();
     assert_eq!(stderr.fd(), 2);
     assert!(stderr.write_string("").unwrap());
     let _ = stdout.is_tty();

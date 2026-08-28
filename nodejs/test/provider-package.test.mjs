@@ -280,7 +280,7 @@ test("provider package closes child-process and text-decoder operations", () => 
       { kind: "target-named", id: "rust.std.String" },
       { kind: "type-parameter", name: "Arguments" },
     ],
-    typeParameters: ["Arguments"],
+    genericParameters: [{ kind: "type", sourceName: "Arguments" }],
     isFallible: true,
     errorBoundary: "provider-native",
     errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
@@ -595,10 +595,16 @@ test("provider package closes process stdout and stderr output contracts", () =>
   const processModule = contribution.definition.modules.find((module) =>
     module.moduleSpecifier === "node:process");
   assert.ok(processModule !== undefined);
-  assert.deepEqual(processModule.imports, [{
-    moduleSpecifier: "node:buffer",
-    namedImports: [{ exportedName: "Buffer" }],
-  }]);
+  assert.deepEqual(processModule.imports, [
+    {
+      moduleSpecifier: "node:buffer",
+      namedImports: [{ exportedName: "Buffer" }],
+    },
+    {
+      moduleSpecifier: "node:stream",
+      namedImports: [{ exportedName: "Readable" }],
+    },
+  ]);
   const stream = processModule.exports.find((entry) =>
     entry.id === "node:process::ProcessWriteStream");
   assert.ok(stream !== undefined && stream.kind === "class");
@@ -630,8 +636,8 @@ test("provider package closes process stdout and stderr output contracts", () =>
   ]);
   assert.equal(writeRows.every((row) => row.isFallible === true), true);
   assert.equal(
-    contribution.definition.carrierPaths["rust.node.ProcessWriteStream"],
-    "tsonic_rust_node::process::ProcessWriteStream",
+    contribution.definition.carrierPaths["rust.node.Writable"],
+    "tsonic_rust_node::stream::Writable",
   );
 });
 

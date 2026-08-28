@@ -44,7 +44,10 @@ pub fn initialize_worker_process() -> NodeResult<Option<String>> {
         .skip(1)
         .map(|argument| {
             argument.into_string().map_err(|_| {
-                NodeError::new("ERR_WORKER_BOOTSTRAP", "worker bootstrap argument is not Unicode")
+                NodeError::new(
+                    "ERR_WORKER_BOOTSTRAP",
+                    "worker bootstrap argument is not Unicode",
+                )
             })
         })
         .collect::<NodeResult<Vec<_>>>()?;
@@ -59,25 +62,34 @@ pub fn initialize_worker_process() -> NodeResult<Option<String>> {
     }
     let entry_identity = arguments[1].clone();
     if entry_identity.is_empty() {
-        return Err(NodeError::new("ERR_WORKER_BOOTSTRAP", "worker entry identity is empty"));
+        return Err(NodeError::new(
+            "ERR_WORKER_BOOTSTRAP",
+            "worker entry identity is empty",
+        ));
     }
-    let port = arguments[2].parse::<u16>().map_err(|_| {
-        NodeError::new("ERR_WORKER_BOOTSTRAP", "worker bootstrap port is invalid")
-    })?;
+    let port = arguments[2]
+        .parse::<u16>()
+        .map_err(|_| NodeError::new("ERR_WORKER_BOOTSTRAP", "worker bootstrap port is invalid"))?;
     if port == 0 {
-        return Err(NodeError::new("ERR_WORKER_BOOTSTRAP", "worker bootstrap port is invalid"));
+        return Err(NodeError::new(
+            "ERR_WORKER_BOOTSTRAP",
+            "worker bootstrap port is invalid",
+        ));
     }
     let token = decode_token(&arguments[3])?;
-    let thread_id = arguments[4].parse::<i32>().map_err(|_| {
-        NodeError::new("ERR_WORKER_BOOTSTRAP", "worker thread identity is invalid")
-    })?;
+    let thread_id = arguments[4]
+        .parse::<i32>()
+        .map_err(|_| NodeError::new("ERR_WORKER_BOOTSTRAP", "worker thread identity is invalid"))?;
     if thread_id <= 0 {
-        return Err(NodeError::new("ERR_WORKER_BOOTSTRAP", "worker thread identity is invalid"));
+        return Err(NodeError::new(
+            "ERR_WORKER_BOOTSTRAP",
+            "worker thread identity is invalid",
+        ));
     }
 
     let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
-    let mut stream = TcpStream::connect_timeout(&address.into(), Duration::from_secs(30))
-        .map_err(io_error)?;
+    let mut stream =
+        TcpStream::connect_timeout(&address.into(), Duration::from_secs(30)).map_err(io_error)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(30)))
         .map_err(io_error)?;
@@ -130,13 +142,20 @@ pub fn is_main_thread() -> bool {
 
 pub fn thread_id() -> i32 {
     WORKER_CONTEXT.with(|context| {
-        context.borrow().as_ref().map(|context| context.thread_id).unwrap_or(0)
+        context
+            .borrow()
+            .as_ref()
+            .map(|context| context.thread_id)
+            .unwrap_or(0)
     })
 }
 
 pub fn parent_port() -> Option<MessagePort> {
     WORKER_CONTEXT.with(|context| {
-        context.borrow().as_ref().map(|context| context.parent_port.clone())
+        context
+            .borrow()
+            .as_ref()
+            .map(|context| context.parent_port.clone())
     })
 }
 
@@ -174,9 +193,8 @@ pub fn set_environment_data(key: &str, value: JsValue) -> NodeResult<()> {
 
 pub fn get_environment_data(key: &str) -> Option<JsValue> {
     if is_main_thread() {
-        return MAIN_ENVIRONMENT_DATA.with(|values| {
-            values.borrow().get(key).map(ClonedValue::to_js)
-        });
+        return MAIN_ENVIRONMENT_DATA
+            .with(|values| values.borrow().get(key).map(ClonedValue::to_js));
     }
     WORKER_CONTEXT.with(|context| {
         context
@@ -245,7 +263,10 @@ fn decode_environment_data_snapshot(input: &[u8]) -> NodeResult<BTreeMap<String,
     let mut values = BTreeMap::new();
     for _ in 0..count {
         let key = String::from_utf8(reader.bytes()?.to_vec()).map_err(|_| {
-            NodeError::new("ERR_WORKER_ENVIRONMENT_DATA", "environment-data key is not UTF-8")
+            NodeError::new(
+                "ERR_WORKER_ENVIRONMENT_DATA",
+                "environment-data key is not UTF-8",
+            )
         })?;
         let value = decode(reader.bytes()?)?;
         if values.insert(key, value).is_some() {
@@ -292,7 +313,10 @@ fn hex_value(value: u8) -> NodeResult<u8> {
 
 fn write_u32(output: &mut Vec<u8>, value: usize) -> NodeResult<()> {
     let value = u32::try_from(value).map_err(|_| {
-        NodeError::new("ERR_WORKER_ENVIRONMENT_LIMIT", "environment-data count is too large")
+        NodeError::new(
+            "ERR_WORKER_ENVIRONMENT_LIMIT",
+            "environment-data count is too large",
+        )
     })?;
     output.extend_from_slice(&value.to_be_bytes());
     Ok(())
@@ -333,7 +357,10 @@ impl<'a> SnapshotReader<'a> {
 
     fn take(&mut self, count: usize) -> NodeResult<&'a [u8]> {
         let end = self.position.checked_add(count).ok_or_else(|| {
-            NodeError::new("ERR_WORKER_ENVIRONMENT_DATA", "snapshot position overflowed")
+            NodeError::new(
+                "ERR_WORKER_ENVIRONMENT_DATA",
+                "snapshot position overflowed",
+            )
         })?;
         if end > self.input.len() {
             return Err(NodeError::new(

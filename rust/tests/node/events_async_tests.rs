@@ -55,7 +55,7 @@ fn event_emitter_supports_prepend_remove_and_static_helpers() {
 
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut emitter = EventEmitter::new();
-    assert_eq!(emitter.get_max_listeners(), Some(12));
+    assert_eq!(emitter.get_max_listeners(), 12);
     assert!(emitter.capture_rejections());
 
     let first = Rc::clone(&seen);
@@ -99,8 +99,8 @@ fn event_emitter_supports_prepend_remove_and_static_helpers() {
     let mut one = EventEmitter::new();
     let mut two = EventEmitter::new();
     tsonic_rust_node::events::set_max_listeners(7, &mut [&mut one, &mut two]);
-    assert_eq!(one.get_max_listeners(), Some(7));
-    assert_eq!(two.get_max_listeners(), Some(7));
+    assert_eq!(one.get_max_listeners(), 7);
+    assert_eq!(two.get_max_listeners(), 7);
 
     let capturing = EventEmitter::with_options(tsonic_rust_node::events::EventEmitterOptions {
         capture_rejections: true,
@@ -119,7 +119,7 @@ fn node_event_target_and_async_resource_shapes_forward_events() {
         target_seen.borrow_mut().push(args[0].inspect());
     });
     target.set_max_listeners(4);
-    assert_eq!(target.get_max_listeners(), Some(4));
+    assert_eq!(target.get_max_listeners(), 4);
     assert!(target.emit("message", &[JsValue::from("hello".to_string())]));
     assert_eq!(target.event_names(), vec!["message".to_string()]);
     assert_eq!(target.listener_count("message"), 1);

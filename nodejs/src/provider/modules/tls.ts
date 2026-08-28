@@ -5,6 +5,7 @@ import {
   float64Carrier,
   numberType,
   propertyMember,
+  providerCallbackType,
   providerNativeFallibility,
   providerRef,
   rustOptionTargetType,
@@ -37,18 +38,6 @@ const connectOptionsType = providerRef(moduleSpecifier, "ConnectionOptions");
 const serverOptionsType = providerRef(moduleSpecifier, "TlsOptions");
 const socketType = providerRef(moduleSpecifier, "TLSSocket");
 const serverType = providerRef(moduleSpecifier, "Server");
-const emptyCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.SecureConnectCallback`,
-  parameters: [],
-  returnType: voidType,
-};
-const socketCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.SecureConnectionCallback`,
-  parameters: [{ name: "socket", type: socketType }],
-  returnType: voidType,
-};
 
 export function tlsModule(): RustProviderModuleDefinition {
   return {
@@ -77,8 +66,23 @@ export function tlsModule(): RustProviderModuleDefinition {
         name: "TLSSocket",
         kind: "class",
         members: [
-          method(socketId, "write", "buffer", providerRef("node:buffer", "Buffer"), booleanType),
-          method(socketId, "write", "string", stringType, booleanType),
+          {
+            id: `${socketId}.write`,
+            name: "write",
+            kind: "method",
+            signatures: [
+              {
+                id: `${socketId}.write(buffer)`,
+                parameters: [{ name: "value", type: providerRef("node:buffer", "Buffer") }],
+                returnType: booleanType,
+              },
+              {
+                id: `${socketId}.write(string)`,
+                parameters: [{ name: "value", type: stringType }],
+                returnType: booleanType,
+              },
+            ],
+          },
           method(socketId, "read", "", undefined, {
             kind: "union",
             types: [providerRef("node:buffer", "Buffer"), undefinedType],
@@ -115,7 +119,7 @@ export function tlsModule(): RustProviderModuleDefinition {
                 id: `${serverId}.listen(port,callback)`,
                 parameters: [
                   { name: "port", type: numberType },
-                  { name: "callback", type: emptyCallbackType },
+                  { name: "callback", type: providerCallbackType(`${serverId}.listen(port,callback)`, "callback", []) },
                 ],
                 returnType: serverType,
               },
@@ -124,7 +128,7 @@ export function tlsModule(): RustProviderModuleDefinition {
                 parameters: [
                   { name: "port", type: numberType },
                   { name: "host", type: stringType },
-                  { name: "callback", type: emptyCallbackType },
+                  { name: "callback", type: providerCallbackType(`${serverId}.listen(port,host,callback)`, "callback", []) },
                 ],
                 returnType: serverType,
               },
@@ -150,7 +154,7 @@ export function tlsModule(): RustProviderModuleDefinition {
             id: `${moduleSpecifier}::connect(options,callback)`,
             parameters: [
               { name: "options", type: connectOptionsType },
-              { name: "callback", type: emptyCallbackType },
+              { name: "callback", type: providerCallbackType(`${moduleSpecifier}::connect(options,callback)`, "callback", []) },
             ],
             returnType: socketType,
           },
@@ -164,7 +168,7 @@ export function tlsModule(): RustProviderModuleDefinition {
           id: `${moduleSpecifier}::createServer(options,callback)`,
           parameters: [
             { name: "options", type: serverOptionsType },
-            { name: "callback", type: socketCallbackType },
+            { name: "callback", type: providerCallbackType(`${moduleSpecifier}::createServer(options,callback)`, "callback", [{ name: "socket", type: socketType }]) },
           ],
           returnType: serverType,
         }],
@@ -226,12 +230,12 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
     },
     socketMethod("write", "buffer", "write_buffer", [
       { kind: "target-named", id: "rust.node.Buffer" },
-    ], boolCarrier, true),
-    socketMethod("write", "string", "write_string", [stringCarrier], boolCarrier, true),
-    socketMethod("read", undefined, "read_optional_buffer", [], rustOptionTargetType({ kind: "target-named", id: "rust.node.Buffer" }), true),
-    socketMethod("end", undefined, "end", [], unitCarrier, true),
-    socketMethod("ref", undefined, "ref_chain", [], mutableSocket, false),
-    socketMethod("unref", undefined, "unref_chain", [], mutableSocket, false),
+    ], ["ref"], boolCarrier, true),
+    socketMethod("write", "string", "write_string", [stringCarrier], ["ref"], boolCarrier, true),
+    socketMethod("read", undefined, "read_optional_buffer", [], [], rustOptionTargetType({ kind: "target-named", id: "rust.node.Buffer" }), true),
+    socketMethod("end", undefined, "end", [], [], unitCarrier, true),
+    socketMethod("ref", undefined, "ref_chain", [], [], mutableSocket, false),
+    socketMethod("unref", undefined, "unref_chain", [], [], mutableSocket, false),
     socketProperty("authorized", "authorized", boolCarrier),
     socketProperty("authorizationError", "authorization_error", rustOptionTargetType(stringCarrier)),
     socketProperty("encrypted", "encrypted", boolCarrier),
@@ -239,11 +243,11 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
     socketProperty("alpnProtocol", "alpn_protocol", rustOptionTargetType(stringCarrier)),
     socketProperty("bytesRead", "bytes_read_number", float64Carrier),
     socketProperty("bytesWritten", "bytes_written_number", float64Carrier),
-    serverMethod("listen", "port,callback", "listen_default_host", [float64Carrier, emptyCallbackCarrier], mutableServer, true),
-    serverMethod("listen", "port,host,callback", "listen", [float64Carrier, stringCarrier, emptyCallbackCarrier], mutableServer, true),
-    serverMethod("close", undefined, "close", [], unitCarrier, false),
-    serverMethod("ref", undefined, "ref_chain", [], mutableServer, false),
-    serverMethod("unref", undefined, "unref_chain", [], mutableServer, false),
+    serverMethod("listen", "port,callback", "listen_default_host_callable", [float64Carrier, emptyCallbackCarrier], ["value", "value"], mutableServer, true),
+    serverMethod("listen", "port,host,callback", "listen_callable", [float64Carrier, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], mutableServer, true),
+    serverMethod("close", undefined, "close", [], [], unitCarrier, false),
+    serverMethod("ref", undefined, "ref_chain", [], [], mutableServer, false),
+    serverMethod("unref", undefined, "unref_chain", [], [], mutableServer, false),
     {
       exportId: serverId,
       memberId: `${serverId}.listening`,
@@ -321,10 +325,11 @@ function socketMethod(
   signature: string | undefined,
   name: string,
   parameters: readonly RustTargetTypeRef[],
+  argModes: readonly ("value" | "ref" | "mut-ref")[],
   resultCarrier: RustTargetTypeRef,
   fallible: boolean,
 ): RustProviderOperationDefinition {
-  return {
+  const operation = {
     exportId: socketId,
     memberId: `${socketId}.${member}`,
     ...(signature === undefined ? {} : { signatureId: `${socketId}.${member}(${signature})` }),
@@ -332,14 +337,16 @@ function socketMethod(
     target: {
       form: "receiver-method",
       name,
-      ...(parameters.length === 0 ? {} : { argModes: parameters.map(() => "value" as const) }),
+      ...(argModes.length === 0 ? {} : { argModes }),
       mutatesReceiver: true,
     },
     resultCarrier,
     receiverCarrier: tlsSocketCarrier,
     parameterCarriers: parameters,
-    ...(fallible ? providerNativeFallibility : {}),
-  };
+  } as const;
+  return fallible
+    ? { ...operation, ...providerNativeFallibility }
+    : operation;
 }
 
 function socketProperty(
@@ -362,18 +369,26 @@ function serverMethod(
   signature: string | undefined,
   name: string,
   parameters: readonly RustTargetTypeRef[],
+  argModes: readonly ("value" | "ref" | "mut-ref")[],
   resultCarrier: RustTargetTypeRef,
   fallible: boolean,
 ): RustProviderOperationDefinition {
-  return {
+  const operation = {
     exportId: serverId,
     memberId: `${serverId}.${member}`,
     ...(signature === undefined ? {} : { signatureId: `${serverId}.${member}(${signature})` }),
     operationKind: "method",
-    target: { form: "receiver-method", name, mutatesReceiver: true },
+    target: {
+      form: "receiver-method",
+      name,
+      ...(argModes.length === 0 ? {} : { argModes }),
+      mutatesReceiver: true,
+    },
     resultCarrier,
     receiverCarrier: tlsServerCarrier,
     parameterCarriers: parameters,
-    ...(fallible ? providerNativeFallibility : {}),
-  };
+  } as const;
+  return fallible
+    ? { ...operation, ...providerNativeFallibility }
+    : operation;
 }

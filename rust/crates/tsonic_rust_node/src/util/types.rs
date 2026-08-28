@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use tsonic_rust_js::date::JsDate;
 use tsonic_rust_js::json;
 use tsonic_rust_js::regexp::JsRegExp;
-use tsonic_rust_js::typed_array::TypedArrayLen;
+use tsonic_rust_js::typed_array::{TypedArray, TypedElement};
 use tsonic_rust_js::value::JsValue;
 use tsonic_rust_js::web::{AbortController, AbortSignal};
 use tsonic_rust_js::{ArrayBuffer, Uint8Array};

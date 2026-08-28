@@ -8,57 +8,56 @@ use tsonic_rust_runtime::Callable;
 
 #[test]
 fn net_socket_and_http_client_use_real_local_tcp() {
-    let server = net::create_server("127.0.0.1", 0).unwrap();
+    let mut server = net::create_server();
+    server.bind("127.0.0.1", 0).unwrap();
     assert!(server.address().unwrap().port > 0);
     let port = server.local_port().unwrap();
     let handle = thread::spawn(move || {
-        let mut server = server;
-        let mut socket = server.accept().unwrap();
-        assert_eq!(socket.remote_family().unwrap(), "IPv4");
-        socket
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-            .unwrap();
-        assert!(socket.bytes_written() > 0);
-        socket.shutdown().unwrap();
+        let response = http::get("127.0.0.1", port, "/").unwrap();
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.text().unwrap(), "ok");
     });
-
-    let response = http::get("127.0.0.1", port, "/").unwrap();
-    assert_eq!(response.status_code, 200);
-    assert_eq!(response.text().unwrap(), "ok");
+    let mut socket = accept_eventually(&mut server);
+    assert_eq!(socket.remote_family().unwrap(), "IPv4");
+    socket
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        .unwrap();
+    assert!(socket.bytes_written() > 0);
+    socket.shutdown().unwrap();
     handle.join().unwrap();
 
     assert_eq!(net::is_ip("127.0.0.1"), 4);
     assert!(net::is_ipv4("127.0.0.1"));
     assert!(net::is_ipv6("::1"));
 
-    let server = net::create_server("127.0.0.1", 0).unwrap();
+    let mut server = net::create_server();
+    server.bind("127.0.0.1", 0).unwrap();
     let port = server.local_port().unwrap();
     let handle = thread::spawn(move || {
-        let mut server = server;
-        let mut socket = server.accept().unwrap();
-        let data = socket.read_to_end().unwrap();
-        assert_eq!(data, b"ping");
-        assert_eq!(socket.bytes_read(), 4);
+        let mut socket = net::connect("127.0.0.1", port).unwrap();
+        assert_eq!(socket.remote_family().unwrap(), "IPv4");
+        assert_eq!(socket.remote_port().unwrap(), port);
+        assert!(socket.local_port().unwrap() > 0);
+        assert_eq!(socket.local_family().unwrap(), "IPv4");
+        assert_eq!(socket.address().unwrap().family, "IPv4");
+        socket.set_no_delay(true).unwrap();
+        socket.set_timeout(1_000).unwrap();
+        assert_eq!(socket.timeout(), Some(1_000));
+        socket.set_encoding("utf8");
+        assert_eq!(socket.encoding(), Some("utf8"));
+        assert!(socket.write(b"ping").unwrap());
+        assert_eq!(socket.bytes_written(), 4);
+        assert!(socket.has_ref());
+        socket.unref();
+        assert!(!socket.has_ref());
+        socket.r#ref();
+        assert!(socket.has_ref());
+        socket.end(None).unwrap();
     });
-    let mut socket = net::connect("127.0.0.1", port).unwrap();
-    assert_eq!(socket.remote_family().unwrap(), "IPv4");
-    assert_eq!(socket.remote_port().unwrap(), port);
-    assert!(socket.local_port().unwrap() > 0);
-    assert_eq!(socket.local_family().unwrap(), "IPv4");
-    assert_eq!(socket.address().unwrap().family, "IPv4");
-    socket.set_no_delay(true).unwrap();
-    socket.set_timeout(1_000).unwrap();
-    assert_eq!(socket.timeout(), Some(1_000));
-    socket.set_encoding("utf8");
-    assert_eq!(socket.encoding(), Some("utf8"));
-    assert!(socket.write(b"ping").unwrap());
-    assert_eq!(socket.bytes_written(), 4);
-    assert!(socket.has_ref());
-    socket.unref();
-    assert!(!socket.has_ref());
-    socket.r#ref();
-    assert!(socket.has_ref());
-    socket.end(None).unwrap();
+    let mut socket = accept_eventually(&mut server);
+    let data = socket.read_to_end().unwrap();
+    assert_eq!(data, b"ping");
+    assert_eq!(socket.bytes_read(), 4);
     handle.join().unwrap();
 }
 
@@ -91,7 +90,10 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
 
     assert!(started.elapsed() < Duration::from_millis(250));
     assert!(!callback_called.get());
-    assert_eq!(socket.write_string("early").unwrap_err().code, "ERR_SOCKET_CONNECTING");
+    assert_eq!(
+        socket.write_string("early").unwrap_err().code,
+        "ERR_SOCKET_CONNECTING"
+    );
 
     tsonic_rust_node::run_event_loop().unwrap();
     assert!(!callback_called.get());
@@ -133,55 +135,53 @@ fn net_option_and_policy_shapes_are_closed_and_fact_backed() {
     server.set_max_connections(Some(16));
     assert_eq!(server.max_connections(), Some(16));
     let port = server.local_port().unwrap();
-    let handle = thread::spawn(move || {
-        let mut socket = server.accept().unwrap();
-        assert_eq!(server.get_connections(), 1);
-        socket.write(b"ok").unwrap();
-        socket.end(None).unwrap();
-    });
-
     let mut block_list = net::BlockList::new();
     block_list.add_address("203.0.113.1").unwrap();
-    let mut socket = net::connect_with_options(&net::ConnectOptions {
-        host: "127.0.0.1".to_string(),
-        port,
-        local_address: None,
-        local_port: None,
-        family: Some(4),
-        no_delay: true,
-        keep_alive: true,
-        keep_alive_initial_delay: Some(250),
-        timeout: Some(1_000),
-        block_list: Some(block_list),
-    })
-    .unwrap();
-    assert!(socket.keep_alive());
-    assert_eq!(socket.keep_alive_initial_delay(), Some(250));
-    socket.set_type_of_service(16).unwrap();
-    assert_eq!(socket.type_of_service(), Some(16));
-    assert_eq!(socket.ready_state(), "open");
-    socket.pause();
-    assert!(socket.is_paused());
-    assert_eq!(socket.ready_state(), "readOnly");
-    socket.resume();
-    assert!(!socket.is_paused());
-    let data = socket.read_to_end().unwrap();
-    assert_eq!(data, b"ok");
-    socket.reset_and_destroy().unwrap();
-    assert!(socket.destroyed());
-    assert_eq!(socket.ready_state(), "closed");
+    let handle = thread::spawn(move || {
+        let mut socket = net::connect_with_options(&net::ConnectOptions {
+            host: "127.0.0.1".to_string(),
+            port,
+            local_address: None,
+            local_port: None,
+            family: Some(4),
+            no_delay: true,
+            keep_alive: true,
+            keep_alive_initial_delay: Some(250),
+            timeout: Some(1_000),
+            block_list: Some(block_list),
+        })
+        .unwrap();
+        assert!(socket.keep_alive());
+        assert_eq!(socket.keep_alive_initial_delay(), Some(250));
+        socket.set_type_of_service(16).unwrap();
+        assert_eq!(socket.type_of_service(), Some(16));
+        assert_eq!(socket.ready_state(), "open");
+        socket.pause();
+        assert!(socket.is_paused());
+        assert_eq!(socket.ready_state(), "readOnly");
+        socket.resume();
+        assert!(!socket.is_paused());
+        let data = socket.read_to_end().unwrap();
+        assert_eq!(data, b"ok");
+        socket.reset_and_destroy().unwrap();
+        assert!(socket.destroyed());
+        assert_eq!(socket.ready_state(), "closed");
+    });
+    let mut socket = accept_eventually(&mut server);
+    assert_eq!(server.get_connections(), 1);
+    socket.write(b"ok").unwrap();
+    socket.end(None).unwrap();
     handle.join().unwrap();
 
-    let server = net::create_server("127.0.0.1", 0).unwrap();
+    let mut server = net::create_server();
+    server.bind("127.0.0.1", 0).unwrap();
     let port = server.local_port().unwrap();
     let handle = thread::spawn(move || {
-        let mut server = server;
-        let mut socket = server.accept().unwrap();
-        socket.write(b"bye").unwrap();
+        let mut socket = net::connect("127.0.0.1", port).unwrap();
+        socket.destroy_soon().unwrap();
+        assert!(socket.destroyed());
     });
-    let mut socket = net::connect("127.0.0.1", port).unwrap();
-    socket.destroy_soon().unwrap();
-    assert!(socket.destroyed());
+    let _socket = accept_eventually(&mut server);
     handle.join().unwrap();
 
     let blocked = net::connect_with_options(&net::ConnectOptions {
@@ -209,6 +209,19 @@ fn net_option_and_policy_shapes_are_closed_and_fact_backed() {
         ..net::SocketConstructorOpts::default()
     })
     .is_err());
+}
+
+fn accept_eventually(server: &mut net::Server) -> net::Socket {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match server.accept() {
+            Ok(socket) => return socket,
+            Err(_) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("server did not accept a local connection: {error}"),
+        }
+    }
 }
 
 #[test]

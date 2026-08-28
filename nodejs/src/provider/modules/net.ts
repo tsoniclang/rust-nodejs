@@ -8,6 +8,7 @@ import {
   netSocketCarrier,
   numberType,
   propertyMember,
+  providerCallbackType,
   providerNativeFallibility,
   providerRef,
   stringCarrier,
@@ -16,7 +17,6 @@ import {
   voidType,
 } from "../model.js";
 import type {
-  ProviderTypeExpr,
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
 } from "../model.js";
@@ -25,18 +25,6 @@ const moduleSpecifier = "node:net";
 const socketId = `${moduleSpecifier}::Socket`;
 const serverId = `${moduleSpecifier}::Server`;
 const bufferType = providerRef("node:buffer", "Buffer");
-const emptyCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.VoidCallback`,
-  parameters: [],
-  returnType: voidType,
-};
-const connectionCallbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.ConnectionCallback`,
-  parameters: [{ name: "socket", type: providerRef(moduleSpecifier, "Socket") }],
-  returnType: voidType,
-};
 
 export function netModule(): RustProviderModuleDefinition {
   return {
@@ -121,8 +109,8 @@ export function netModule(): RustProviderModuleDefinition {
             signatures: [
               { id: `${serverId}.listen(port)`, parameters: [{ name: "port", type: numberType }], returnType: providerRef(moduleSpecifier, "Server") },
               { id: `${serverId}.listen(port,host)`, parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }], returnType: providerRef(moduleSpecifier, "Server") },
-              { id: `${serverId}.listen(port,callback)`, parameters: [{ name: "port", type: numberType }, { name: "callback", type: emptyCallbackType }], returnType: providerRef(moduleSpecifier, "Server") },
-              { id: `${serverId}.listen(port,host,callback)`, parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }, { name: "callback", type: emptyCallbackType }], returnType: providerRef(moduleSpecifier, "Server") },
+              { id: `${serverId}.listen(port,callback)`, parameters: [{ name: "port", type: numberType }, { name: "callback", type: providerCallbackType(`${serverId}.listen(port,callback)`, "callback", []) }], returnType: providerRef(moduleSpecifier, "Server") },
+              { id: `${serverId}.listen(port,host,callback)`, parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }, { name: "callback", type: providerCallbackType(`${serverId}.listen(port,host,callback)`, "callback", []) }], returnType: providerRef(moduleSpecifier, "Server") },
             ],
           },
           {
@@ -147,8 +135,8 @@ export function netModule(): RustProviderModuleDefinition {
         signatures: [
           { id: `${moduleSpecifier}::createConnection(port)`, name: "createConnection", parameters: [{ name: "port", type: numberType }], returnType: providerRef(moduleSpecifier, "Socket") },
           { id: `${moduleSpecifier}::createConnection(port,host)`, name: "createConnection", parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }], returnType: providerRef(moduleSpecifier, "Socket") },
-          { id: `${moduleSpecifier}::createConnection(port,callback)`, name: "createConnection", parameters: [{ name: "port", type: numberType }, { name: "callback", type: emptyCallbackType }], returnType: providerRef(moduleSpecifier, "Socket") },
-          { id: `${moduleSpecifier}::createConnection(port,host,callback)`, name: "createConnection", parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }, { name: "callback", type: emptyCallbackType }], returnType: providerRef(moduleSpecifier, "Socket") },
+          { id: `${moduleSpecifier}::createConnection(port,callback)`, name: "createConnection", parameters: [{ name: "port", type: numberType }, { name: "callback", type: providerCallbackType(`${moduleSpecifier}::createConnection(port,callback)`, "callback", []) }], returnType: providerRef(moduleSpecifier, "Socket") },
+          { id: `${moduleSpecifier}::createConnection(port,host,callback)`, name: "createConnection", parameters: [{ name: "port", type: numberType }, { name: "host", type: stringType }, { name: "callback", type: providerCallbackType(`${moduleSpecifier}::createConnection(port,host,callback)`, "callback", []) }], returnType: providerRef(moduleSpecifier, "Socket") },
         ],
       },
       {
@@ -157,7 +145,7 @@ export function netModule(): RustProviderModuleDefinition {
         kind: "function",
         signatures: [
           { id: `${moduleSpecifier}::createServer()`, name: "createServer", parameters: [], returnType: providerRef(moduleSpecifier, "Server") },
-          { id: `${moduleSpecifier}::createServer(callback)`, name: "createServer", parameters: [{ name: "callback", type: connectionCallbackType }], returnType: providerRef(moduleSpecifier, "Server") },
+          { id: `${moduleSpecifier}::createServer(callback)`, name: "createServer", parameters: [{ name: "callback", type: providerCallbackType(`${moduleSpecifier}::createServer(callback)`, "callback", [{ name: "socket", type: providerRef(moduleSpecifier, "Socket") }]) }], returnType: providerRef(moduleSpecifier, "Server") },
         ],
       },
       ...(["isIP", "isIPv4", "isIPv6"] as const).map((name) => ({
@@ -245,18 +233,18 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     { exportId: serverId, memberId: `${serverId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref_chain", mutatesReceiver: true }, resultCarrier: mutableServer, receiverCarrier: netServerCarrier, parameterCarriers: [] },
   );
   const listenRows = [
-    ["port", "listen_port", [{ kind: "source-primitive", name: "float64" }]],
-    ["port,host", "listen_port_host", [{ kind: "source-primitive", name: "float64" }, stringCarrier]],
-    ["port,callback", "listen_port_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier]],
-    ["port,host,callback", "listen_port_host_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier]],
+    ["port", "listen_port", [{ kind: "source-primitive", name: "float64" }], ["value"]],
+    ["port,host", "listen_port_host", [{ kind: "source-primitive", name: "float64" }, stringCarrier], ["value", "ref"]],
+    ["port,callback", "listen_port_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier], ["value", "value"]],
+    ["port,host,callback", "listen_port_host_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
   ] as const;
-  for (const [signature, target, parameterCarriers] of listenRows) {
+  for (const [signature, target, parameterCarriers, argModes] of listenRows) {
     rows.push({
       exportId: serverId,
       memberId: `${serverId}.listen`,
       signatureId: `${serverId}.listen(${signature})`,
       operationKind: "method",
-      target: { form: "receiver-method", name: target, mutatesReceiver: true },
+      target: { form: "receiver-method", name: target, argModes, mutatesReceiver: true },
       resultCarrier: mutableServer,
       receiverCarrier: netServerCarrier,
       parameterCarriers,
@@ -277,16 +265,16 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
 
 function connectionRows(): readonly RustProviderOperationDefinition[] {
   const rows = [
-    ["port", "create_connection_default_host", [{ kind: "source-primitive", name: "float64" }]],
-    ["port,host", "create_connection_source", [{ kind: "source-primitive", name: "float64" }, stringCarrier]],
-    ["port,callback", "create_connection_default_host_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier]],
-    ["port,host,callback", "create_connection_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier]],
+    ["port", "create_connection_default_host", [{ kind: "source-primitive", name: "float64" }], ["value"]],
+    ["port,host", "create_connection_source", [{ kind: "source-primitive", name: "float64" }, stringCarrier], ["value", "ref"]],
+    ["port,callback", "create_connection_default_host_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier], ["value", "value"]],
+    ["port,host,callback", "create_connection_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
   ] as const;
-  return rows.map(([signature, path, parameterCarriers]) => ({
+  return rows.map(([signature, path, parameterCarriers, argModes]) => ({
     exportId: `${moduleSpecifier}::createConnection`,
     signatureId: `${moduleSpecifier}::createConnection(${signature})`,
     operationKind: "method" as const,
-    target: { form: "call" as const, path: `node_net::${path}` },
+    target: { form: "call" as const, path: `node_net::${path}`, argModes },
     resultCarrier: netSocketCarrier,
     parameterCarriers,
     ...providerNativeFallibility,

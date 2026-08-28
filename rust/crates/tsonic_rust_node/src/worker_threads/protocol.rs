@@ -91,7 +91,10 @@ impl WorkerTransport {
 
     pub fn send(&self, kind: WorkerFrameKind, payload: &[u8]) -> NodeResult<()> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(NodeError::new("ERR_CLOSED_MESSAGE_PORT", "worker transport is closed"));
+            return Err(NodeError::new(
+                "ERR_CLOSED_MESSAGE_PORT",
+                "worker transport is closed",
+            ));
         }
         let mut writer = crate::sync::lock(&self.writer);
         write_frame(&mut writer, kind, payload)
@@ -120,7 +123,9 @@ pub(crate) fn write_frame(
     payload: &[u8],
 ) -> NodeResult<()> {
     if payload.len() > MAXIMUM_FRAME_BYTES {
-        return Err(protocol_error("worker frame exceeds the finite transport limit"));
+        return Err(protocol_error(
+            "worker frame exceeds the finite transport limit",
+        ));
     }
     let length = u32::try_from(payload.len())
         .map_err(|_| protocol_error("worker frame length exceeds the finite transport limit"))?;
@@ -141,7 +146,9 @@ pub(crate) fn read_frame(stream: &mut TcpStream) -> NodeResult<WorkerFrame> {
     ))
     .expect("u32 must fit usize");
     if length > MAXIMUM_FRAME_BYTES {
-        return Err(protocol_error("worker frame length exceeds the finite transport limit"));
+        return Err(protocol_error(
+            "worker frame length exceeds the finite transport limit",
+        ));
     }
     let mut payload = vec![0_u8; length];
     stream.read_exact(&mut payload).map_err(io_error)?;

@@ -5,10 +5,8 @@ use crate::http::{IncomingMessage, Response, ServerResponseHandle};
 use crate::tls::{SourceServerOptions, TlsServer, TlsSocket};
 
 type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
-type RuntimeResponseCallback = tsonic_rust_runtime::Callable<
-    IncomingMessage,
-    tsonic_rust_runtime::TsonicResult<()>,
->;
+type RuntimeResponseCallback =
+    tsonic_rust_runtime::Callable<(IncomingMessage,), tsonic_rust_runtime::TsonicResult<()>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestOptions {
@@ -56,7 +54,10 @@ impl ClientRequest {
 
     pub fn write_buffer(&mut self, buffer: &crate::buffer::Buffer) -> NodeResult<bool> {
         if self.ended {
-            return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "write after end"));
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "write after end",
+            ));
         }
         buffer.with_bytes(|bytes| self.body.extend_from_slice(bytes));
         Ok(true)
@@ -64,7 +65,10 @@ impl ClientRequest {
 
     pub fn write_string(&mut self, value: &str) -> NodeResult<bool> {
         if self.ended {
-            return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "write after end"));
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "write after end",
+            ));
         }
         self.body.extend_from_slice(value.as_bytes());
         Ok(true)
@@ -83,7 +87,7 @@ impl ClientRequest {
             move |response| {
                 let response = response.map_err(tsonic_rust_runtime::TsonicError::from)?;
                 if let Some(callback) = callback {
-                    callback.call(incoming_response(&response_url, response))?;
+                    callback.call((incoming_response(&response_url, response),))?;
                 }
                 Ok(())
             },
@@ -96,14 +100,14 @@ impl ClientRequest {
 impl ServerHandle {
     pub fn listen<E>(
         &mut self,
-        port: i32,
+        port: f64,
         host: &str,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
     {
-        self.server.listen(source_port(port)?, host)?;
+        self.server.listen(port, host)?;
         let callback = adapt_callback(callback);
         crate::event_loop::enqueue_runtime_task(move || callback.call(()))?;
         Ok(self)
@@ -111,7 +115,7 @@ impl ServerHandle {
 
     pub fn listen_default_host<E>(
         &mut self,
-        port: i32,
+        port: f64,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
@@ -147,11 +151,9 @@ where
     E: std::fmt::Display + 'static,
 {
     let handler = adapt_callback(handler);
-    let connection_callback = tsonic_rust_runtime::Callable::new(
-        move |(socket,): (TlsSocket,)| {
-            crate::http::accept_runtime_transport(Box::new(socket), handler.clone())
-        },
-    );
+    let connection_callback = tsonic_rust_runtime::Callable::new(move |(socket,): (TlsSocket,)| {
+        crate::http::accept_runtime_transport(Box::new(socket), handler.clone())
+    });
     Ok(ServerHandle {
         server: crate::tls::create_server(options, connection_callback)?,
     })
@@ -163,7 +165,7 @@ pub fn get(url: &str) -> NodeResult<Response> {
 
 pub fn request_callable<E>(
     url: &str,
-    callback: tsonic_rust_runtime::Callable<IncomingMessage, Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<(IncomingMessage,), Result<(), E>>,
 ) -> NodeResult<ClientRequest>
 where
     E: std::fmt::Display + 'static,
@@ -176,7 +178,7 @@ where
 
 pub fn get_callable<E>(
     url: &str,
-    callback: tsonic_rust_runtime::Callable<IncomingMessage, Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<(IncomingMessage,), Result<(), E>>,
 ) -> NodeResult<ClientRequest>
 where
     E: std::fmt::Display + 'static,
@@ -209,7 +211,12 @@ pub fn request(options: &RequestOptions, body: &[u8]) -> NodeResult<Response> {
     for (name, value) in &options.headers {
         request = request.header(name, value);
     }
-    response_to_node(request.body(body.to_vec()).send().map_err(map_reqwest_error)?)
+    response_to_node(
+        request
+            .body(body.to_vec())
+            .send()
+            .map_err(map_reqwest_error)?,
+    )
 }
 
 pub(crate) fn response_to_node(response: reqwest::blocking::Response) -> NodeResult<Response> {
@@ -247,12 +254,6 @@ where
             .call(arguments)
             .map_err(crate::error::callback_runtime_error)
     })
-}
-
-fn source_port(value: i32) -> NodeResult<f64> {
-    let value = u16::try_from(value)
-        .map_err(|_| NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535"))?;
-    Ok(f64::from(value))
 }
 
 fn map_reqwest_error(error: reqwest::Error) -> NodeError {

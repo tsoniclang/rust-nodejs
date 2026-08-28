@@ -6,6 +6,7 @@ import {
   noneArgument,
   numberType,
   propertyMember,
+  providerCallbackType,
   providerNativeFallibility,
   providerRef,
   rustOptionTargetType,
@@ -31,15 +32,11 @@ const optionalBufferType = {
   kind: "union",
   types: [bufferType, undefinedType],
 } as const;
-const callbackType: ProviderTypeExpr = {
-  kind: "function",
-  id: `${moduleSpecifier}.Callback`,
-  parameters: [
+const callbackType = (signatureId: string): ProviderTypeExpr =>
+  providerCallbackType(signatureId, "callback", [
     { name: "error", type: { kind: "any" } },
     { name: "result", type: bufferType },
-  ],
-  returnType: voidType,
-};
+  ]);
 
 const syncOperations = [
   ["gzipSync", "gzip_sync", "gzip_sync_source"],
@@ -164,7 +161,7 @@ export function zlibModule(): RustProviderModuleDefinition {
             name,
             parameters: [
               { name: "input", type: bufferType },
-              { name: "callback", type: callbackType },
+              { name: "callback", type: callbackType(`${moduleSpecifier}::${name}(input,callback)`) },
             ],
             returnType: voidType,
           },
@@ -174,7 +171,7 @@ export function zlibModule(): RustProviderModuleDefinition {
             parameters: [
               { name: "input", type: bufferType },
               { name: "options", type: optionsType },
-              { name: "callback", type: callbackType },
+              { name: "callback", type: callbackType(`${moduleSpecifier}::${name}(input,options,callback)`) },
             ],
             returnType: voidType,
           },

@@ -88,7 +88,10 @@ impl MessagePort {
         let payload = ClonedValue::from_js(&value)?;
         let state = self.state.borrow();
         if state.closed {
-            return Err(NodeError::new("ERR_CLOSED_MESSAGE_PORT", "message port is closed"));
+            return Err(NodeError::new(
+                "ERR_CLOSED_MESSAGE_PORT",
+                "message port is closed",
+            ));
         }
         if let Some(transport) = &state.transport {
             return transport.send(WorkerFrameKind::Message, &encode(&payload)?);
@@ -97,7 +100,8 @@ impl MessagePort {
             NodeError::new("ERR_CLOSED_MESSAGE_PORT", "message port peer is closed")
         })?;
         drop(state);
-        peer.borrow_mut().enqueue(payload)
+        let result = peer.borrow_mut().enqueue(payload);
+        result
     }
 
     pub fn receive_message(&self) -> Option<JsValue> {
@@ -161,7 +165,7 @@ impl MessagePort {
     pub fn on_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
@@ -187,7 +191,7 @@ impl MessagePort {
     pub fn once_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
@@ -212,7 +216,7 @@ impl MessagePort {
     pub fn off_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: 'static,
@@ -272,7 +276,10 @@ impl MessagePort {
 impl MessagePortState {
     fn enqueue(&mut self, payload: ClonedValue) -> NodeResult<()> {
         if self.closed {
-            return Err(NodeError::new("ERR_CLOSED_MESSAGE_PORT", "message port is closed"));
+            return Err(NodeError::new(
+                "ERR_CLOSED_MESSAGE_PORT",
+                "message port is closed",
+            ));
         }
         if self.messages.len() >= MAXIMUM_QUEUED_MESSAGES {
             return Err(NodeError::new(
@@ -303,14 +310,17 @@ impl MessagePortState {
                         Err(error) => self.errors.push_back(error.to_string()),
                     },
                     WorkerFrameKind::Error => {
-                        self.errors.push_back(String::from_utf8_lossy(&frame.payload).into_owned());
+                        self.errors
+                            .push_back(String::from_utf8_lossy(&frame.payload).into_owned());
                     }
                     WorkerFrameKind::Close => {
                         self.closed = true;
                         self.refed = false;
                         self.close_pending = true;
                     }
-                    _ => self.errors.push_back("unexpected worker transport frame".to_string()),
+                    _ => self
+                        .errors
+                        .push_back("unexpected worker transport frame".to_string()),
                 },
                 Ok(TransportEvent::Failure(error)) => {
                     self.errors.push_back(error);
@@ -364,10 +374,9 @@ thread_local! {
 
 fn register_port(port: &MessagePort) {
     PORTS.with(|ports| {
-        ports.borrow_mut().push((
-            Rc::downgrade(&port.state),
-            Rc::downgrade(&port.emitter),
-        ));
+        ports
+            .borrow_mut()
+            .push((Rc::downgrade(&port.state), Rc::downgrade(&port.emitter)));
     });
 }
 
@@ -383,7 +392,9 @@ pub(crate) fn poll_runtime_ports() -> tsonic_rust_runtime::TsonicResult<bool> {
     });
     let mut did_work = false;
     for port in ports {
-        did_work |= port.poll().map_err(tsonic_rust_runtime::TsonicError::from)?;
+        did_work |= port
+            .poll()
+            .map_err(tsonic_rust_runtime::TsonicError::from)?;
     }
     Ok(did_work)
 }

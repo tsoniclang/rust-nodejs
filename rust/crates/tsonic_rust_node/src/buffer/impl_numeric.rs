@@ -264,6 +264,7 @@ impl Buffer {
             storage: Rc::clone(&self.storage),
             offset: self.offset + start,
             len: end.saturating_sub(start),
+            identity: ObjectIdentity::new(),
         }
     }
 

@@ -57,6 +57,7 @@ fn view_number(buffer: &Buffer, start: f64, end: Option<f64>) -> Buffer {
         storage: Rc::clone(&buffer.storage),
         offset: buffer.offset + start,
         len: end - start,
+        identity: ObjectIdentity::new(),
     }
 }
 

@@ -61,65 +61,26 @@ fn https_and_http2_validate_closed_request_shapes() {
     let https_options = tsonic_rust_node::https::RequestOptions::get("https://example.com/");
     assert_eq!(https_options.method, "GET");
     assert!(tsonic_rust_node::https::get("http://example.com/").is_err());
-    let mut agent =
-        tsonic_rust_node::https::Agent::new(Some(tsonic_rust_node::https::AgentOptions {
-            callback: true,
-            keep_alive: true,
-            keep_alive_msecs: 500,
-            max_sockets: 8,
-            max_free_sockets: 2,
-            max_cached_sessions: 32,
-            timeout: Some(1_000),
-            reject_unauthorized: true,
-            servername: Some("example.com".to_string()),
-        }));
-    assert!(agent.callback);
-    assert!(agent.keep_socket_alive());
-    assert!(agent.reuse_socket());
-    assert!(agent.get_name(Some(&https_options)).contains("example.com"));
-    agent.destroy();
-    assert!(agent.destroyed());
-    assert!(!agent.reuse_socket());
-    let mut https_server = tsonic_rust_node::https::create_server(
-        tsonic_rust_node::https::ServerOptions {
-            request_cert: true,
-            handshake_timeout: Some(30_000),
-            max_cached_sessions: 64,
-            ..tsonic_rust_node::https::ServerOptions::default()
-        },
-        |_, response| response.end(None),
+    let server_options = tsonic_rust_node::tls::SourceServerOptions {
+        request_cert: Some(true),
+        reject_unauthorized: Some(true),
+        ..tsonic_rust_node::tls::SourceServerOptions::default()
+    };
+    assert_eq!(server_options.request_cert, Some(true));
+    let server = tsonic_rust_node::https::create_server_callable(
+        server_options,
+        tsonic_rust_runtime::Callable::new(
+            |(_request, _response): (
+                tsonic_rust_node::http::IncomingMessage,
+                tsonic_rust_node::http::ServerResponseHandle,
+            )| Ok::<(), tsonic_rust_node::error::NodeError>(()),
+        ),
     );
-    assert!(https_server.options().ca.is_empty());
-    assert!(https_server.options().request_cert);
-    https_server.set_timeout(2_000, Some(|| {}));
-    assert_eq!(https_server.timeout(), Some(2_000));
-    https_server.close_idle_connections();
-    https_server.close_all_connections();
-    assert!(https_server.idle_connections_closed());
-    assert!(https_server.all_connections_closed());
-    https_server
-        .add_listener("request")
-        .prepend_listener("request")
-        .once("secureConnection")
-        .prepend_once_listener("secureConnection");
-    assert_eq!(https_server.listener_count("request"), 2);
-    assert_eq!(
-        https_server.listeners("request"),
-        vec!["request", "request"]
-    );
-    assert_eq!(
-        https_server.raw_listeners("secureConnection"),
-        vec!["secureConnection", "secureConnection"]
-    );
-    assert!(https_server.emit("request"));
-    https_server.off("request");
-    assert_eq!(https_server.listener_count("request"), 1);
-    https_server.remove_all_listeners(Some("secureConnection"));
-    assert_eq!(https_server.listener_count("secureConnection"), 0);
-    https_server.on("close").remove_listener("close");
-    assert!(!https_server.emit("close"));
-    https_server.close();
-    assert!(https_server.closed());
+    let server_error = match server {
+        Ok(_) => panic!("TLS server without a key and certificate must reject"),
+        Err(error) => error,
+    };
+    assert_eq!(server_error.code, "ERR_TLS_CERT_REQUIRED");
 
     let http2 = tsonic_rust_node::http2::connect("https://example.com").unwrap();
     assert_eq!(http2.authority, "https://example.com");

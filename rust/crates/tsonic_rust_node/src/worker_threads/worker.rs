@@ -83,8 +83,8 @@ impl Worker {
                 "worker module entry identity cannot be empty",
             ));
         }
-        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-            .map_err(io_error)?;
+        let listener =
+            TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).map_err(io_error)?;
         listener.set_nonblocking(true).map_err(io_error)?;
         let selected_port = listener.local_addr().map_err(io_error)?.port();
         let thread_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
@@ -162,7 +162,10 @@ impl Worker {
     pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
         let state = self.state.borrow();
         if state.complete {
-            return Err(NodeError::new("ERR_WORKER_NOT_RUNNING", "worker is no longer running"));
+            return Err(NodeError::new(
+                "ERR_WORKER_NOT_RUNNING",
+                "worker is no longer running",
+            ));
         }
         let payload = encode(&ClonedValue::from_js(&value)?)?;
         state.transport.send(WorkerFrameKind::Message, &payload)
@@ -213,7 +216,7 @@ impl Worker {
     pub fn on_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
@@ -237,7 +240,7 @@ impl Worker {
     pub fn once_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: std::fmt::Display + 'static,
@@ -261,7 +264,7 @@ impl Worker {
     pub fn off_callable1<E>(
         &mut self,
         event: &JsValue,
-        listener: &Callable<JsValue, Result<(), E>>,
+        listener: &Callable<(JsValue,), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
         E: 'static,
@@ -308,10 +311,13 @@ impl WorkerState {
                 Ok(TransportEvent::Frame(frame)) => match frame.kind {
                     WorkerFrameKind::Message => self.messages.push(decode(&frame.payload)?),
                     WorkerFrameKind::Error => {
-                        self.errors.push(String::from_utf8_lossy(&frame.payload).into_owned());
+                        self.errors
+                            .push(String::from_utf8_lossy(&frame.payload).into_owned());
                     }
                     WorkerFrameKind::Close => break,
-                    _ => self.errors.push("unexpected worker transport frame".to_string()),
+                    _ => self
+                        .errors
+                        .push("unexpected worker transport frame".to_string()),
                 },
                 Ok(TransportEvent::Failure(error)) => {
                     self.errors.push(error);
@@ -365,10 +371,9 @@ thread_local! {
 
 fn register_worker(worker: &Worker) {
     WORKERS.with(|workers| {
-        workers.borrow_mut().push((
-            Rc::downgrade(&worker.state),
-            Rc::downgrade(&worker.emitter),
-        ));
+        workers
+            .borrow_mut()
+            .push((Rc::downgrade(&worker.state), Rc::downgrade(&worker.emitter)));
     });
 }
 
@@ -384,7 +389,9 @@ pub(crate) fn poll_runtime_workers() -> tsonic_rust_runtime::TsonicResult<bool> 
     });
     let mut did_work = false;
     for worker in workers {
-        did_work |= worker.poll().map_err(tsonic_rust_runtime::TsonicError::from)?;
+        did_work |= worker
+            .poll()
+            .map_err(tsonic_rust_runtime::TsonicError::from)?;
     }
     Ok(did_work)
 }
@@ -434,20 +441,35 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
     match value {
         JsValue::Undefined => Ok(()),
         JsValue::Object(object) => {
-            let entries = object.try_borrow().map_err(|_| {
-                NodeError::new("ERR_WORKER_OPTIONS", "WorkerOptions.env is mutably borrowed")
-            })?.entries_exact();
+            let entries = object
+                .try_borrow()
+                .map_err(|_| {
+                    NodeError::new(
+                        "ERR_WORKER_OPTIONS",
+                        "WorkerOptions.env is mutably borrowed",
+                    )
+                })?
+                .entries_exact();
             command.env_clear();
             for (key, value) in entries {
                 let key = key.to_utf8().map_err(|_| {
-                    NodeError::new("ERR_WORKER_OPTIONS", "WorkerOptions.env key is not a native string")
+                    NodeError::new(
+                        "ERR_WORKER_OPTIONS",
+                        "WorkerOptions.env key is not a native string",
+                    )
                 })?;
                 match value {
                     JsValue::Undefined => {}
                     JsValue::String(value) => {
-                        command.env(key, value.to_utf8().map_err(|_| {
-                            NodeError::new("ERR_WORKER_OPTIONS", "WorkerOptions.env value is not a native string")
-                        })?);
+                        command.env(
+                            key,
+                            value.to_utf8().map_err(|_| {
+                                NodeError::new(
+                                    "ERR_WORKER_OPTIONS",
+                                    "WorkerOptions.env value is not a native string",
+                                )
+                            })?,
+                        );
                     }
                     _ => {
                         return Err(NodeError::new(

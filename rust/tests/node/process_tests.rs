@@ -235,8 +235,8 @@ fn process_metadata_warnings_and_feature_shapes_are_closed() {
     assert_eq!(warnings[1].name, "TypedWarning");
     assert_eq!(warnings[1].code.as_deref(), Some("TSONIC_TYPED"));
 
-    let stdout = process::stdout();
-    let stderr = process::stderr();
+    let mut stdout = process::stdout();
+    let mut stderr = process::stderr();
     assert_eq!(stdout.fd(), 1);
     assert_eq!(stderr.fd(), 2);
     assert!(stdout.write_string("").unwrap());

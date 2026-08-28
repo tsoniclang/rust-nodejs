@@ -745,40 +745,33 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     let file_text = file.to_string_lossy().to_string();
     fs::write_file_sync_string(&file_text, "abcdef", "utf8").unwrap();
 
-    let readable = fs::create_read_stream_with_options(
+    let mut readable = fs::create_read_stream_with_options(
         &file_text,
         fs::ReadStreamOptions {
-            stream: fs::FsStreamOptions {
-                start: Some(1),
-                end: Some(3),
-                high_water_mark: 4,
-                ..fs::FsStreamOptions::default()
-            },
+            start: Some(1.0),
+            end: Some(3.0),
+            high_water_mark: Some(4.0),
+            ..fs::ReadStreamOptions::default()
         },
     )
     .unwrap();
     assert_eq!(readable.path, file_text);
     assert!(!readable.pending);
-    let mut listener_readable = readable.clone();
-    listener_readable
-        .on("open")
-        .once("data")
-        .prepend_listener("close");
-    assert_eq!(listener_readable.listener_count("open"), 1);
-    assert!(listener_readable.emit("data"));
-    assert_eq!(listener_readable.listeners("close"), vec!["close"]);
-    listener_readable.remove_listener("open");
-    assert_eq!(listener_readable.raw_listeners("open").len(), 0);
-    listener_readable.close();
-    assert!(!listener_readable.pending);
-    assert_eq!(readable.to_vec()[0].to_string(Some("utf8")).unwrap(), "bcd");
+    readable.on("open").once("data").prepend_listener("close");
+    assert_eq!(readable.listener_count("open"), 1);
+    assert!(readable.emit("data"));
+    assert_eq!(readable.listeners("close"), vec!["close"]);
+    readable.remove_listener("open");
+    assert_eq!(readable.raw_listeners("open").len(), 0);
+    let chunk = readable.read().unwrap().unwrap();
+    assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
+    readable.close();
+    assert!(!readable.pending);
 
     let write_options = fs::WriteStreamOptions {
-        stream: fs::FsStreamOptions {
-            flags: "w".to_string(),
-            flush: true,
-            ..fs::FsStreamOptions::default()
-        },
+        flags: Some("w".to_string()),
+        flush: Some(true),
+        ..fs::WriteStreamOptions::default()
     };
     let mut writable = fs::create_write_stream_with_options(&file_text, write_options).unwrap();
     assert_eq!(writable.path, file_text);
@@ -790,24 +783,13 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     assert!(writable.emit("close"));
     writable.off("drain");
     assert!(writable.listeners("drain").is_empty());
-    assert!(
-        writable.write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
-    );
+    assert!(writable
+        .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
+        .unwrap());
     assert_eq!(writable.bytes_written, 1);
-    assert_eq!(writable.chunks().len(), 1);
-    writable.close();
+    writable.close().unwrap();
     assert!(!writable.pending);
-
-    assert!(fs::create_read_stream_with_options(
-        &file_text,
-        fs::ReadStreamOptions {
-            stream: fs::FsStreamOptions {
-                signal_aborted: true,
-                ..fs::FsStreamOptions::default()
-            },
-        },
-    )
-    .is_err());
+    assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");
 
     fs::rm_sync_with_options(
         &root_text,
@@ -995,46 +977,30 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
     assert_eq!(writev_result.bytes_written, 5);
     assert_eq!(writev_result.buffers.len(), 1);
 
-    let stream = fs::FsStreamOptions {
-        flags: "a".to_string(),
-        encoding: Some("utf8".to_string()),
-        fd: Some(10),
-        mode: 0o644,
-        auto_close: false,
-        emit_close: false,
-        start: Some(1),
-        end: Some(8),
-        high_water_mark: 1024,
-        flush: true,
-        signal_aborted: true,
+    let read_stream = fs::ReadStreamOptions {
+        flags: Some("r".to_string()),
+        mode: Some(0o644 as f64),
+        start: Some(1.0),
+        end: Some(8.0),
+        high_water_mark: Some(1024.0),
     };
-    assert_eq!(stream.flags, "a");
-    assert_eq!(stream.encoding.as_deref(), Some("utf8"));
-    assert_eq!(stream.fd, Some(10));
-    assert_eq!(stream.mode, 0o644);
-    assert!(!stream.auto_close);
-    assert!(!stream.emit_close);
-    assert_eq!(stream.start, Some(1));
-    assert_eq!(stream.end, Some(8));
-    assert_eq!(stream.high_water_mark, 1024);
-    assert!(stream.flush);
-    assert!(stream.signal_aborted);
-    assert_eq!(
-        fs::ReadStreamOptions {
-            stream: stream.clone()
-        }
-        .stream
-        .high_water_mark,
-        1024
-    );
-    assert_eq!(
-        fs::WriteStreamOptions {
-            stream: stream.clone()
-        }
-        .stream
-        .flags,
-        "a"
-    );
+    assert_eq!(read_stream.flags.as_deref(), Some("r"));
+    assert_eq!(read_stream.mode, Some(0o644 as f64));
+    assert_eq!(read_stream.start, Some(1.0));
+    assert_eq!(read_stream.end, Some(8.0));
+    assert_eq!(read_stream.high_water_mark, Some(1024.0));
+    let write_stream = fs::WriteStreamOptions {
+        flags: Some("a".to_string()),
+        mode: Some(0o644 as f64),
+        start: Some(1.0),
+        high_water_mark: Some(1024.0),
+        flush: Some(true),
+    };
+    assert_eq!(write_stream.flags.as_deref(), Some("a"));
+    assert_eq!(write_stream.mode, Some(0o644 as f64));
+    assert_eq!(write_stream.start, Some(1.0));
+    assert_eq!(write_stream.high_water_mark, Some(1024.0));
+    assert_eq!(write_stream.flush, Some(true));
 
     let watch = fs::WatchOptions {
         persistent: false,

@@ -201,7 +201,7 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       parameterCarriers: [stringCarrier, workerOptionsCarrier],
       ...providerNativeFallibility,
     },
-    receiverMethod(workerId, "postMessage", "post_message", workerCarrier, [jsValueCarrier], unitCarrier, true),
+    receiverMethod(workerId, "postMessage", "post_message", workerCarrier, [jsValueCarrier], unitCarrier, false, true),
     {
       ...receiverMethod(
         workerId,
@@ -242,8 +242,8 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       receiverCarrier: messageChannelCarrier,
     })),
     receiverMethod(messagePortId, "postMessage", "post_message", messagePortCarrier, [jsValueCarrier], unitCarrier, false, true),
-    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier, false, true),
-    receiverMethod(messagePortId, "close", "close", messagePortCarrier, [], unitCarrier, false, true),
+    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier),
+    receiverMethod(messagePortId, "close", "close", messagePortCarrier, [], unitCarrier),
     receiverMethod(messagePortId, "ref", "ref_chain", messagePortCarrier, [], mutableReference(messagePortCarrier), true),
     receiverMethod(messagePortId, "unref", "unref", messagePortCarrier, [], mutableReference(messagePortCarrier), true),
     receiverMethod(messagePortId, "hasRef", "has_ref", messagePortCarrier, [], boolCarrier),

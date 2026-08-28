@@ -280,10 +280,8 @@ impl PreparedClientConnection {
         let servername = options.servername.unwrap_or_else(|| host.clone());
         let port = source_port(options.port.unwrap_or(443.0))?;
         let reject_unauthorized = options.reject_unauthorized.unwrap_or(true);
-        let mut config = client_config(
-            reject_unauthorized,
-            source_string_array(options.ca, "ca")?,
-        )?;
+        let mut config =
+            client_config(reject_unauthorized, source_string_array(options.ca, "ca")?)?;
         config.alpn_protocols = options
             .alpn_protocols
             .map(|values| dense_source_strings(values, "ALPNProtocols"))
@@ -297,9 +295,8 @@ impl PreparedClientConnection {
             .map(source_timeout)
             .transpose()?
             .map(std::time::Duration::from_millis);
-        ServerName::try_from(servername.clone()).map_err(|error| {
-            NodeError::new("ERR_TLS_CERT_ALTNAME_INVALID", error.to_string())
-        })?;
+        ServerName::try_from(servername.clone())
+            .map_err(|error| NodeError::new("ERR_TLS_CERT_ALTNAME_INVALID", error.to_string()))?;
         Ok(Self {
             host,
             servername,
@@ -311,26 +308,31 @@ impl PreparedClientConnection {
     }
 
     fn connect(self) -> NodeResult<ConnectedClient> {
-        let server_name = ServerName::try_from(self.servername.clone()).map_err(|error| {
-            NodeError::new("ERR_TLS_CERT_ALTNAME_INVALID", error.to_string())
-        })?;
+        let server_name = ServerName::try_from(self.servername.clone())
+            .map_err(|error| NodeError::new("ERR_TLS_CERT_ALTNAME_INVALID", error.to_string()))?;
         let connection = rustls::ClientConnection::new(Arc::new(self.config), server_name)
             .map_err(map_tls_error)?;
         let stream = TcpStream::connect((self.host.as_str(), self.port)).map_err(map_io_error)?;
         if let Some(duration) = self.timeout {
-            stream.set_read_timeout(Some(duration)).map_err(map_io_error)?;
-            stream.set_write_timeout(Some(duration)).map_err(map_io_error)?;
+            stream
+                .set_read_timeout(Some(duration))
+                .map_err(map_io_error)?;
+            stream
+                .set_write_timeout(Some(duration))
+                .map_err(map_io_error)?;
         }
         let mut stream = rustls::StreamOwned::new(connection, stream);
         while stream.conn.is_handshaking() {
-            stream.conn.complete_io(&mut stream.sock).map_err(map_io_error)?;
+            stream
+                .conn
+                .complete_io(&mut stream.sock)
+                .map_err(map_io_error)?;
         }
         Ok(ConnectedClient {
             stream: TlsStream::Client(stream),
             authorized: self.reject_unauthorized,
-            authorization_error: (!self.reject_unauthorized).then(|| {
-                "certificate verification was explicitly disabled".to_string()
-            }),
+            authorization_error: (!self.reject_unauthorized)
+                .then(|| "certificate verification was explicitly disabled".to_string()),
         })
     }
 }
@@ -378,10 +380,8 @@ impl crate::http::RuntimeTransport for TlsSocket {
     }
 }
 
-type RuntimeConnectionCallback = tsonic_rust_runtime::Callable<
-    (TlsSocket,),
-    tsonic_rust_runtime::TsonicResult<()>,
->;
+type RuntimeConnectionCallback =
+    tsonic_rust_runtime::Callable<(TlsSocket,), tsonic_rust_runtime::TsonicResult<()>>;
 
 struct TlsServerState {
     options: SourceServerOptions,
@@ -437,6 +437,35 @@ impl TlsServer {
         Ok(self)
     }
 
+    pub fn listen_callable<E>(
+        &mut self,
+        port: f64,
+        host: &str,
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<&mut Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
+        self.listen(port, host)?;
+        crate::event_loop::enqueue_runtime_task(move || {
+            callback
+                .call(())
+                .map_err(crate::error::callback_runtime_error)
+        })?;
+        Ok(self)
+    }
+
+    pub fn listen_default_host_callable<E>(
+        &mut self,
+        port: f64,
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<&mut Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
+        self.listen_callable(port, "0.0.0.0", callback)
+    }
+
     pub fn close(&mut self) {
         let mut state = self.state.borrow_mut();
         state.listener = None;
@@ -471,8 +500,7 @@ thread_local! {
         RefCell::new(std::collections::BTreeMap::new());
 }
 
-static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub fn connect(options: SourceConnectOptions) -> NodeResult<TlsSocket> {
     TlsSocket::connect(options)
@@ -486,7 +514,9 @@ where
     E: std::fmt::Display + 'static,
 {
     let callback = tsonic_rust_runtime::Callable::new(move |()| {
-        callback.call(()).map_err(crate::error::callback_runtime_error)
+        callback
+            .call(())
+            .map_err(crate::error::callback_runtime_error)
     });
     TlsSocket::connect_with_callback(options, Some(callback))
 }
@@ -516,7 +546,10 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
     let states = RUNTIME_SERVERS.with(|servers| {
         let mut servers = servers.borrow_mut();
         servers.retain(|_, server| {
-            server.state.upgrade().is_some_and(|state| state.borrow().listening)
+            server
+                .state
+                .upgrade()
+                .is_some_and(|state| state.borrow().listening)
         });
         servers
             .values()
@@ -528,9 +561,14 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
         loop {
             let accepted = {
                 let state = state.borrow();
-                let listener = state.listener.as_ref().expect("listening TLS server has a listener");
+                let listener = state
+                    .listener
+                    .as_ref()
+                    .expect("listening TLS server has a listener");
                 match listener.accept() {
-                    Ok((stream, _)) => Ok(Some((stream, state.config.clone(), state.callback.clone()))),
+                    Ok((stream, _)) => {
+                        Ok(Some((stream, state.config.clone(), state.callback.clone())))
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
                     Err(error) => Err(map_io_error(error)),
                 }
@@ -539,19 +577,29 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
             let Some((stream, config, callback)) = accepted else {
                 break;
             };
-            stream.set_nonblocking(false).map_err(map_io_error)
+            stream
+                .set_nonblocking(false)
+                .map_err(map_io_error)
                 .map_err(tsonic_rust_runtime::TsonicError::from)?;
             let timeout = std::time::Duration::from_secs(5);
-            stream.set_read_timeout(Some(timeout)).map_err(map_io_error)
+            stream
+                .set_read_timeout(Some(timeout))
+                .map_err(map_io_error)
                 .map_err(tsonic_rust_runtime::TsonicError::from)?;
-            stream.set_write_timeout(Some(timeout)).map_err(map_io_error)
+            stream
+                .set_write_timeout(Some(timeout))
+                .map_err(map_io_error)
                 .map_err(tsonic_rust_runtime::TsonicError::from)?;
             crate::background::spawn(
                 move || {
-                    let connection = rustls::ServerConnection::new(config).map_err(map_tls_error)?;
+                    let connection =
+                        rustls::ServerConnection::new(config).map_err(map_tls_error)?;
                     let mut stream = rustls::StreamOwned::new(connection, stream);
                     while stream.conn.is_handshaking() {
-                        stream.conn.complete_io(&mut stream.sock).map_err(map_io_error)?;
+                        stream
+                            .conn
+                            .complete_io(&mut stream.sock)
+                            .map_err(map_io_error)?;
                     }
                     Ok(stream)
                 },
@@ -577,9 +625,12 @@ fn register_server(server: &TlsServer) {
     }
     let id = NEXT_RUNTIME_SERVER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     RUNTIME_SERVERS.with(|servers| {
-        servers.borrow_mut().insert(id, RuntimeServer {
-            state: Rc::downgrade(&server.state),
-        });
+        servers.borrow_mut().insert(
+            id,
+            RuntimeServer {
+                state: Rc::downgrade(&server.state),
+            },
+        );
     });
 }
 
@@ -590,9 +641,8 @@ fn client_config(reject_unauthorized: bool, ca: Vec<String>) -> NodeResult<rustl
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification::new()))
             .with_no_client_auth());
     }
-    let mut roots = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-    );
+    let mut roots =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     for pem in ca {
         for certificate in parse_certificates(&pem)? {
             roots.add(certificate).map_err(map_tls_error)?;
@@ -607,12 +657,16 @@ fn server_config(options: &SourceServerOptions) -> NodeResult<rustls::ServerConf
     let certificate = options.cert.as_deref().ok_or_else(|| {
         NodeError::new("ERR_TLS_CERT_REQUIRED", "TLS server options require cert")
     })?;
-    let key = options.key.as_deref().ok_or_else(|| {
-        NodeError::new("ERR_TLS_KEY_REQUIRED", "TLS server options require key")
-    })?;
+    let key = options
+        .key
+        .as_deref()
+        .ok_or_else(|| NodeError::new("ERR_TLS_KEY_REQUIRED", "TLS server options require key"))?;
     let certificates = parse_certificates(certificate)?;
     if certificates.is_empty() {
-        return Err(NodeError::new("ERR_TLS_CERT_REQUIRED", "TLS certificate chain is empty"));
+        return Err(NodeError::new(
+            "ERR_TLS_CERT_REQUIRED",
+            "TLS certificate chain is empty",
+        ));
     }
     let private_key = parse_private_key(key)?;
     let builder = rustls::ServerConfig::builder();
@@ -635,7 +689,7 @@ fn server_config(options: &SourceServerOptions) -> NodeResult<rustls::ServerConf
         } else {
             verifier.allow_unauthenticated().build()
         }
-        .map_err(map_tls_error)?;
+        .map_err(|error| NodeError::new("ERR_TLS_CERT", error.to_string()))?;
         builder
             .with_client_cert_verifier(verifier)
             .with_single_cert(certificates, private_key)
@@ -689,24 +743,32 @@ fn dense_source_strings(
         .into_iter()
         .enumerate()
         .map(|(index, value)| {
-            value.ok_or_else(|| NodeError::new(
-                "ERR_INVALID_ARG_VALUE",
-                format!("{name}[{index}] must be a present string"),
-            ))
+            value.ok_or_else(|| {
+                NodeError::new(
+                    "ERR_INVALID_ARG_VALUE",
+                    format!("{name}[{index}] must be a present string"),
+                )
+            })
         })
         .collect()
 }
 
 fn source_port(value: f64) -> NodeResult<u16> {
     if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u16::MAX as f64 {
-        return Err(NodeError::new("ERR_SOCKET_BAD_PORT", "port must be an unsigned 16-bit integer"));
+        return Err(NodeError::new(
+            "ERR_SOCKET_BAD_PORT",
+            "port must be an unsigned 16-bit integer",
+        ));
     }
     Ok(value as u16)
 }
 
 fn source_timeout(value: f64) -> NodeResult<u64> {
     if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u64::MAX as f64 {
-        return Err(NodeError::new("ERR_OUT_OF_RANGE", "timeout must be a non-negative integer"));
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "timeout must be a non-negative integer",
+        ));
     }
     Ok(value as u64)
 }

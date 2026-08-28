@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
-use crate::stream::{Readable, Writable};
+use crate::stream::StreamEventState;
 use filetime::FileTime;
 use tsonic_rust_js::JsArray;
 

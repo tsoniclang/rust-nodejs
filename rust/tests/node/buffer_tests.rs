@@ -275,7 +275,7 @@ fn buffer_blob_file_and_constants_are_closed_carriers() {
     assert_eq!(file.last_modified(), 123);
     assert_eq!(file.content_type(), "text/plain");
     assert_eq!(file.text().unwrap(), "file");
-    assert_eq!(file.array_buffer().byte_length(), 4);
+    assert_eq!(file.array_buffer().byte_length(), 4.0);
     assert_eq!(tsonic_rust_node::buffer::file_name(&file), "a.txt");
     assert_eq!(tsonic_rust_node::buffer::file_last_modified(&file), 123);
     assert_eq!(

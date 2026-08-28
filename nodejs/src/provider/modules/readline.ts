@@ -182,7 +182,7 @@ function interfaceMethod(
   resultCarrier: RustTargetTypeRef,
   fallible: boolean,
 ): RustProviderOperationDefinition {
-  return {
+  const operation = {
     exportId: interfaceId,
     memberId: `${interfaceId}.${member}`,
     operationKind: "method",
@@ -195,8 +195,10 @@ function interfaceMethod(
     resultCarrier,
     receiverCarrier: readlineInterfaceCarrier,
     parameterCarriers: parameters,
-    ...(fallible ? providerNativeFallibility : {}),
-  };
+  } as const;
+  return fallible
+    ? { ...operation, ...providerNativeFallibility }
+    : operation;
 }
 
 function interfaceProperty(
