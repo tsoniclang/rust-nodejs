@@ -70,6 +70,22 @@ impl Socket {
         Ok(true)
     }
 
+    pub fn write_buffer(&mut self, data: &crate::buffer::Buffer) -> NodeResult<bool> {
+        self.write(&data.as_bytes())
+    }
+
+    pub fn write_string(&mut self, data: &str) -> NodeResult<bool> {
+        self.write(data.as_bytes())
+    }
+
+    pub fn read_buffer(&mut self) -> NodeResult<crate::buffer::Buffer> {
+        let mut data = vec![0; 16 * 1024];
+        let read = self.stream_mut()?.read(&mut data).map_err(map_net_error)?;
+        data.truncate(read);
+        self.bytes_read = self.bytes_read.saturating_add(read as u64);
+        Ok(crate::buffer::Buffer::from_bytes(data))
+    }
+
     pub fn read_to_end(&mut self) -> NodeResult<Vec<u8>> {
         let mut data = Vec::new();
         self.stream_mut()?
@@ -86,6 +102,18 @@ impl Socket {
         self.stream()?
             .shutdown(Shutdown::Write)
             .map_err(map_net_error)
+    }
+
+    pub fn end_empty(&mut self) -> NodeResult<()> {
+        self.end(None)
+    }
+
+    pub fn end_buffer(&mut self, data: &crate::buffer::Buffer) -> NodeResult<()> {
+        self.end(Some(&data.as_bytes()))
+    }
+
+    pub fn end_string(&mut self, data: &str) -> NodeResult<()> {
+        self.end(Some(data.as_bytes()))
     }
 
     pub fn shutdown(&self) -> NodeResult<()> {
@@ -164,8 +192,16 @@ impl Socket {
         self.bytes_read
     }
 
+    pub fn bytes_read_number(&self) -> f64 {
+        self.bytes_read as f64
+    }
+
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
+    }
+
+    pub fn bytes_written_number(&self) -> f64 {
+        self.bytes_written as f64
     }
 
     pub fn buffer_size(&self) -> usize {
@@ -192,6 +228,11 @@ impl Socket {
 
     pub fn set_no_delay(&self, no_delay: bool) -> NodeResult<()> {
         self.stream()?.set_nodelay(no_delay).map_err(map_net_error)
+    }
+
+    pub fn set_no_delay_chain(&mut self, no_delay: bool) -> NodeResult<&mut Self> {
+        self.set_no_delay(no_delay)?;
+        Ok(self)
     }
 
     pub fn set_keep_alive(
@@ -232,6 +273,19 @@ impl Socket {
             .map_err(map_net_error)
     }
 
+    pub fn set_timeout_number(&mut self, timeout_millis: f64) -> NodeResult<&mut Self> {
+        if !timeout_millis.is_finite() || timeout_millis.fract() != 0.0 ||
+            timeout_millis < 0.0 || timeout_millis > u64::MAX as f64
+        {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "socket timeout must be a non-negative integer",
+            ));
+        }
+        self.set_timeout(timeout_millis as u64)?;
+        Ok(self)
+    }
+
     pub fn timeout(&self) -> Option<u64> {
         self.timeout
     }
@@ -248,8 +302,18 @@ impl Socket {
         self.refed = true;
     }
 
+    pub fn ref_chain(&mut self) -> &mut Self {
+        self.r#ref();
+        self
+    }
+
     pub fn unref(&mut self) {
         self.refed = false;
+    }
+
+    pub fn unref_chain(&mut self) -> &mut Self {
+        self.unref();
+        self
     }
 
     pub fn has_ref(&self) -> bool {
@@ -260,8 +324,18 @@ impl Socket {
         self.paused = true;
     }
 
+    pub fn pause_chain(&mut self) -> &mut Self {
+        self.pause();
+        self
+    }
+
     pub fn resume(&mut self) {
         self.paused = false;
+    }
+
+    pub fn resume_chain(&mut self) -> &mut Self {
+        self.resume();
+        self
     }
 
     pub fn is_paused(&self) -> bool {

@@ -1,7 +1,7 @@
 pub fn pipeline(readable: &mut Readable, writable: &mut Writable) -> NodeResult<()> {
     while let Some(chunk) = readable.read() {
         if !writable.write(chunk) {
-            break;
+            writable.flush();
         }
     }
     writable.end();

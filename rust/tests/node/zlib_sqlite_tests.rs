@@ -117,17 +117,6 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         ..Default::default()
     };
     assert_eq!(brotli_options.chunk_size, 4096);
-    let zstd_options = tsonic_rust_node::zlib::ZstdOptions {
-        flush: Some(tsonic_rust_node::zlib::constants::ZSTD_e_flush),
-        finish_flush: Some(tsonic_rust_node::zlib::constants::ZSTD_e_end),
-        chunk_size: 1024,
-        max_output_length: Some(1024),
-        dictionary: Some(Buffer::from_bytes(vec![1, 2, 3])),
-        info: true,
-        ..Default::default()
-    };
-    assert_eq!(zstd_options.dictionary.unwrap().len(), 3);
-
     let mut gzip = tsonic_rust_node::zlib::create_gzip(Some(options));
     let output = gzip.process(&input).unwrap();
     assert_eq!(gzip.bytes_written(), input.len());
@@ -203,12 +192,6 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    assert!(tsonic_rust_node::zlib::zstd_compress_sync(&input).is_err());
-    assert!(tsonic_rust_node::zlib::zstd_decompress_sync(&input).is_err());
-    let mut zstd = tsonic_rust_node::zlib::create_zstd_compress(Some(Default::default()));
-    assert!(zstd.process(&input).is_err());
-    let mut unzstd = tsonic_rust_node::zlib::create_zstd_decompress(Some(Default::default()));
-    assert!(unzstd.process(&input).is_err());
 }
 
 #[test]

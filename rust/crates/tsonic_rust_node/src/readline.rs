@@ -1,15 +1,13 @@
-use std::collections::VecDeque;
+use crate::buffer::Buffer;
+use crate::error::{NodeError, NodeResult};
+use crate::stream::{Readable, Writable};
 
 #[derive(Debug, Clone, Default)]
-pub struct Interface {
-    input: VecDeque<String>,
-    output: Vec<String>,
-    closed: bool,
-    paused: bool,
-    prompt: String,
-    line: String,
-    cursor: usize,
-    terminal: bool,
+pub struct SourceInterfaceOptions {
+    pub input: Readable,
+    pub output: Option<Writable>,
+    pub terminal: Option<bool>,
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,64 +16,75 @@ pub struct CursorPos {
     pub cols: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Key {
-    pub sequence: Option<String>,
-    pub name: Option<String>,
-    pub ctrl: bool,
-    pub meta: bool,
-    pub shift: bool,
+#[derive(Debug)]
+pub struct Interface {
+    input: Readable,
+    output: Option<Writable>,
+    pending_input: Vec<u8>,
+    closed: bool,
+    paused: bool,
+    prompt: String,
+    line: String,
+    cursor: usize,
+    terminal: bool,
 }
 
 impl Interface {
-    pub fn new(lines: impl IntoIterator<Item = String>) -> Self {
+    pub fn create(options: SourceInterfaceOptions) -> Self {
         Self {
-            input: lines.into_iter().collect(),
-            output: Vec::new(),
+            input: options.input,
+            output: options.output,
+            pending_input: Vec::new(),
             closed: false,
             paused: false,
-            prompt: "> ".to_string(),
+            prompt: options.prompt.unwrap_or_else(|| "> ".to_string()),
             line: String::new(),
             cursor: 0,
-            terminal: false,
+            terminal: options.terminal.unwrap_or(false),
         }
     }
 
-    pub fn question(&mut self, query: &str) -> Option<String> {
+    pub fn question_callable<E>(
+        &mut self,
+        query: &str,
+        callback: tsonic_rust_runtime::Callable<(String,), Result<(), E>>,
+    ) -> NodeResult<()>
+    where
+        E: std::fmt::Display + 'static,
+    {
+        self.write_output(query)?;
+        let answer = self.next_line()?.ok_or_else(|| NodeError::new(
+            "ERR_READLINE_EOF",
+            "readline input ended before an answer was available",
+        ))?;
+        crate::event_loop::enqueue_runtime_task(move || {
+            callback
+                .call((answer,))
+                .map_err(crate::error::callback_runtime_error)
+        })
+    }
+
+    pub fn write(&mut self, text: &str) -> NodeResult<()> {
         if self.closed || self.paused {
-            return None;
+            return Ok(());
         }
-        self.output.push(query.to_string());
-        self.input.pop_front()
+        self.write_output(text)?;
+        self.line.push_str(text);
+        self.cursor = self.line.encode_utf16().count();
+        Ok(())
     }
 
-    pub fn write(&mut self, text: &str) {
-        if !self.closed && !self.paused {
-            self.output.push(text.to_string());
-            self.line.push_str(text);
-            self.cursor = self.line.len();
-        }
-    }
-
-    pub fn write_key(&mut self, text: Option<&str>, key: Option<Key>) {
-        if let Some(text) = text {
-            self.write(text);
-        } else if let Some(key) = key {
-            if let Some(sequence) = key.sequence {
-                self.write(&sequence);
-            }
-        }
-    }
-
-    pub fn pause(&mut self) {
+    pub fn pause_chain(&mut self) -> &mut Self {
         self.paused = true;
+        self
     }
 
-    pub fn resume(&mut self) {
+    pub fn resume_chain(&mut self) -> &mut Self {
         self.paused = false;
+        self
     }
 
-    pub fn paused(&self) -> bool {
+    pub fn is_paused(&self) -> bool {
         self.paused
     }
 
@@ -83,34 +92,32 @@ impl Interface {
         self.closed = true;
     }
 
-    pub fn closed(&self) -> bool {
-        self.closed
-    }
-
-    pub fn output(&self) -> &[String] {
-        &self.output
-    }
-
     pub fn set_prompt(&mut self, prompt: &str) {
         self.prompt = prompt.to_string();
     }
 
-    pub fn get_prompt(&self) -> &str {
-        &self.prompt
+    pub fn get_prompt(&self) -> String {
+        self.prompt.clone()
     }
 
-    pub fn prompt(&mut self, _preserve_cursor: bool) {
+    pub fn prompt(&mut self) -> NodeResult<()> {
         if !self.closed && !self.paused {
-            self.output.push(self.prompt.clone());
+            let prompt = self.prompt.clone();
+            self.write_output(&prompt)?;
         }
+        Ok(())
     }
 
-    pub fn line(&self) -> &str {
-        &self.line
+    pub fn line(&self) -> String {
+        self.line.clone()
     }
 
-    pub fn cursor(&self) -> usize {
-        self.cursor
+    pub fn cursor_number(&self) -> f64 {
+        self.cursor as f64
+    }
+
+    pub fn terminal(&self) -> bool {
+        self.terminal
     }
 
     pub fn get_cursor_pos(&self) -> CursorPos {
@@ -120,131 +127,46 @@ impl Interface {
         }
     }
 
-    pub fn terminal(&self) -> bool {
-        self.terminal
-    }
-
-    pub fn set_terminal(&mut self, terminal: bool) {
-        self.terminal = terminal;
-    }
-
-    pub fn next_line(&mut self) -> Option<String> {
+    pub fn next_line(&mut self) -> NodeResult<Option<String>> {
         if self.closed || self.paused {
-            None
-        } else {
-            self.input.pop_front()
+            return Ok(None);
+        }
+        loop {
+            if let Some(newline) = self.pending_input.iter().position(|byte| *byte == b'\n') {
+                let mut bytes = self.pending_input.drain(..=newline).collect::<Vec<_>>();
+                bytes.pop();
+                if bytes.last() == Some(&b'\r') {
+                    bytes.pop();
+                }
+                return String::from_utf8(bytes)
+                    .map(Some)
+                    .map_err(|error| NodeError::new("ERR_INVALID_UTF8", error.to_string()));
+            }
+            let Some(chunk) = self.input.read_result()? else {
+                if self.pending_input.is_empty() {
+                    return Ok(None);
+                }
+                let bytes = std::mem::take(&mut self.pending_input);
+                return String::from_utf8(bytes)
+                    .map(Some)
+                    .map_err(|error| NodeError::new("ERR_INVALID_UTF8", error.to_string()));
+            };
+            self.pending_input.extend_from_slice(&chunk.as_bytes());
         }
     }
 
-    pub fn remaining_lines(&self) -> Vec<String> {
-        self.input.iter().cloned().collect()
-    }
-}
-
-pub fn create_interface(lines: impl IntoIterator<Item = String>) -> Interface {
-    Interface::new(lines)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Readline {
-    stream: Vec<String>,
-    auto_commit: bool,
-    options: ReadlineOptions,
-    pending: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ReadlineOptions {
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub terminal: bool,
-    pub completer: Option<String>,
-    pub auto_commit: bool,
-    pub signal: Option<String>,
-    pub history_size: Option<usize>,
-    pub history: Option<Vec<String>>,
-    pub remove_history_duplicates: bool,
-    pub escape_code_timeout: Option<u64>,
-    pub prompt: Option<String>,
-    pub crlf_delay: Option<u64>,
-    pub tab_size: Option<usize>,
-}
-
-impl Readline {
-    pub fn new(auto_commit: bool) -> Self {
-        Self::with_options(ReadlineOptions {
-            auto_commit,
-            ..Default::default()
-        })
-    }
-
-    pub fn with_options(options: ReadlineOptions) -> Self {
-        Self {
-            stream: Vec::new(),
-            auto_commit: options.auto_commit,
-            options,
-            pending: Vec::new(),
+    fn write_output(&mut self, text: &str) -> NodeResult<()> {
+        let Some(output) = &mut self.output else {
+            return Ok(());
+        };
+        let buffer = Buffer::from_string(text, Some("utf8"))?;
+        if !output.write(buffer) {
+            output.flush();
         }
-    }
-
-    pub fn clear_line(&mut self, direction: i32) -> &mut Self {
-        self.enqueue(format!("clearLine:{direction}"));
-        self
-    }
-
-    pub fn clear_screen_down(&mut self) -> &mut Self {
-        self.enqueue("clearScreenDown".to_string());
-        self
-    }
-
-    pub fn cursor_to(&mut self, x: usize, y: Option<usize>) -> &mut Self {
-        self.enqueue(format!("cursorTo:{x}:{}", y.unwrap_or(0)));
-        self
-    }
-
-    pub fn move_cursor(&mut self, dx: isize, dy: isize) -> &mut Self {
-        self.enqueue(format!("moveCursor:{dx}:{dy}"));
-        self
-    }
-
-    pub fn commit(&mut self) {
-        self.stream.append(&mut self.pending);
-    }
-
-    pub fn rollback(&mut self) -> &mut Self {
-        self.pending.clear();
-        self
-    }
-
-    pub fn stream(&self) -> &[String] {
-        &self.stream
-    }
-
-    pub fn pending(&self) -> &[String] {
-        &self.pending
-    }
-
-    pub fn auto_commit(&self) -> bool {
-        self.auto_commit
-    }
-
-    pub fn options(&self) -> &ReadlineOptions {
-        &self.options
-    }
-
-    fn enqueue(&mut self, value: String) {
-        if self.auto_commit {
-            self.stream.push(value);
-        } else {
-            self.pending.push(value);
-        }
+        Ok(())
     }
 }
 
-pub mod promises {
-    pub use super::{create_interface, CursorPos, Interface, Key, Readline};
-
-    pub fn create_readline(auto_commit: bool) -> Readline {
-        Readline::new(auto_commit)
-    }
+pub fn create_interface(options: SourceInterfaceOptions) -> Interface {
+    Interface::create(options)
 }

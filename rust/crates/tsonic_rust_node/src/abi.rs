@@ -307,7 +307,7 @@ pub use crate::process::{
     thread_cpu_usage as process_thread_cpu_usage, title as process_title, umask as process_umask,
     unref_handle as process_unref_handle, uptime as process_uptime, version as process_version,
     versions as process_versions, CpuUsage as ProcessCpuUsage, MemoryUsage as ProcessMemoryUsage,
-    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning, ProcessWriteStream,
+    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning,
     Release as ProcessRelease, ResourceUsage as ProcessResourceUsage,
 };
 pub use crate::punycode::{to_ascii as punycode_to_ascii, to_unicode as punycode_to_unicode};
@@ -321,9 +321,9 @@ pub use crate::querystring::{
     StringifyOptions,
 };
 pub use crate::readline::{
-    create_interface as readline_create_interface, promises as readline_promises,
-    CursorPos as ReadlineCursorPos, Interface as ReadlineInterface, Key as ReadlineKey,
-    Readline as ReadlinePromisesController,
+    create_interface as readline_create_interface,
+    CursorPos as ReadlineCursorPos, Interface as ReadlineInterface,
+    SourceInterfaceOptions as ReadlineInterfaceOptions,
 };
 pub use crate::sqlite::{
     DatabaseSync as SqliteDatabaseSync, RunResult as SqliteRunResult, SqlValue,
@@ -388,13 +388,12 @@ pub use crate::util::{
 };
 pub use crate::worker_threads::{
     get_environment_data as worker_get_environment_data, is_main_thread as worker_is_main_thread,
-    is_marked_as_untransferable_token as worker_is_marked_as_untransferable_token,
-    mark_as_untransferable_token as worker_mark_as_untransferable_token,
-    move_message_port_to_context as worker_move_message_port_to_context,
+    is_marked_as_untransferable as worker_is_marked_as_untransferable,
+    mark_as_untransferable as worker_mark_as_untransferable,
     parent_port as worker_parent_port, receive_message_on_port as worker_receive_message_on_port,
-    set_environment_data as worker_set_environment_data, worker_data, BroadcastChannel,
-    ClonedValue as WorkerClonedValue, MessageChannel, MessagePort,
-    ResourceLimits as WorkerResourceLimits, Worker, WorkerOptions,
+    set_environment_data as worker_set_environment_data, thread_id as worker_thread_id,
+    worker_data, MessageChannel, MessagePort, StructuredCloneValue as WorkerStructuredCloneValue,
+    Worker, WorkerOptions,
 };
 pub use crate::zlib::{
     brotli_compress_sync as zlib_brotli_compress_sync,
@@ -404,16 +403,13 @@ pub use crate::zlib::{
     create_deflate as zlib_create_deflate, create_deflate_raw as zlib_create_deflate_raw,
     create_gunzip as zlib_create_gunzip, create_gzip as zlib_create_gzip,
     create_inflate as zlib_create_inflate, create_inflate_raw as zlib_create_inflate_raw,
-    create_unzip as zlib_create_unzip, create_zstd_compress as zlib_create_zstd_compress,
-    create_zstd_decompress as zlib_create_zstd_decompress,
+    create_unzip as zlib_create_unzip,
     deflate_raw_sync as zlib_deflate_raw_sync, deflate_sync as zlib_deflate_sync,
     deflate_sync_with_options as zlib_deflate_sync_with_options,
     gunzip_string_sync as zlib_gunzip_string_sync, gunzip_sync as zlib_gunzip_sync,
     gzip_string_sync as zlib_gzip_string_sync, gzip_sync as zlib_gzip_sync,
     gzip_sync_with_options as zlib_gzip_sync_with_options,
     inflate_raw_sync as zlib_inflate_raw_sync, inflate_sync as zlib_inflate_sync,
-    unzip_sync as zlib_unzip_sync, zstd_compress_sync as zlib_zstd_compress_sync,
-    zstd_decompress_sync as zlib_zstd_decompress_sync, BrotliOptions, Deflate, DeflateRaw, Gunzip,
-    Gzip, Inflate, InflateRaw, Unzip, Zlib, ZlibMode, ZlibOptions, ZstdCompress, ZstdDecompress,
-    ZstdOptions,
+    unzip_sync as zlib_unzip_sync, BrotliOptions, Deflate, DeflateRaw, Gunzip, Gzip, Inflate,
+    InflateRaw, Unzip, Zlib, ZlibMode, ZlibOptions,
 };

@@ -1,7 +1,18 @@
 use std::io::{Read, Write};
 
-use flate2::read::{DeflateDecoder, GzDecoder};
-use flate2::write::{DeflateEncoder, GzEncoder};
+use flate2::read::{
+    DeflateDecoder as DeflateReadDecoder,
+    GzDecoder as GzReadDecoder,
+    ZlibDecoder as ZlibReadDecoder,
+};
+use flate2::write::{
+    DeflateDecoder as DeflateWriteDecoder,
+    DeflateEncoder as DeflateWriteEncoder,
+    GzDecoder as GzWriteDecoder,
+    GzEncoder as GzWriteEncoder,
+    ZlibDecoder as ZlibWriteDecoder,
+    ZlibEncoder as ZlibWriteEncoder,
+};
 use flate2::Compression;
 
 use crate::buffer::Buffer;
@@ -48,17 +59,6 @@ pub struct BrotliOptions {
     pub info: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ZstdOptions {
-    pub flush: Option<i32>,
-    pub finish_flush: Option<i32>,
-    pub chunk_size: usize,
-    pub params: std::collections::BTreeMap<i32, i32>,
-    pub max_output_length: Option<usize>,
-    pub dictionary: Option<Buffer>,
-    pub info: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZlibMode {
     Deflate,
@@ -70,25 +70,93 @@ pub enum ZlibMode {
     Unzip,
     BrotliCompress,
     BrotliDecompress,
-    ZstdCompress,
-    ZstdDecompress,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+const MAX_PENDING_ZLIB_OUTPUT: usize = 256 * 1024 * 1024;
+
+#[derive(Debug)]
 pub struct Zlib {
     mode: ZlibMode,
     bytes_written: usize,
     closed: bool,
     options: ZlibOptions,
+    output: std::rc::Rc<std::cell::RefCell<ZlibOutput>>,
+    codec: Option<StreamingCodec>,
+}
+
+#[derive(Debug, Default)]
+struct ZlibOutput {
+    pending: std::collections::VecDeque<Buffer>,
+    pending_bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ZlibSink {
+    output: std::rc::Rc<std::cell::RefCell<ZlibOutput>>,
+}
+
+impl Write for ZlibSink {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let mut output = self.output.borrow_mut();
+        if output.pending_bytes.saturating_add(bytes.len()) > MAX_PENDING_ZLIB_OUTPUT {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "pending zlib output exceeds the finite runtime limit",
+            ));
+        }
+        if !bytes.is_empty() {
+            output.pending.push_back(Buffer::from_bytes(bytes.to_vec()));
+            output.pending_bytes += bytes.len();
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum StreamingCodec {
+    Deflate(ZlibWriteEncoder<ZlibSink>),
+    Inflate(ZlibWriteDecoder<ZlibSink>),
+    Gzip(GzWriteEncoder<ZlibSink>),
+    Gunzip(GzWriteDecoder<ZlibSink>),
+    DeflateRaw(DeflateWriteEncoder<ZlibSink>),
+    InflateRaw(DeflateWriteDecoder<ZlibSink>),
 }
 
 impl Zlib {
     pub fn new(mode: ZlibMode, options: Option<ZlibOptions>) -> Self {
+        let options = options.unwrap_or_default();
+        let output = std::rc::Rc::new(std::cell::RefCell::new(ZlibOutput::default()));
+        let sink = ZlibSink { output: output.clone() };
+        let codec = match mode {
+            ZlibMode::Deflate => Some(StreamingCodec::Deflate(ZlibWriteEncoder::new(
+                sink,
+                compression_from_level(options.level),
+            ))),
+            ZlibMode::Inflate => Some(StreamingCodec::Inflate(ZlibWriteDecoder::new(sink))),
+            ZlibMode::Gzip => Some(StreamingCodec::Gzip(GzWriteEncoder::new(
+                sink,
+                compression_from_level(options.level),
+            ))),
+            ZlibMode::Gunzip => Some(StreamingCodec::Gunzip(GzWriteDecoder::new(sink))),
+            ZlibMode::DeflateRaw => Some(StreamingCodec::DeflateRaw(
+                DeflateWriteEncoder::new(sink, compression_from_level(options.level)),
+            )),
+            ZlibMode::InflateRaw => Some(StreamingCodec::InflateRaw(
+                DeflateWriteDecoder::new(sink),
+            )),
+            ZlibMode::Unzip | ZlibMode::BrotliCompress | ZlibMode::BrotliDecompress => None,
+        };
         Self {
             mode,
             bytes_written: 0,
             closed: false,
-            options: options.unwrap_or_default(),
+            options,
+            output,
+            codec,
         }
     }
 
@@ -110,6 +178,9 @@ impl Zlib {
     pub fn reset(&mut self) {
         self.bytes_written = 0;
         self.closed = false;
+        let mode = self.mode;
+        let options = self.options.clone();
+        *self = Self::new(mode, Some(options));
     }
 
     pub fn flush(&self, callback: Option<impl FnOnce()>) {
@@ -136,7 +207,74 @@ impl Zlib {
             ZlibMode::Unzip => unzip_sync(input),
             ZlibMode::BrotliCompress => brotli_compress_sync(input),
             ZlibMode::BrotliDecompress => brotli_decompress_sync(input),
-            ZlibMode::ZstdCompress | ZlibMode::ZstdDecompress => zstd_unsupported(),
+        }
+    }
+
+    pub fn write(&mut self, input: Buffer) -> NodeResult<bool> {
+        if self.closed {
+            return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "zlib stream is closed"));
+        }
+        self.bytes_written = self.bytes_written.saturating_add(input.len());
+        let codec = self.codec.as_mut().ok_or_else(|| NodeError::new(
+            "ERR_UNSUPPORTED_OPERATION",
+            "the selected compression mode has no streaming implementation",
+        ))?;
+        codec.write_all(&input.as_bytes()).map_err(map_zlib_error)?;
+        codec.flush().map_err(map_zlib_error)?;
+        Ok(self.output.borrow().pending_bytes < self.options.chunk_size.max(1))
+    }
+
+    pub fn read(&mut self) -> Option<Buffer> {
+        let mut state = self.output.borrow_mut();
+        let output = state.pending.pop_front();
+        if let Some(output) = &output {
+            state.pending_bytes = state.pending_bytes.saturating_sub(output.len());
+        }
+        output
+    }
+
+    pub fn end(&mut self) -> NodeResult<()> {
+        if let Some(codec) = self.codec.as_mut() {
+            codec.finish().map_err(map_zlib_error)?;
+        }
+        self.closed = true;
+        Ok(())
+    }
+}
+
+impl Write for StreamingCodec {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Deflate(codec) => codec.write(bytes),
+            Self::Inflate(codec) => codec.write(bytes),
+            Self::Gzip(codec) => codec.write(bytes),
+            Self::Gunzip(codec) => codec.write(bytes),
+            Self::DeflateRaw(codec) => codec.write(bytes),
+            Self::InflateRaw(codec) => codec.write(bytes),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Deflate(codec) => codec.flush(),
+            Self::Inflate(codec) => codec.flush(),
+            Self::Gzip(codec) => codec.flush(),
+            Self::Gunzip(codec) => codec.flush(),
+            Self::DeflateRaw(codec) => codec.flush(),
+            Self::InflateRaw(codec) => codec.flush(),
+        }
+    }
+}
+
+impl StreamingCodec {
+    fn finish(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Deflate(codec) => codec.try_finish(),
+            Self::Inflate(codec) => codec.try_finish(),
+            Self::Gzip(codec) => codec.try_finish(),
+            Self::Gunzip(codec) => codec.try_finish(),
+            Self::DeflateRaw(codec) => codec.try_finish(),
+            Self::InflateRaw(codec) => codec.try_finish(),
         }
     }
 }
@@ -150,8 +288,6 @@ pub type InflateRaw = Zlib;
 pub type Unzip = Zlib;
 pub type BrotliCompress = Zlib;
 pub type BrotliDecompress = Zlib;
-pub type ZstdCompress = Zlib;
-pub type ZstdDecompress = Zlib;
 
 pub fn create_deflate(options: Option<ZlibOptions>) -> Deflate {
     Zlib::new(ZlibMode::Deflate, options)
@@ -189,20 +325,12 @@ pub fn create_brotli_decompress(_options: Option<BrotliOptions>) -> BrotliDecomp
     Zlib::new(ZlibMode::BrotliDecompress, None)
 }
 
-pub fn create_zstd_compress(_options: Option<ZstdOptions>) -> ZstdCompress {
-    Zlib::new(ZlibMode::ZstdCompress, None)
-}
-
-pub fn create_zstd_decompress(_options: Option<ZstdOptions>) -> ZstdDecompress {
-    Zlib::new(ZlibMode::ZstdDecompress, None)
-}
-
 pub fn gzip_sync(input: &Buffer) -> NodeResult<Buffer> {
     gzip_sync_with_options(input, &ZlibOptions::default())
 }
 
 pub fn gzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
-    let mut encoder = GzEncoder::new(Vec::new(), compression_from_level(options.level));
+    let mut encoder = GzWriteEncoder::new(Vec::new(), compression_from_level(options.level));
     encoder
         .write_all(&input.as_bytes())
         .map_err(map_zlib_error)?;
@@ -213,11 +341,15 @@ pub fn gzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResu
 }
 
 pub fn gunzip_sync(input: &Buffer) -> NodeResult<Buffer> {
+    gunzip_sync_with_options(input, &ZlibOptions::default())
+}
+
+pub fn gunzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
     let bytes = input.as_bytes();
-    let mut decoder = GzDecoder::new(bytes.as_slice());
+    let mut decoder = GzReadDecoder::new(bytes.as_slice());
     let mut output = Vec::new();
     decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    Ok(Buffer::from_bytes(output))
+    limit_output(output, options.max_output_length)
 }
 
 pub fn deflate_sync(input: &Buffer) -> NodeResult<Buffer> {
@@ -225,7 +357,7 @@ pub fn deflate_sync(input: &Buffer) -> NodeResult<Buffer> {
 }
 
 pub fn deflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
-    let mut encoder = DeflateEncoder::new(Vec::new(), compression_from_level(options.level));
+    let mut encoder = ZlibWriteEncoder::new(Vec::new(), compression_from_level(options.level));
     encoder
         .write_all(&input.as_bytes())
         .map_err(map_zlib_error)?;
@@ -236,19 +368,43 @@ pub fn deflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeR
 }
 
 pub fn inflate_sync(input: &Buffer) -> NodeResult<Buffer> {
+    inflate_sync_with_options(input, &ZlibOptions::default())
+}
+
+pub fn inflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
     let bytes = input.as_bytes();
-    let mut decoder = DeflateDecoder::new(bytes.as_slice());
+    let mut decoder = ZlibReadDecoder::new(bytes.as_slice());
     let mut output = Vec::new();
     decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    Ok(Buffer::from_bytes(output))
+    limit_output(output, options.max_output_length)
 }
 
 pub fn deflate_raw_sync(input: &Buffer) -> NodeResult<Buffer> {
-    deflate_sync(input)
+    deflate_raw_sync_with_options(input, &ZlibOptions::default())
+}
+
+pub fn deflate_raw_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
+    let mut encoder = DeflateWriteEncoder::new(
+        Vec::new(),
+        compression_from_level(options.level),
+    );
+    encoder.write_all(&input.as_bytes()).map_err(map_zlib_error)?;
+    limit_output(
+        encoder.finish().map_err(map_zlib_error)?,
+        options.max_output_length,
+    )
 }
 
 pub fn inflate_raw_sync(input: &Buffer) -> NodeResult<Buffer> {
-    inflate_sync(input)
+    inflate_raw_sync_with_options(input, &ZlibOptions::default())
+}
+
+pub fn inflate_raw_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
+    let bytes = input.as_bytes();
+    let mut decoder = DeflateReadDecoder::new(bytes.as_slice());
+    let mut output = Vec::new();
+    decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
+    limit_output(output, options.max_output_length)
 }
 
 pub fn unzip_sync(input: &Buffer) -> NodeResult<Buffer> {
@@ -282,14 +438,6 @@ pub fn brotli_decompress_sync(input: &Buffer) -> NodeResult<Buffer> {
     Ok(Buffer::from_bytes(output))
 }
 
-pub fn zstd_compress_sync(_input: &Buffer) -> NodeResult<Buffer> {
-    zstd_unsupported()
-}
-
-pub fn zstd_decompress_sync(_input: &Buffer) -> NodeResult<Buffer> {
-    zstd_unsupported()
-}
-
 fn compression_from_level(level: i32) -> Compression {
     if level == constants::Z_DEFAULT_COMPRESSION {
         Compression::default()
@@ -306,13 +454,6 @@ fn limit_output(output: Vec<u8>, max_output_length: Option<usize>) -> NodeResult
         ));
     }
     Ok(Buffer::from_bytes(output))
-}
-
-fn zstd_unsupported<T>() -> NodeResult<T> {
-    Err(NodeError::new(
-        "ERR_UNSUPPORTED_OPERATION",
-        "Zstd compression requires an approved zstd dependency",
-    ))
 }
 
 fn map_zlib_error(error: std::io::Error) -> NodeError {
@@ -491,4 +632,237 @@ pub mod constants {
     pub const ZSTD_error_noForwardProgress_destFull: i32 = 80;
     pub const ZSTD_error_noForwardProgress_inputEmpty: i32 = 82;
     pub const ZSTD_error_stabilityCondition_notRespected: i32 = 100;
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SourceZlibOptions {
+    pub flush: Option<f64>,
+    pub finish_flush: Option<f64>,
+    pub chunk_size: Option<f64>,
+    pub window_bits: Option<f64>,
+    pub level: Option<f64>,
+    pub mem_level: Option<f64>,
+    pub strategy: Option<f64>,
+    pub max_output_length: Option<f64>,
+    pub dictionary: Option<Buffer>,
+    pub info: Option<bool>,
+}
+
+impl SourceZlibOptions {
+    fn into_runtime(self) -> NodeResult<ZlibOptions> {
+        let defaults = ZlibOptions::default();
+        Ok(ZlibOptions {
+            flush: optional_i32(self.flush, "flush")?,
+            finish_flush: optional_i32(self.finish_flush, "finishFlush")?,
+            chunk_size: optional_usize(self.chunk_size, "chunkSize")?
+                .unwrap_or(defaults.chunk_size),
+            window_bits: optional_i32(self.window_bits, "windowBits")?,
+            level: optional_i32(self.level, "level")?.unwrap_or(defaults.level),
+            mem_level: optional_i32(self.mem_level, "memLevel")?,
+            strategy: optional_i32(self.strategy, "strategy")?.unwrap_or(defaults.strategy),
+            max_output_length: optional_usize(self.max_output_length, "maxOutputLength")?,
+            dictionary: self.dictionary,
+            info: self.info.unwrap_or(false),
+        })
+    }
+}
+
+pub fn gzip_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    gzip_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn gunzip_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    gunzip_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn deflate_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    deflate_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn inflate_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    inflate_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn deflate_raw_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    deflate_raw_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn inflate_raw_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+    inflate_raw_sync_with_options(input, &options.into_runtime()?)
+}
+
+pub fn create_gzip_source(options: SourceZlibOptions) -> NodeResult<Gzip> {
+    Ok(create_gzip(Some(options.into_runtime()?)))
+}
+
+pub fn create_deflate_source(options: SourceZlibOptions) -> NodeResult<Deflate> {
+    Ok(create_deflate(Some(options.into_runtime()?)))
+}
+
+pub fn create_inflate_source(options: SourceZlibOptions) -> NodeResult<Inflate> {
+    Ok(create_inflate(Some(options.into_runtime()?)))
+}
+
+pub fn create_gunzip_source(options: SourceZlibOptions) -> NodeResult<Gunzip> {
+    Ok(create_gunzip(Some(options.into_runtime()?)))
+}
+
+pub fn create_deflate_raw_source(options: SourceZlibOptions) -> NodeResult<DeflateRaw> {
+    Ok(create_deflate_raw(Some(options.into_runtime()?)))
+}
+
+pub fn create_inflate_raw_source(options: SourceZlibOptions) -> NodeResult<InflateRaw> {
+    Ok(create_inflate_raw(Some(options.into_runtime()?)))
+}
+
+pub fn gzip_callable<E>(
+    input: &Buffer,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_callable(input, callback, gzip_sync)
+}
+
+pub fn gunzip_callable<E>(
+    input: &Buffer,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_callable(input, callback, gunzip_sync)
+}
+
+pub fn deflate_callable<E>(
+    input: &Buffer,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_callable(input, callback, deflate_sync)
+}
+
+pub fn inflate_callable<E>(
+    input: &Buffer,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_callable(input, callback, inflate_sync)
+}
+
+pub fn gzip_options_callable<E>(
+    input: &Buffer,
+    options: SourceZlibOptions,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_options_callable(input, options, callback, gzip_sync_with_options)
+}
+
+pub fn gunzip_options_callable<E>(
+    input: &Buffer,
+    options: SourceZlibOptions,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_options_callable(input, options, callback, gunzip_sync_with_options)
+}
+
+pub fn deflate_options_callable<E>(
+    input: &Buffer,
+    options: SourceZlibOptions,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_options_callable(input, options, callback, deflate_sync_with_options)
+}
+
+pub fn inflate_options_callable<E>(
+    input: &Buffer,
+    options: SourceZlibOptions,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    compress_options_callable(input, options, callback, inflate_sync_with_options)
+}
+
+fn compress_callable<E>(
+    input: &Buffer,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    compress: fn(&Buffer) -> NodeResult<Buffer>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    let input = input.clone();
+    crate::event_loop::enqueue_runtime_task(move || {
+        let arguments = match compress(&input) {
+            Ok(output) => (None, output),
+            Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
+        };
+        callback
+            .call(arguments)
+            .map_err(crate::error::callback_runtime_error)
+    })
+}
+
+fn compress_options_callable<E>(
+    input: &Buffer,
+    options: SourceZlibOptions,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    compress: fn(&Buffer, &ZlibOptions) -> NodeResult<Buffer>,
+) -> NodeResult<()>
+where
+    E: std::fmt::Display + 'static,
+{
+    let input = input.clone();
+    let options = options.into_runtime()?;
+    crate::event_loop::enqueue_runtime_task(move || {
+        let arguments = match compress(&input, &options) {
+            Ok(output) => (None, output),
+            Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
+        };
+        callback
+            .call(arguments)
+            .map_err(crate::error::callback_runtime_error)
+    })
+}
+
+fn optional_i32(value: Option<f64>, name: &str) -> NodeResult<Option<i32>> {
+    value.map(|value| {
+        if !value.is_finite() || value.fract() != 0.0 ||
+            value < i32::MIN as f64 || value > i32::MAX as f64
+        {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                format!("zlib option '{name}' must be a finite 32-bit integer"),
+            ));
+        }
+        Ok(value as i32)
+    }).transpose()
+}
+
+fn optional_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
+    value.map(|value| {
+        if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > usize::MAX as f64 {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                format!("zlib option '{name}' must be a non-negative integer"),
+            ));
+        }
+        Ok(value as usize)
+    }).transpose()
 }

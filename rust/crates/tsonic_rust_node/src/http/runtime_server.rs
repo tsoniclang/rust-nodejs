@@ -4,8 +4,8 @@ const RUNTIME_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5
 static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
-type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
-type RuntimeRequestHandler =
+pub(crate) type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
+pub(crate) type RuntimeRequestHandler =
     tsonic_rust_runtime::Callable<RuntimeRequestArguments, tsonic_rust_runtime::TsonicResult<()>>;
 type RuntimeListenCallback =
     tsonic_rust_runtime::Callable<(), tsonic_rust_runtime::TsonicResult<()>>;
@@ -16,13 +16,23 @@ struct RuntimeServer {
     listening_callback: Option<RuntimeListenCallback>,
 }
 
+pub(crate) trait RuntimeTransport: std::io::Read + std::io::Write {
+    fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr>;
+}
+
+impl RuntimeTransport for std::net::TcpStream {
+    fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        std::net::TcpStream::peer_addr(self)
+    }
+}
+
 struct AcceptedConnection {
-    stream: std::net::TcpStream,
+    stream: Box<dyn RuntimeTransport>,
     handler: RuntimeRequestHandler,
 }
 
 struct PendingResponse {
-    stream: std::net::TcpStream,
+    stream: Box<dyn RuntimeTransport>,
     response: ServerResponseHandle,
     omit_body: bool,
 }
@@ -216,10 +226,14 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
                 listen_callbacks.push(callback);
             }
             match server.listener.accept() {
-                Ok((stream, _)) => accepted.push(AcceptedConnection {
-                    stream,
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).map_err(runtime_http_io_error)?;
+                    stream.set_read_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
+                    stream.set_write_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
+                    accepted.push(AcceptedConnection {
+                    stream: Box::new(stream),
                     handler: server.handler.clone(),
-                }),
+                })},
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(runtime_http_io_error(error)),
             }
@@ -262,8 +276,6 @@ fn handle_runtime_connection(
 ) -> tsonic_rust_runtime::TsonicResult<Option<PendingResponse>> {
     use std::io::Write;
 
-    let _ = accepted.stream.set_nonblocking(false);
-    let _ = accepted.stream.set_read_timeout(Some(RUNTIME_IO_TIMEOUT));
     let parsed = read_runtime_request(&mut accepted.stream);
     let (request, omit_body) = match parsed {
         Ok(request) => {
@@ -289,7 +301,17 @@ fn handle_runtime_connection(
     }))
 }
 
-fn read_runtime_request(stream: &mut std::net::TcpStream) -> NodeResult<IncomingMessage> {
+pub(crate) fn accept_runtime_transport(
+    stream: Box<dyn RuntimeTransport>,
+    handler: RuntimeRequestHandler,
+) -> tsonic_rust_runtime::TsonicResult<()> {
+    if let Some(pending) = handle_runtime_connection(AcceptedConnection { stream, handler })? {
+        PENDING_RESPONSES.with(|responses| responses.borrow_mut().push(pending));
+    }
+    Ok(())
+}
+
+fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<IncomingMessage> {
     use std::io::Read;
 
     let mut bytes = Vec::new();

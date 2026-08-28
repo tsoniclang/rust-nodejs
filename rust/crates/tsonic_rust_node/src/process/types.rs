@@ -1,9 +1,7 @@
-use std::io::{IsTerminal as _, Write as _};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
 use crate::events::EventEmitter;
 use crate::os;
@@ -11,69 +9,6 @@ use tsonic_rust_js::{JsArray, JsValue};
 
 static EXIT_CODE: AtomicI32 = AtomicI32::new(i32::MIN);
 static START: OnceLock<Instant> = OnceLock::new();
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcessOutput {
-    Stdout,
-    Stderr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProcessWriteStream {
-    output: ProcessOutput,
-}
-
-impl ProcessWriteStream {
-    fn stdout() -> Self {
-        Self {
-            output: ProcessOutput::Stdout,
-        }
-    }
-
-    fn stderr() -> Self {
-        Self {
-            output: ProcessOutput::Stderr,
-        }
-    }
-
-    pub fn write_string(&self, value: &str) -> NodeResult<bool> {
-        self.write_bytes(value.as_bytes())
-    }
-
-    pub fn write_buffer(&self, value: &Buffer) -> NodeResult<bool> {
-        value.with_bytes(|bytes| self.write_bytes(bytes))
-    }
-
-    pub fn is_tty(&self) -> bool {
-        match self.output {
-            ProcessOutput::Stdout => std::io::stdout().is_terminal(),
-            ProcessOutput::Stderr => std::io::stderr().is_terminal(),
-        }
-    }
-
-    pub fn fd(&self) -> i32 {
-        match self.output {
-            ProcessOutput::Stdout => 1,
-            ProcessOutput::Stderr => 2,
-        }
-    }
-
-    fn write_bytes(&self, bytes: &[u8]) -> NodeResult<bool> {
-        let result = match self.output {
-            ProcessOutput::Stdout => {
-                let mut output = std::io::stdout().lock();
-                output.write_all(bytes).and_then(|()| output.flush())
-            }
-            ProcessOutput::Stderr => {
-                let mut output = std::io::stderr().lock();
-                output.write_all(bytes).and_then(|()| output.flush())
-            }
-        };
-        result
-            .map(|()| true)
-            .map_err(|error| NodeError::new("EIO", error.to_string()))
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryUsage {
