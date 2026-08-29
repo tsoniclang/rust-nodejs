@@ -10,19 +10,23 @@ use tsonic_rust_runtime::Callable;
 fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     let input = Buffer::from_string("source ABI payload", Some("utf8")).unwrap();
     let options = tsonic_rust_node::zlib::SourceZlibOptions {
-        level: Some(f64::from(
-            tsonic_rust_node::zlib::constants::Z_BEST_SPEED,
-        )),
+        level: Some(f64::from(tsonic_rust_node::zlib::constants::Z_BEST_SPEED)),
         max_output_length: Some(4096.0),
         ..Default::default()
     };
 
     let gzip = tsonic_rust_node::zlib::gzip_sync_source(&input, options.clone()).unwrap();
     let gunzip = tsonic_rust_node::zlib::gunzip_sync_source(&gzip, options.clone()).unwrap();
-    assert_eq!(gunzip.to_string(Some("utf8")).unwrap(), "source ABI payload");
+    assert_eq!(
+        gunzip.to_string(Some("utf8")).unwrap(),
+        "source ABI payload"
+    );
     let deflate = tsonic_rust_node::zlib::deflate_sync_source(&input, options.clone()).unwrap();
     let inflate = tsonic_rust_node::zlib::inflate_sync_source(&deflate, options.clone()).unwrap();
-    assert_eq!(inflate.to_string(Some("utf8")).unwrap(), "source ABI payload");
+    assert_eq!(
+        inflate.to_string(Some("utf8")).unwrap(),
+        "source ABI payload"
+    );
     let raw = tsonic_rust_node::zlib::deflate_raw_sync_source(&input, options.clone()).unwrap();
     let raw_inflate =
         tsonic_rust_node::zlib::inflate_raw_sync_source(&raw, options.clone()).unwrap();
@@ -33,8 +37,7 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
 
     let mut gzip_stream = tsonic_rust_node::zlib::create_gzip_source(options.clone()).unwrap();
     let stream_gzip = gzip_stream.process(&input).unwrap();
-    let mut gunzip_stream =
-        tsonic_rust_node::zlib::create_gunzip_source(options.clone()).unwrap();
+    let mut gunzip_stream = tsonic_rust_node::zlib::create_gunzip_source(options.clone()).unwrap();
     assert_eq!(
         gunzip_stream
             .process(&stream_gzip)
@@ -73,12 +76,14 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     let completions = std::rc::Rc::new(std::cell::Cell::new(0));
     let callback = || {
         let completions = std::rc::Rc::clone(&completions);
-        Callable::new(move |(error, output): (Option<tsonic_rust_node::NodeError>, Buffer)| {
-            assert!(error.is_none());
-            assert!(output.len() > 0);
-            completions.set(completions.get() + 1);
-            Ok::<(), String>(())
-        })
+        Callable::new(
+            move |(error, output): (Option<tsonic_rust_node::NodeError>, Buffer)| {
+                assert!(error.is_none());
+                assert!(output.len() > 0);
+                completions.set(completions.get() + 1);
+                Ok::<(), String>(())
+            },
+        )
     };
     tsonic_rust_node::zlib::gzip_callable(&input, callback()).unwrap();
     tsonic_rust_node::zlib::gunzip_callable(&gzip, callback()).unwrap();
@@ -90,7 +95,6 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     tsonic_rust_node::zlib::inflate_options_callable(&deflate, options, callback()).unwrap();
     tsonic_rust_node::run_event_loop().unwrap();
     assert_eq!(completions.get(), 8);
-
 }
 
 #[test]

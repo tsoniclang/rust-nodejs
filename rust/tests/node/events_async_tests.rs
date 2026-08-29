@@ -44,24 +44,24 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
     emitter.prepend_callable2(&event, &listener2).unwrap();
     emitter.prepend_callable3(&event, &listener3).unwrap();
     emitter.prepend_once_callable(&event, &listener0).unwrap();
-    emitter
-        .prepend_once_callable1(&event, &listener1)
-        .unwrap();
-    emitter
-        .prepend_once_callable2(&event, &listener2)
-        .unwrap();
-    emitter
-        .prepend_once_callable3(&event, &listener3)
-        .unwrap();
+    emitter.prepend_once_callable1(&event, &listener1).unwrap();
+    emitter.prepend_once_callable2(&event, &listener2).unwrap();
+    emitter.prepend_once_callable3(&event, &listener3).unwrap();
     emitter.on_callable2(&event, &listener2).unwrap();
     emitter.on_callable3(&event, &listener3).unwrap();
     emitter.once_callable2(&event, &listener2).unwrap();
     emitter.once_callable3(&event, &listener3).unwrap();
 
-    assert_eq!(events::listener_count_callable(&emitter, &event).unwrap(), 12);
+    assert_eq!(
+        events::listener_count_callable(&emitter, &event).unwrap(),
+        12
+    );
     assert_eq!(emitter.callable_event_names().len(), 1);
     assert!(emitter.emit_callable(&event).unwrap());
-    assert_eq!(events::listener_count_callable(&emitter, &event).unwrap(), 6);
+    assert_eq!(
+        events::listener_count_callable(&emitter, &event).unwrap(),
+        6
+    );
     assert!(emitter
         .emit_callable1(&event, JsValue::from("one".to_string()))
         .unwrap());
@@ -79,10 +79,11 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
 
     emitter.off_callable2(&event, &listener2).unwrap();
     emitter.off_callable3(&event, &listener3).unwrap();
-    assert_eq!(events::listener_count_callable(&emitter, &event).unwrap(), 2);
-    emitter
-        .remove_all_callable_listeners_for(&event)
-        .unwrap();
+    assert_eq!(
+        events::listener_count_callable(&emitter, &event).unwrap(),
+        2
+    );
+    emitter.remove_all_callable_listeners_for(&event).unwrap();
     assert_eq!(emitter.callable_event_names().len(), 0);
 
     emitter.on_callable(&other_event, &listener0).unwrap();
@@ -90,7 +91,10 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
     emitter.set_max_listeners_i32(8).unwrap();
     assert_eq!(emitter.get_max_listeners(), 8);
     emitter.remove_all_callable_listeners();
-    assert_eq!(events::listener_count_callable(&emitter, &other_event).unwrap(), 0);
+    assert_eq!(
+        events::listener_count_callable(&emitter, &other_event).unwrap(),
+        0
+    );
     assert!(calls.borrow().len() >= 30);
 }
 
