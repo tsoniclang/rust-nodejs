@@ -16,6 +16,16 @@ const expectedModules = [
   "node:util",
   "node:http",
   "node:timers",
+  "node:events",
+  "node:stream",
+  "node:dns",
+  "node:dns/promises",
+  "node:zlib",
+  "node:net",
+  "node:tls",
+  "node:https",
+  "node:readline",
+  "node:worker_threads",
   "assert",
   "assert/strict",
   "node:assert/strict",
@@ -29,6 +39,16 @@ const expectedModules = [
   "path",
   "process",
   "timers",
+  "events",
+  "stream",
+  "dns",
+  "dns/promises",
+  "zlib",
+  "net",
+  "tls",
+  "https",
+  "readline",
+  "worker_threads",
   "util",
   "url",
 ];
@@ -59,6 +79,16 @@ test("provider package declares bare Node modules as canonical aliases", () => {
     ["path", "node:path"],
     ["process", "node:process"],
     ["timers", "node:timers"],
+    ["events", "node:events"],
+    ["stream", "node:stream"],
+    ["dns", "node:dns"],
+    ["dns/promises", "node:dns/promises"],
+    ["zlib", "node:zlib"],
+    ["net", "node:net"],
+    ["tls", "node:tls"],
+    ["https", "node:https"],
+    ["readline", "node:readline"],
+    ["worker_threads", "node:worker_threads"],
     ["util", "node:util"],
     ["url", "node:url"],
   ].map(([moduleSpecifier, canonicalModuleSpecifier]) => ({
@@ -80,6 +110,43 @@ test("provider package contributes a non-empty operation row set", () => {
   assert.equal(readFileSync.operationKind, "method");
 });
 
+test("required Node capability families expose exact provider operations", () => {
+  const plugin = createTsonicPlugin();
+  const [contribution] = plugin.createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const required = [
+    ["node:events", (row) => row.memberId === "node:events::EventEmitter.on" &&
+      row.signatureId === "node:events::EventEmitter.on(1)"],
+    ["node:stream", (row) => row.memberId === "node:stream::Readable.pipe" &&
+      row.signatureId === "node:stream::Readable.pipe(writable)"],
+    ["node:fs", (row) => row.exportId === "node:fs::watch" &&
+      row.signatureId === "node:fs::watch(path,listener)"],
+    ["node:https", (row) => row.exportId === "node:https::createServer"],
+    ["node:zlib", (row) => row.exportId === "node:zlib::gzipSync"],
+    ["node:net", (row) => row.exportId === "node:net::createConnection"],
+    ["node:tls", (row) => row.exportId === "node:tls::connect" &&
+      row.signatureId === "node:tls::connect(options,callback)"],
+    ["node:dns", (row) => row.exportId === "node:dns::lookup"],
+    ["node:dns/promises", (row) => row.exportId === "node:dns/promises::lookup" &&
+      row.isAsync === true],
+    ["node:readline", (row) => row.exportId === "node:readline::createInterface"],
+    ["node:worker_threads", (row) =>
+      row.memberId === "node:worker_threads::Worker.constructor" &&
+      row.target.form === "source-module-construction"],
+  ];
+
+  for (const [moduleSpecifier, predicate] of required) {
+    assert.ok(
+      modules.some((module) => module.moduleSpecifier === moduleSpecifier),
+      `missing provider module '${moduleSpecifier}'`,
+    );
+    assert.ok(
+      operations.some(predicate),
+      `missing exact operation for '${moduleSpecifier}'`,
+    );
+  }
+});
+
 test("provider type relations carry exact closed target carriers", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
@@ -90,7 +157,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
-    ["node:process::ProcessWriteStream", "rust.node.ProcessWriteStream"],
+    ["node:process::ProcessWriteStream", "rust.node.Writable"],
     ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
@@ -104,6 +171,32 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::Server", "rust.node.HttpServer"],
     ["node:timers::Timeout", "rust.node.Timeout"],
     ["node:util::TextDecoder", "rust.node.TextDecoder"],
+    ["node:events::EventEmitter", "rust.node.EventEmitter"],
+    ["node:stream::Readable", "rust.node.Readable"],
+    ["node:stream::Writable", "rust.node.Writable"],
+    ["node:fs::ReadStream", "rust.node.ReadStream"],
+    ["node:fs::WriteStream", "rust.node.WriteStream"],
+    ["node:fs::ReadStreamOptions", "rust.node.ReadStreamOptions", "struct-default"],
+    ["node:fs::WriteStreamOptions", "rust.node.WriteStreamOptions", "struct-default"],
+    ["node:fs::FSWatcher", "rust.node.FsWatcher"],
+    ["node:dns::LookupAddress", "rust.node.DnsLookupAddress"],
+    ["node:zlib::ZlibOptions", "rust.node.ZlibOptions", "struct-default"],
+    ["node:zlib::Zlib", "rust.node.ZlibTransform"],
+    ["node:net::Socket", "rust.node.NetSocket"],
+    ["node:net::Server", "rust.node.NetServer"],
+    ["node:tls::ConnectionOptions", "rust.node.TlsConnectOptions", "struct-default"],
+    ["node:tls::TlsOptions", "rust.node.TlsServerOptions", "struct-default"],
+    ["node:tls::TLSSocket", "rust.node.TlsSocket"],
+    ["node:tls::Server", "rust.node.TlsServer"],
+    ["node:https::ServerOptions", "rust.node.TlsServerOptions", "struct-default"],
+    ["node:https::Server", "rust.node.HttpsServer"],
+    ["node:https::ClientRequest", "rust.node.HttpsClientRequest"],
+    ["node:readline::ReadLineOptions", "rust.node.ReadlineOptions", "struct-default"],
+    ["node:readline::Interface", "rust.node.ReadlineInterface"],
+    ["node:worker_threads::Worker", "rust.node.Worker"],
+    ["node:worker_threads::WorkerOptions", "rust.node.WorkerOptions", "struct-default"],
+    ["node:worker_threads::MessagePort", "rust.node.MessagePort"],
+    ["node:worker_threads::MessageChannel", "rust.node.MessageChannel"],
   ].map(([exportId, id, objectLiteralConstruction]) => ({
     exportId,
     targetCarrier: { kind: "target-named", id },
@@ -112,10 +205,16 @@ test("provider type relations carry exact closed target carriers", () => {
       : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
   })));
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
-    implementations: [{
-      traitPath: "core::clone::Clone",
-      requirements: [],
-    }],
+    implementations: [
+      {
+        traitPath: "core::clone::Clone",
+        requirements: [],
+      },
+      {
+        traitPath: "tsonic_rust_js::value::JsClosedValueCarrier",
+        requirements: [],
+      },
+    ],
   });
   assert.equal(
     Object.keys(contribution.definition.carrierTraits).every((id) =>
@@ -187,7 +286,7 @@ test("provider package closes child-process and text-decoder operations", () => 
       { kind: "target-named", id: "rust.std.String" },
       { kind: "type-parameter", name: "Arguments" },
     ],
-    typeParameters: ["Arguments"],
+    genericParameters: [{ kind: "type", sourceName: "Arguments" }],
     isFallible: true,
     errorBoundary: "provider-native",
     errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
@@ -492,7 +591,12 @@ test("provider package closes process identity, timing, and memory contracts", (
   );
   assert.deepEqual(
     contribution.definition.carrierTraits["rust.node.MemoryUsage"],
-    contribution.definition.carrierTraits["rust.node.Buffer"],
+    {
+      implementations: [{
+        traitPath: "core::clone::Clone",
+        requirements: [],
+      }],
+    },
   );
 });
 
@@ -502,10 +606,16 @@ test("provider package closes process stdout and stderr output contracts", () =>
   const processModule = contribution.definition.modules.find((module) =>
     module.moduleSpecifier === "node:process");
   assert.ok(processModule !== undefined);
-  assert.deepEqual(processModule.imports, [{
-    moduleSpecifier: "node:buffer",
-    namedImports: [{ exportedName: "Buffer" }],
-  }]);
+  assert.deepEqual(processModule.imports, [
+    {
+      moduleSpecifier: "node:buffer",
+      namedImports: [{ exportedName: "Buffer" }],
+    },
+    {
+      moduleSpecifier: "node:stream",
+      namedImports: [{ exportedName: "Readable" }],
+    },
+  ]);
   const stream = processModule.exports.find((entry) =>
     entry.id === "node:process::ProcessWriteStream");
   assert.ok(stream !== undefined && stream.kind === "class");
@@ -537,8 +647,8 @@ test("provider package closes process stdout and stderr output contracts", () =>
   ]);
   assert.equal(writeRows.every((row) => row.isFallible === true), true);
   assert.equal(
-    contribution.definition.carrierPaths["rust.node.ProcessWriteStream"],
-    "tsonic_rust_node::process::ProcessWriteStream",
+    contribution.definition.carrierPaths["rust.node.Writable"],
+    "tsonic_rust_node::stream::Writable",
   );
 });
 

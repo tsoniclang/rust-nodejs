@@ -57,170 +57,30 @@ fn crypto_rsa_sha256_sign_and_verify() {
 }
 
 #[test]
-fn https_http2_and_tls_validate_closed_request_shapes() {
-    assert_eq!(tsonic_rust_node::tls::default_port(), 443);
-    assert!(tsonic_rust_node::tls::check_server_identity("example.com").is_ok());
-    assert!(tsonic_rust_node::tls::check_server_identity("https://example.com").is_err());
-    let mut tls_options = tsonic_rust_node::tls::ConnectOptions::new("example.com", 443);
-    tls_options.host = Some("example.com".to_string());
-    tls_options.path = Some("/".to_string());
-    tls_options.alpn_protocols.push("h2".to_string());
-    tls_options.min_version = Some("TLSv1.3".to_string());
-    tls_options.timeout = Some(1_000);
-    tls_options.min_dh_size = Some(1_024);
-    tls_options.request_ocsp = true;
-    let socket = tsonic_rust_node::tls::connect(&tls_options).unwrap();
-    assert_eq!(socket.servername(), "example.com");
-    assert!(socket.authorized());
-    assert_eq!(socket.authorization_error(), None);
-    assert_eq!(socket.alpn_protocol(), Some("h2"));
-    assert!(socket.encrypted());
-    assert_eq!(socket.get_protocol(), Some("TLSv1.3"));
-    assert_eq!(socket.get_cipher().name, "TLS_AES_256_GCM_SHA384");
-    assert_eq!(socket.get_cipher().version, "TLSv1.3");
-    assert!(socket
-        .get_peer_certificate()
-        .subjectaltname
-        .contains("example.com"));
-    assert!(!socket.get_peer_certificate().ca);
-    assert_eq!(socket.get_peer_certificate().bits, Some(2048));
-    assert_eq!(
-        socket.get_peer_certificate().exponent.as_deref(),
-        Some("0x10001")
-    );
-    assert_eq!(
-        socket.get_peer_certificate().nist_curve.as_deref(),
-        Some("P-256")
-    );
-    assert_eq!(
-        socket.get_peer_certificate().ext_key_usage,
-        vec!["serverAuth".to_string()]
-    );
-    assert!(socket.get_certificate().subject.contains("localhost"));
-    assert_eq!(socket.get_ephemeral_key_info().name, "X25519");
-    assert_eq!(socket.get_session().len(), 32);
-    assert!(!socket.is_session_reused());
-    assert_eq!(socket.get_finished().len(), 32);
-    assert_eq!(socket.get_peer_finished().len(), 32);
-    assert_eq!(
-        socket
-            .export_keying_material(8, "EXPORTER-tsonic", b"context")
-            .len(),
-        8
-    );
-    assert_eq!(socket.get_tls_ticket().len(), 32);
-    assert!(socket
-        .get_shared_sigalgs()
-        .contains(&"rsa_pss_rsae_sha256".to_string()));
-    let mut reused_options = tsonic_rust_node::tls::ConnectOptions::new("example.com", 443);
-    reused_options.session = Some(socket.get_session().to_vec());
-    reused_options.reject_unauthorized = false;
-    let mut reused = tsonic_rust_node::tls::connect(&reused_options).unwrap();
-    assert!(reused.is_session_reused());
-    assert!(!reused.authorized());
-    assert_eq!(
-        reused.authorization_error(),
-        Some("UNABLE_TO_VERIFY_LEAF_SIGNATURE")
-    );
-    assert!(reused.set_ticket_keys(&[1; 47]).is_err());
-    reused.set_ticket_keys(&[2; 48]).unwrap();
-    assert_eq!(reused.get_session(), &[2; 48]);
-    reused.enable_trace();
-    assert!(reused.trace_enabled());
-    reused.disable_renegotiation();
-    assert!(reused.renegotiation_disabled());
-    assert!(!reused.set_max_send_fragment(128));
-    assert!(reused.set_max_send_fragment(16_384));
-    assert_eq!(reused.max_send_fragment(), Some(16_384));
-    let context =
-        tsonic_rust_node::tls::create_secure_context(tsonic_rust_node::tls::SecureContextOptions {
-            key: Some("key".to_string()),
-            cert: Some("cert".to_string()),
-            pfx: Some("pfx".to_string()),
-            passphrase: Some("secret".to_string()),
-            ca: vec!["ca".to_string()],
-            alpn_protocols: vec!["h2".to_string()],
-            ciphers: Some("TLS_AES_256_GCM_SHA384".to_string()),
-            sigalgs: Some("rsa_pss_rsae_sha256".to_string()),
-            min_version: Some("TLSv1.2".to_string()),
-            max_version: Some("TLSv1.3".to_string()),
-            honor_cipher_order: true,
-            session_timeout: Some(300),
-            allow_partial_trust_chain: true,
-            ..tsonic_rust_node::tls::SecureContextOptions::default()
-        });
-    assert_eq!(context.options().alpn_protocols, vec!["h2".to_string()]);
-    assert!(context.options().honor_cipher_order);
-    assert_eq!(context.options().session_timeout, Some(300));
-    assert!(context.options().allow_partial_trust_chain);
-    reused.set_key_cert(context.clone());
-    assert_eq!(
-        reused.key_cert_context().unwrap().options().cert.as_deref(),
-        Some("cert")
-    );
-
+fn https_and_http2_validate_closed_request_shapes() {
     let https_options = tsonic_rust_node::https::RequestOptions::get("https://example.com/");
     assert_eq!(https_options.method, "GET");
     assert!(tsonic_rust_node::https::get("http://example.com/").is_err());
-    let mut agent =
-        tsonic_rust_node::https::Agent::new(Some(tsonic_rust_node::https::AgentOptions {
-            callback: true,
-            keep_alive: true,
-            keep_alive_msecs: 500,
-            max_sockets: 8,
-            max_free_sockets: 2,
-            max_cached_sessions: 32,
-            timeout: Some(1_000),
-            reject_unauthorized: true,
-            servername: Some("example.com".to_string()),
-        }));
-    assert!(agent.callback);
-    assert!(agent.keep_socket_alive());
-    assert!(agent.reuse_socket());
-    assert!(agent.get_name(Some(&https_options)).contains("example.com"));
-    agent.destroy();
-    assert!(agent.destroyed());
-    assert!(!agent.reuse_socket());
-    let mut https_server = tsonic_rust_node::https::create_server(
-        tsonic_rust_node::https::ServerOptions {
-            request_cert: true,
-            handshake_timeout: Some(30_000),
-            max_cached_sessions: 64,
-            ..tsonic_rust_node::https::ServerOptions::default()
-        },
-        |_, response| response.end(None),
+    let server_options = tsonic_rust_node::tls::SourceServerOptions {
+        request_cert: Some(true),
+        reject_unauthorized: Some(true),
+        ..tsonic_rust_node::tls::SourceServerOptions::default()
+    };
+    assert_eq!(server_options.request_cert, Some(true));
+    let server = tsonic_rust_node::https::create_server_callable(
+        server_options,
+        tsonic_rust_runtime::Callable::new(
+            |(_request, _response): (
+                tsonic_rust_node::http::IncomingMessage,
+                tsonic_rust_node::http::ServerResponseHandle,
+            )| Ok::<(), tsonic_rust_node::error::NodeError>(()),
+        ),
     );
-    assert!(https_server.options().ca.is_empty());
-    assert!(https_server.options().request_cert);
-    https_server.set_timeout(2_000, Some(|| {}));
-    assert_eq!(https_server.timeout(), Some(2_000));
-    https_server.close_idle_connections();
-    https_server.close_all_connections();
-    assert!(https_server.idle_connections_closed());
-    assert!(https_server.all_connections_closed());
-    https_server
-        .add_listener("request")
-        .prepend_listener("request")
-        .once("secureConnection")
-        .prepend_once_listener("secureConnection");
-    assert_eq!(https_server.listener_count("request"), 2);
-    assert_eq!(
-        https_server.listeners("request"),
-        vec!["request", "request"]
-    );
-    assert_eq!(
-        https_server.raw_listeners("secureConnection"),
-        vec!["secureConnection", "secureConnection"]
-    );
-    assert!(https_server.emit("request"));
-    https_server.off("request");
-    assert_eq!(https_server.listener_count("request"), 1);
-    https_server.remove_all_listeners(Some("secureConnection"));
-    assert_eq!(https_server.listener_count("secureConnection"), 0);
-    https_server.on("close").remove_listener("close");
-    assert!(!https_server.emit("close"));
-    https_server.close();
-    assert!(https_server.closed());
+    let server_error = match server {
+        Ok(_) => panic!("TLS server without a key and certificate must reject"),
+        Err(error) => error,
+    };
+    assert_eq!(server_error.code, "ERR_TLS_CERT_REQUIRED");
 
     let http2 = tsonic_rust_node::http2::connect("https://example.com").unwrap();
     assert_eq!(http2.authority, "https://example.com");

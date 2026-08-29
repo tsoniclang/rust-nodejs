@@ -1,3 +1,9 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WritableSink {
+    Stdout,
+    Stderr,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Writable {
     chunks: Vec<Buffer>,
@@ -8,6 +14,7 @@ pub struct Writable {
     corked: usize,
     need_drain: bool,
     events: StreamEventState,
+    sink: Option<WritableSink>,
 }
 
 impl Writable {
@@ -22,13 +29,61 @@ impl Writable {
         }
     }
 
+    pub fn stdout() -> Self {
+        Self {
+            sink: Some(WritableSink::Stdout),
+            ..Self::default()
+        }
+    }
+
+    pub fn stderr() -> Self {
+        Self {
+            sink: Some(WritableSink::Stderr),
+            ..Self::default()
+        }
+    }
+
     pub fn write(&mut self, chunk: Buffer) -> bool {
         if self.ended || self.destroyed {
             return false;
         }
+        if let Some(sink) = self.sink {
+            return chunk
+                .with_bytes(|bytes| write_sink(sink, bytes))
+                .is_ok();
+        }
         self.chunks.push(chunk);
         self.need_drain = self.chunks.len() >= self.options.high_water_mark;
         !self.need_drain
+    }
+
+    pub fn write_string(&mut self, value: &str) -> NodeResult<bool> {
+        let buffer = Buffer::from_string(value, Some("utf8"))?;
+        self.write_buffer(&buffer)
+    }
+
+    pub fn write_buffer(&mut self, value: &Buffer) -> NodeResult<bool> {
+        if let Some(sink) = self.sink {
+            return value.with_bytes(|bytes| write_sink(sink, bytes));
+        }
+        Ok(self.write(value.clone()))
+    }
+
+    pub fn is_tty(&self) -> bool {
+        use std::io::IsTerminal as _;
+        match self.sink {
+            Some(WritableSink::Stdout) => std::io::stdout().is_terminal(),
+            Some(WritableSink::Stderr) => std::io::stderr().is_terminal(),
+            None => false,
+        }
+    }
+
+    pub fn fd(&self) -> i32 {
+        match self.sink {
+            Some(WritableSink::Stdout) => 1,
+            Some(WritableSink::Stderr) => 2,
+            None => -1,
+        }
     }
 
     pub fn writev(&mut self, chunks: &[Buffer]) -> bool {
@@ -196,8 +251,19 @@ impl Writable {
         true
     }
 
-    pub fn end(&mut self) {
+    pub fn end(&mut self) -> &mut Self {
         self.ended = true;
+        self
+    }
+
+    pub fn end_string(&mut self, value: &str) -> NodeResult<&mut Self> {
+        self.write_string(value)?;
+        Ok(self.end())
+    }
+
+    pub fn end_buffer(&mut self, value: &Buffer) -> NodeResult<&mut Self> {
+        self.write_buffer(value)?;
+        Ok(self.end())
     }
 
     pub fn destroy(&mut self) {
@@ -212,4 +278,21 @@ impl Writable {
     pub fn chunks(&self) -> &[Buffer] {
         &self.chunks
     }
+}
+
+fn write_sink(sink: WritableSink, bytes: &[u8]) -> NodeResult<bool> {
+    use std::io::Write as _;
+    let result = match sink {
+        WritableSink::Stdout => {
+            let mut output = std::io::stdout().lock();
+            output.write_all(bytes).and_then(|()| output.flush())
+        }
+        WritableSink::Stderr => {
+            let mut output = std::io::stderr().lock();
+            output.write_all(bytes).and_then(|()| output.flush())
+        }
+    };
+    result
+        .map(|()| true)
+        .map_err(|error| crate::NodeError::new("EIO", error.to_string()))
 }

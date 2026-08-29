@@ -5,11 +5,11 @@ use tsonic_rust_js::JsArray;
 
 pub use crate::fs::{
     BigIntOptions, BufferEncoding, CopyFilter, CopyOptions, CopyOptionsBase, CopySyncOptions,
-    CreateReadStreamOptions, CreateWriteStreamOptions, Dirent, FsReadResult, FsStreamOptions,
+    CreateReadStreamOptions, CreateWriteStreamOptions, Dirent, FsReadResult,
     FsWatchEvent, FsWatcher, MakeDirectoryOptions, Mode, NoParamCallback, ObjectEncodingOptions,
     OpenDirOptions, OpenMode, PathLike, PathOrFileDescriptor, ReadOptions, ReadPosition,
     ReadResult, ReadStreamOptions, ReadVResult, RmOptions, StatFs, StatFsOptions, StatOptions,
-    StatWatcher, Stats, StatsBase, StreamOptions, TimeLike, WatchFileOptions, WatchOptions,
+    StatWatcher, Stats, StatsBase, TimeLike, WatchFileOptions, WatchOptions,
     WatchOptionsWithBufferEncoding, WatchOptionsWithStringEncoding, WriteOptions, WriteResult,
     WriteStreamOptions, WriteVResult,
 };

@@ -115,12 +115,16 @@ pub fn finalization_unregister() {
         .ok();
 }
 
-pub fn stdout() -> ProcessWriteStream {
-    ProcessWriteStream::stdout()
+pub fn stdout() -> crate::stream::Writable {
+    crate::stream::Writable::stdout()
 }
 
-pub fn stderr() -> ProcessWriteStream {
-    ProcessWriteStream::stderr()
+pub fn stderr() -> crate::stream::Writable {
+    crate::stream::Writable::stderr()
+}
+
+pub fn stdin() -> crate::stream::Readable {
+    crate::stream::Readable::stdin()
 }
 
 pub fn stdin_is_tty() -> bool {

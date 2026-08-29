@@ -4,6 +4,7 @@ use std::rc::Rc;
 use tsonic_rust_js::object::JsObject;
 use tsonic_rust_js::value::JsValue;
 use tsonic_rust_js::{JsArray, JsString};
+use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 pub use tsonic_rust_js::web::{Blob, BlobPart, File};
 
 use crate::error::{NodeError, NodeResult};
@@ -43,6 +44,7 @@ pub struct Buffer {
     storage: Rc<RefCell<Vec<u8>>>,
     offset: usize,
     len: usize,
+    identity: ObjectIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,3 +89,32 @@ impl PartialEq for Buffer {
 }
 
 impl Eq for Buffer {}
+
+impl ObjectIdentityCarrier for Buffer {
+    fn object_identity(&self) -> &ObjectIdentity {
+        &self.identity
+    }
+}
+
+impl tsonic_rust_js::value::JsClosedValueCarrier for Buffer {
+    fn identity_key(&self) -> usize {
+        self.identity.key()
+    }
+
+    fn inspect_value(&self) -> String {
+        let bytes = self
+            .to_vec()
+            .into_iter()
+            .take(INSPECT_MAX_BYTES)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>();
+        let suffix = (self.len > INSPECT_MAX_BYTES)
+            .then(|| format!(" ... {} more bytes", self.len - INSPECT_MAX_BYTES))
+            .unwrap_or_default();
+        format!("<Buffer {}{}>", bytes.join(" "), suffix)
+    }
+
+    fn project_json(&self) -> tsonic_rust_js::JsResult<JsValue> {
+        Ok(self.to_json())
+    }
+}

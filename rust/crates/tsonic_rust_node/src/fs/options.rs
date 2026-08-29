@@ -185,47 +185,22 @@ pub struct WriteVResult {
     pub buffers: Vec<Buffer>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FsStreamOptions {
-    pub flags: String,
-    pub encoding: Option<String>,
-    pub fd: Option<i32>,
-    pub mode: u32,
-    pub auto_close: bool,
-    pub emit_close: bool,
-    pub start: Option<u64>,
-    pub end: Option<u64>,
-    pub high_water_mark: usize,
-    pub flush: bool,
-    pub signal_aborted: bool,
-}
-
-impl Default for FsStreamOptions {
-    fn default() -> Self {
-        Self {
-            flags: "r".to_string(),
-            encoding: None,
-            fd: None,
-            mode: 0o666,
-            auto_close: true,
-            emit_close: true,
-            start: None,
-            end: None,
-            high_water_mark: 64 * 1024,
-            flush: false,
-            signal_aborted: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ReadStreamOptions {
-    pub stream: FsStreamOptions,
+    pub flags: Option<String>,
+    pub mode: Option<f64>,
+    pub start: Option<f64>,
+    pub end: Option<f64>,
+    pub high_water_mark: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct WriteStreamOptions {
-    pub stream: FsStreamOptions,
+    pub flags: Option<String>,
+    pub mode: Option<f64>,
+    pub start: Option<f64>,
+    pub high_water_mark: Option<f64>,
+    pub flush: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

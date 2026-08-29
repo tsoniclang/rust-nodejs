@@ -95,7 +95,7 @@ pub fn text_decoder_new() -> TextDecoder {
 }
 
 pub mod types {
-    use super::{ArrayBuffer, JsDate, JsRegExp, TypedArrayLen, Uint8Array};
+    use super::{ArrayBuffer, JsDate, JsRegExp, TypedArray, TypedElement, Uint8Array};
     use tsonic_rust_js::value::JsValue;
 
     pub fn is_boolean(value: &JsValue) -> bool {
@@ -138,11 +138,11 @@ pub mod types {
         matches!(value, JsValue::Array(_))
     }
 
-    pub fn is_array_buffer_view<T: TypedArrayLen>(_value: &T) -> bool {
+    pub fn is_array_buffer_view<T: TypedElement>(_value: &TypedArray<T>) -> bool {
         true
     }
 
-    pub fn is_typed_array<T: TypedArrayLen>(_value: &T) -> bool {
+    pub fn is_typed_array<T: TypedElement>(_value: &TypedArray<T>) -> bool {
         true
     }
 

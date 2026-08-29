@@ -351,8 +351,8 @@ fn util_text_codecs_control_helpers_and_runtime_predicates() {
     assert!(logger.enabled());
     assert_eq!(logger.log("listening"), Some("HTTP listening".to_string()));
 
-    let buffer = ArrayBuffer::new(4);
-    let typed = Uint8Array::from_vec(vec![1, 2, 3]);
+    let buffer = ArrayBuffer::new(4.0).unwrap();
+    let typed = Uint8Array::from_vec(vec![1.0, 2.0, 3.0]).unwrap();
     let date = JsDate::from_millis(0.0);
     let regexp = JsRegExp::new(JsString::from_utf8("abc"), JsString::new()).unwrap();
     assert!(util::types::is_array_buffer(&buffer));

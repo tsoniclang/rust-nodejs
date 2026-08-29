@@ -27,7 +27,9 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
                     &"application/octet-stream".to_string(),
                 )
                 .unwrap();
-            response.end_buffer(Buffer::from_bytes(vec![0, 255, 1]));
+            response
+                .end_buffer(Buffer::from_bytes(vec![0, 255, 1]))
+                .unwrap();
             callback_server.borrow().as_ref().unwrap().close();
             Ok::<(), TsonicError>(())
         },
@@ -104,11 +106,11 @@ fn translated_http_server_propagates_fallible_callback_errors() {
 
 #[test]
 fn translated_http_response_supports_text_and_empty_bodies() {
-    let text = round_trip_single_response(|response| response.end_string("hello"));
+    let text = round_trip_single_response(|response| response.end_string("hello").unwrap());
     let text_body = response_body(&text);
     assert_eq!(text_body, b"hello");
 
-    let empty = round_trip_single_response(|response| response.end_empty());
+    let empty = round_trip_single_response(|response| response.end_empty().unwrap());
     let empty_body = response_body(&empty);
     assert!(empty_body.is_empty());
 }

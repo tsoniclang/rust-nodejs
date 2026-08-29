@@ -3,6 +3,7 @@
 pub mod abi;
 pub mod assert;
 pub mod async_hooks;
+mod background;
 pub mod buffer;
 pub mod child_process;
 pub mod cluster;

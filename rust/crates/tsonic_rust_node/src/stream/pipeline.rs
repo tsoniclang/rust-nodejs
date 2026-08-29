@@ -1,11 +1,40 @@
-pub fn pipeline(readable: &mut Readable, writable: &mut Writable) -> NodeResult<()> {
-    while let Some(chunk) = readable.read() {
-        if !writable.write(chunk) {
-            break;
+pub trait WritableTarget {
+    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool>;
+    fn drain_target(&mut self) -> NodeResult<()>;
+    fn finish_target(&mut self) -> NodeResult<()>;
+}
+
+impl WritableTarget for Writable {
+    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool> {
+        Ok(self.write(chunk))
+    }
+
+    fn drain_target(&mut self) -> NodeResult<()> {
+        self.flush();
+        Ok(())
+    }
+
+    fn finish_target(&mut self) -> NodeResult<()> {
+        self.end();
+        Ok(())
+    }
+}
+
+pub fn pipe_chunks<W, F>(mut next: F, writable: &mut W) -> NodeResult<()>
+where
+    W: WritableTarget,
+    F: FnMut() -> NodeResult<Option<Buffer>>,
+{
+    while let Some(chunk) = next()? {
+        if !writable.write_target_chunk(chunk)? {
+            writable.drain_target()?;
         }
     }
-    writable.end();
-    Ok(())
+    writable.finish_target()
+}
+
+pub fn pipeline<W: WritableTarget>(readable: &mut Readable, writable: &mut W) -> NodeResult<()> {
+    pipe_chunks(|| readable.read_result(), writable)
 }
 
 pub fn finished(readable: &Readable, writable: &Writable) -> bool {

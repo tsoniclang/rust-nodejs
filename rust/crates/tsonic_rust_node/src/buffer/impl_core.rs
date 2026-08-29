@@ -27,6 +27,7 @@ impl Buffer {
             storage: Rc::new(RefCell::new(bytes)),
             offset: 0,
             len,
+            identity: ObjectIdentity::new(),
         }
     }
 

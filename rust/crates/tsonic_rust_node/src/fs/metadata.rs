@@ -2,6 +2,14 @@ fn file_table() -> &'static Mutex<HashMap<i32, File>> {
     FILE_TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clone_file_descriptor(fd: i32) -> NodeResult<File> {
+    crate::sync::lock(file_table())
+        .get(&fd)
+        .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?
+        .try_clone()
+        .map_err(map_io_error)
+}
+
 fn stats_from_metadata(metadata: &fs::Metadata) -> Stats {
     Stats {
         size: metadata.len(),

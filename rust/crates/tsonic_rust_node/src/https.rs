@@ -1,115 +1,12 @@
 use std::collections::BTreeMap;
 
 use crate::error::{NodeError, NodeResult};
-use crate::http::{IncomingMessage, Response, ServerResponse};
+use crate::http::{IncomingMessage, Response, ServerResponseHandle};
+use crate::tls::{SourceServerOptions, TlsServer, TlsSocket};
 
-type HttpsListenerMap = BTreeMap<String, Vec<String>>;
-
-fn https_add_listener(listeners: &mut HttpsListenerMap, event: &str, prepend: bool) {
-    let entry = listeners.entry(event.to_string()).or_default();
-    if prepend {
-        entry.insert(0, event.to_string());
-    } else {
-        entry.push(event.to_string());
-    }
-}
-
-fn https_remove_listener(listeners: &mut HttpsListenerMap, event: &str) {
-    if let Some(values) = listeners.get_mut(event) {
-        values.pop();
-        if values.is_empty() {
-            listeners.remove(event);
-        }
-    }
-}
-
-fn https_remove_all_listeners(listeners: &mut HttpsListenerMap, event: Option<&str>) {
-    if let Some(event) = event {
-        listeners.remove(event);
-    } else {
-        listeners.clear();
-    }
-}
-
-fn https_listeners(listeners: &HttpsListenerMap, event: &str) -> Vec<String> {
-    listeners.get(event).cloned().unwrap_or_default()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentOptions {
-    pub callback: bool,
-    pub keep_alive: bool,
-    pub keep_alive_msecs: u64,
-    pub max_sockets: usize,
-    pub max_free_sockets: usize,
-    pub max_cached_sessions: usize,
-    pub timeout: Option<u64>,
-    pub reject_unauthorized: bool,
-    pub servername: Option<String>,
-}
-
-impl Default for AgentOptions {
-    fn default() -> Self {
-        Self {
-            callback: false,
-            keep_alive: false,
-            keep_alive_msecs: 1_000,
-            max_sockets: usize::MAX,
-            max_free_sockets: 256,
-            max_cached_sessions: 100,
-            timeout: None,
-            reject_unauthorized: true,
-            servername: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Agent {
-    pub options: AgentOptions,
-    pub callback: bool,
-    destroyed: bool,
-}
-
-impl Agent {
-    pub fn new(options: Option<AgentOptions>) -> Self {
-        let options = options.unwrap_or_default();
-        Self {
-            callback: options.callback,
-            options,
-            destroyed: false,
-        }
-    }
-
-    pub fn get_name(&self, options: Option<&RequestOptions>) -> String {
-        options
-            .map(|options| {
-                format!(
-                    "{}:{}:{}",
-                    options.url,
-                    options.method,
-                    self.options.servername.clone().unwrap_or_default()
-                )
-            })
-            .unwrap_or_else(|| "https://localhost/:GET:".to_string())
-    }
-
-    pub fn keep_socket_alive(&self) -> bool {
-        self.options.keep_alive
-    }
-
-    pub fn reuse_socket(&self) -> bool {
-        !self.destroyed
-    }
-
-    pub fn destroy(&mut self) {
-        self.destroyed = true;
-    }
-
-    pub fn destroyed(&self) -> bool {
-        self.destroyed
-    }
-}
+type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
+type RuntimeResponseCallback =
+    tsonic_rust_runtime::Callable<(IncomingMessage,), tsonic_rust_runtime::TsonicResult<()>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestOptions {
@@ -117,166 +14,7 @@ pub struct RequestOptions {
     pub method: String,
     pub headers: BTreeMap<String, String>,
     pub timeout: Option<u64>,
-    pub agent: Option<Agent>,
-    pub auth: Option<String>,
     pub reject_unauthorized: bool,
-    pub servername: Option<String>,
-    pub check_server_identity: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ServerOptions {
-    pub key: Option<String>,
-    pub cert: Option<String>,
-    pub ca: Vec<String>,
-    pub alpn_protocols: Vec<String>,
-    pub request_cert: bool,
-    pub reject_unauthorized: bool,
-    pub handshake_timeout: Option<u64>,
-    pub session_timeout: Option<u64>,
-    pub max_cached_sessions: usize,
-}
-
-impl Default for ServerOptions {
-    fn default() -> Self {
-        Self {
-            key: None,
-            cert: None,
-            ca: Vec::new(),
-            alpn_protocols: Vec::new(),
-            request_cert: false,
-            reject_unauthorized: true,
-            handshake_timeout: None,
-            session_timeout: None,
-            max_cached_sessions: 100,
-        }
-    }
-}
-
-type HttpsRequestHandler = dyn Fn(IncomingMessage, &mut ServerResponse) + Send + Sync;
-
-pub struct Server {
-    options: ServerOptions,
-    handler: Box<HttpsRequestHandler>,
-    closed: bool,
-    idle_closed: bool,
-    all_closed: bool,
-    timeout: Option<u64>,
-    listeners: HttpsListenerMap,
-}
-
-impl Server {
-    pub fn new(
-        options: ServerOptions,
-        handler: impl Fn(IncomingMessage, &mut ServerResponse) + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            options,
-            handler: Box::new(handler),
-            closed: false,
-            idle_closed: false,
-            all_closed: false,
-            timeout: None,
-            listeners: BTreeMap::new(),
-        }
-    }
-
-    pub fn options(&self) -> &ServerOptions {
-        &self.options
-    }
-
-    pub fn handle(&self, request: IncomingMessage) -> Response {
-        let mut response = ServerResponse::new();
-        (self.handler)(request, &mut response);
-        response.to_response()
-    }
-
-    pub fn set_timeout(&mut self, timeout_millis: u64, callback: Option<impl FnOnce()>) {
-        self.timeout = Some(timeout_millis);
-        if let Some(callback) = callback {
-            callback();
-        }
-    }
-
-    pub fn timeout(&self) -> Option<u64> {
-        self.timeout
-    }
-
-    pub fn close(&mut self) {
-        self.closed = true;
-    }
-
-    pub fn close_idle_connections(&mut self) {
-        self.idle_closed = true;
-    }
-
-    pub fn close_all_connections(&mut self) {
-        self.all_closed = true;
-    }
-
-    pub fn closed(&self) -> bool {
-        self.closed
-    }
-
-    pub fn idle_connections_closed(&self) -> bool {
-        self.idle_closed
-    }
-
-    pub fn all_connections_closed(&self) -> bool {
-        self.all_closed
-    }
-
-    pub fn add_listener(&mut self, event: &str) -> &mut Self {
-        https_add_listener(&mut self.listeners, event, false);
-        self
-    }
-
-    pub fn on(&mut self, event: &str) -> &mut Self {
-        self.add_listener(event)
-    }
-
-    pub fn once(&mut self, event: &str) -> &mut Self {
-        self.add_listener(event)
-    }
-
-    pub fn prepend_listener(&mut self, event: &str) -> &mut Self {
-        https_add_listener(&mut self.listeners, event, true);
-        self
-    }
-
-    pub fn prepend_once_listener(&mut self, event: &str) -> &mut Self {
-        self.prepend_listener(event)
-    }
-
-    pub fn remove_listener(&mut self, event: &str) -> &mut Self {
-        https_remove_listener(&mut self.listeners, event);
-        self
-    }
-
-    pub fn off(&mut self, event: &str) -> &mut Self {
-        self.remove_listener(event)
-    }
-
-    pub fn remove_all_listeners(&mut self, event: Option<&str>) -> &mut Self {
-        https_remove_all_listeners(&mut self.listeners, event);
-        self
-    }
-
-    pub fn listeners(&self, event: &str) -> Vec<String> {
-        https_listeners(&self.listeners, event)
-    }
-
-    pub fn raw_listeners(&self, event: &str) -> Vec<String> {
-        self.listeners(event)
-    }
-
-    pub fn listener_count(&self, event: &str) -> usize {
-        self.listeners.get(event).map_or(0, Vec::len)
-    }
-
-    pub fn emit(&self, event: &str) -> bool {
-        self.listener_count(event) > 0
-    }
 }
 
 impl RequestOptions {
@@ -286,37 +24,185 @@ impl RequestOptions {
             method: "GET".to_string(),
             headers: BTreeMap::new(),
             timeout: None,
-            agent: None,
-            auth: None,
             reject_unauthorized: true,
-            servername: None,
-            check_server_identity: true,
         }
     }
 }
 
-pub fn create_server(
-    options: ServerOptions,
-    handler: impl Fn(IncomingMessage, &mut ServerResponse) + Send + Sync + 'static,
-) -> Server {
-    Server::new(options, handler)
+#[derive(Clone)]
+pub struct ServerHandle {
+    server: TlsServer,
+}
+
+#[derive(Clone)]
+pub struct ClientRequest {
+    options: RequestOptions,
+    body: Vec<u8>,
+    response_callback: Option<RuntimeResponseCallback>,
+    ended: bool,
+}
+
+impl ClientRequest {
+    fn new(options: RequestOptions, response_callback: Option<RuntimeResponseCallback>) -> Self {
+        Self {
+            options,
+            body: Vec::new(),
+            response_callback,
+            ended: false,
+        }
+    }
+
+    pub fn write_buffer(&mut self, buffer: &crate::buffer::Buffer) -> NodeResult<bool> {
+        if self.ended {
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "write after end",
+            ));
+        }
+        buffer.with_bytes(|bytes| self.body.extend_from_slice(bytes));
+        Ok(true)
+    }
+
+    pub fn write_string(&mut self, value: &str) -> NodeResult<bool> {
+        if self.ended {
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "write after end",
+            ));
+        }
+        self.body.extend_from_slice(value.as_bytes());
+        Ok(true)
+    }
+
+    pub fn end(&mut self) -> NodeResult<()> {
+        if self.ended {
+            return Ok(());
+        }
+        let options = self.options.clone();
+        let body = std::mem::take(&mut self.body);
+        let callback = self.response_callback.clone();
+        let response_url = options.url.clone();
+        crate::background::spawn(
+            move || request(&options, &body),
+            move |response| {
+                let response = response.map_err(tsonic_rust_runtime::TsonicError::from)?;
+                if let Some(callback) = callback {
+                    callback.call((incoming_response(&response_url, response),))?;
+                }
+                Ok(())
+            },
+        )?;
+        self.ended = true;
+        Ok(())
+    }
+}
+
+impl ServerHandle {
+    pub fn listen<E>(
+        &mut self,
+        port: f64,
+        host: &str,
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<&mut Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
+        self.server.listen(port, host)?;
+        let callback = adapt_callback(callback);
+        crate::event_loop::enqueue_runtime_task(move || callback.call(()))?;
+        Ok(self)
+    }
+
+    pub fn listen_default_host<E>(
+        &mut self,
+        port: f64,
+        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    ) -> NodeResult<&mut Self>
+    where
+        E: std::fmt::Display + 'static,
+    {
+        self.listen(port, "0.0.0.0", callback)
+    }
+
+    pub fn close(&mut self) {
+        self.server.close();
+    }
+
+    pub fn ref_chain(&mut self) -> &mut Self {
+        self.server.ref_chain();
+        self
+    }
+
+    pub fn unref_chain(&mut self) -> &mut Self {
+        self.server.unref_chain();
+        self
+    }
+
+    pub fn listening(&self) -> bool {
+        self.server.listening()
+    }
+}
+
+pub fn create_server_callable<E>(
+    options: SourceServerOptions,
+    handler: tsonic_rust_runtime::Callable<RuntimeRequestArguments, Result<(), E>>,
+) -> NodeResult<ServerHandle>
+where
+    E: std::fmt::Display + 'static,
+{
+    let handler = adapt_callback(handler);
+    let connection_callback = tsonic_rust_runtime::Callable::new(move |(socket,): (TlsSocket,)| {
+        crate::http::accept_runtime_transport(Box::new(socket), handler.clone())
+    });
+    Ok(ServerHandle {
+        server: crate::tls::create_server(options, connection_callback)?,
+    })
 }
 
 pub fn get(url: &str) -> NodeResult<Response> {
     request(&RequestOptions::get(url), &[])
 }
 
+pub fn request_callable<E>(
+    url: &str,
+    callback: tsonic_rust_runtime::Callable<(IncomingMessage,), Result<(), E>>,
+) -> NodeResult<ClientRequest>
+where
+    E: std::fmt::Display + 'static,
+{
+    Ok(ClientRequest::new(
+        RequestOptions::get(url),
+        Some(adapt_callback(callback)),
+    ))
+}
+
+pub fn get_callable<E>(
+    url: &str,
+    callback: tsonic_rust_runtime::Callable<(IncomingMessage,), Result<(), E>>,
+) -> NodeResult<ClientRequest>
+where
+    E: std::fmt::Display + 'static,
+{
+    let mut request = request_callable(url, callback)?;
+    request.end()?;
+    Ok(request)
+}
+
 pub fn request(options: &RequestOptions, body: &[u8]) -> NodeResult<Response> {
     if !options.url.starts_with("https://") {
         return Err(NodeError::new(
             "ERR_INVALID_PROTOCOL",
-            "https request requires https:// URL",
+            "https request requires an https:// URL",
         ));
     }
-    let client = reqwest::blocking::Client::builder()
-        .use_rustls_tls()
-        .build()
-        .map_err(map_reqwest_error)?;
+    let mut client = reqwest::blocking::Client::builder().use_rustls_tls();
+    if !options.reject_unauthorized {
+        client = client.danger_accept_invalid_certs(true);
+    }
+    if let Some(timeout) = options.timeout {
+        client = client.timeout(std::time::Duration::from_millis(timeout));
+    }
+    let client = client.build().map_err(map_reqwest_error)?;
     let method = options
         .method
         .parse::<reqwest::Method>()
@@ -325,11 +211,12 @@ pub fn request(options: &RequestOptions, body: &[u8]) -> NodeResult<Response> {
     for (name, value) in &options.headers {
         request = request.header(name, value);
     }
-    let response = request
-        .body(body.to_vec())
-        .send()
-        .map_err(map_reqwest_error)?;
-    response_to_node(response)
+    response_to_node(
+        request
+            .body(body.to_vec())
+            .send()
+            .map_err(map_reqwest_error)?,
+    )
 }
 
 pub(crate) fn response_to_node(response: reqwest::blocking::Response) -> NodeResult<Response> {
@@ -339,16 +226,13 @@ pub(crate) fn response_to_node(response: reqwest::blocking::Response) -> NodeRes
         .canonical_reason()
         .unwrap_or("")
         .to_string();
-    let headers = response
-        .headers()
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_ascii_lowercase(),
-                value.to_str().unwrap_or("").to_string(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut headers = BTreeMap::new();
+    for (name, value) in response.headers() {
+        let value = value
+            .to_str()
+            .map_err(|error| NodeError::new("ERR_INVALID_HTTP_TOKEN", error.to_string()))?;
+        headers.insert(name.as_str().to_ascii_lowercase(), value.to_string());
+    }
     let body = response.bytes().map_err(map_reqwest_error)?.to_vec();
     Ok(Response {
         status_code,
@@ -358,6 +242,28 @@ pub(crate) fn response_to_node(response: reqwest::blocking::Response) -> NodeRes
     })
 }
 
+fn adapt_callback<TArguments, E>(
+    callback: tsonic_rust_runtime::Callable<TArguments, Result<(), E>>,
+) -> tsonic_rust_runtime::Callable<TArguments, tsonic_rust_runtime::TsonicResult<()>>
+where
+    TArguments: 'static,
+    E: std::fmt::Display + 'static,
+{
+    tsonic_rust_runtime::Callable::new(move |arguments| {
+        callback
+            .call(arguments)
+            .map_err(crate::error::callback_runtime_error)
+    })
+}
+
 fn map_reqwest_error(error: reqwest::Error) -> NodeError {
     NodeError::new("ERR_NETWORK", error.to_string())
+}
+
+fn incoming_response(url: &str, response: Response) -> IncomingMessage {
+    let mut message = IncomingMessage::new("GET", url, response.body);
+    message.status_code = Some(response.status_code);
+    message.status_message = Some(response.status_message);
+    message.headers = response.headers;
+    message
 }

@@ -1,11 +1,13 @@
+use std::io::Write as _;
+
 const RUNTIME_MAX_BODY_SIZE: usize = 64 * 1024 * 1024;
 const RUNTIME_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
-type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
-type RuntimeRequestHandler =
+pub(crate) type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
+pub(crate) type RuntimeRequestHandler =
     tsonic_rust_runtime::Callable<RuntimeRequestArguments, tsonic_rust_runtime::TsonicResult<()>>;
 type RuntimeListenCallback =
     tsonic_rust_runtime::Callable<(), tsonic_rust_runtime::TsonicResult<()>>;
@@ -16,15 +18,23 @@ struct RuntimeServer {
     listening_callback: Option<RuntimeListenCallback>,
 }
 
+pub(crate) trait RuntimeTransport: std::io::Read + std::io::Write {
+    fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr>;
+}
+
+impl RuntimeTransport for std::net::TcpStream {
+    fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        std::net::TcpStream::peer_addr(self)
+    }
+}
+
 struct AcceptedConnection {
-    stream: std::net::TcpStream,
+    stream: Box<dyn RuntimeTransport>,
     handler: RuntimeRequestHandler,
 }
 
 struct PendingResponse {
-    stream: std::net::TcpStream,
     response: ServerResponseHandle,
-    omit_body: bool,
 }
 
 thread_local! {
@@ -113,19 +123,25 @@ pub struct ServerResponseHandle {
 }
 
 struct RuntimeResponseState {
+    stream: Option<Box<dyn RuntimeTransport>>,
+    omit_body: bool,
     status_code: i32,
     headers: std::collections::BTreeMap<String, String>,
-    body: Vec<u8>,
+    headers_sent: bool,
+    chunked: bool,
     finished: bool,
 }
 
 impl ServerResponseHandle {
-    fn new() -> Self {
+    fn new(stream: Box<dyn RuntimeTransport>, omit_body: bool) -> Self {
         Self {
             state: std::rc::Rc::new(std::cell::RefCell::new(RuntimeResponseState {
+                stream: Some(stream),
+                omit_body,
                 status_code: 200,
                 headers: std::collections::BTreeMap::new(),
-                body: Vec::new(),
+                headers_sent: false,
+                chunked: false,
                 finished: false,
             })),
         }
@@ -136,39 +152,218 @@ impl ServerResponseHandle {
     }
 
     pub fn set_status_code(&self, status_code: i32) {
-        self.state.borrow_mut().status_code = status_code;
+        let mut state = self.state.borrow_mut();
+        if !state.headers_sent {
+            state.status_code = status_code;
+        }
     }
 
     pub fn set_header(&self, name: &str, value: &str) -> NodeResult<()> {
         validate_header_value(name, value)?;
-        self.state
-            .borrow_mut()
-            .headers
-            .insert(name.to_ascii_lowercase(), value.to_string());
+        let mut state = self.state.borrow_mut();
+        if state.headers_sent {
+            return Err(NodeError::new(
+                "ERR_HTTP_HEADERS_SENT",
+                "response headers have already been sent",
+            ));
+        }
+        state.headers.insert(name.to_ascii_lowercase(), value.to_string());
         Ok(())
     }
 
-    pub fn end_empty(&self) {
-        self.finish(Vec::new());
+    pub fn write_buffer(&self, chunk: Buffer) -> NodeResult<bool> {
+        chunk.with_bytes(|bytes| self.write_bytes(bytes))?;
+        Ok(true)
     }
 
-    pub fn end_string(&self, chunk: &str) {
-        self.finish(chunk.as_bytes().to_vec());
+    pub fn end_empty(&self) -> NodeResult<()> {
+        self.finish(&[])
     }
 
-    pub fn end_buffer(&self, chunk: Buffer) {
-        self.finish(chunk.as_bytes());
+    pub fn end_string(&self, chunk: &str) -> NodeResult<()> {
+        self.finish(chunk.as_bytes())
     }
 
-    fn finish(&self, body: Vec<u8>) {
+    pub fn end_buffer(&self, chunk: Buffer) -> NodeResult<()> {
+        chunk.with_bytes(|bytes| self.finish(bytes))
+    }
+
+    fn write_bytes(&self, bytes: &[u8]) -> NodeResult<()> {
         let mut state = self.state.borrow_mut();
-        state.body = body;
+        if state.finished {
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "response has already ended",
+            ));
+        }
+        begin_runtime_response(&mut state, None)?;
+        write_runtime_body_chunk(&mut state, bytes)
+    }
+
+    fn finish(&self, final_bytes: &[u8]) -> NodeResult<()> {
+        let mut state = self.state.borrow_mut();
+        if state.finished {
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "response has already ended",
+            ));
+        }
+        if state.headers_sent {
+            write_runtime_body_chunk(&mut state, final_bytes)?;
+        } else {
+            begin_runtime_response(&mut state, Some(final_bytes.len()))?;
+            write_runtime_body_bytes(&mut state, final_bytes)?;
+        }
+        if state.chunked && !runtime_response_omits_body(&state)? {
+            state
+                .stream
+                .as_mut()
+                .ok_or_else(runtime_response_closed)?
+                .write_all(b"0\r\n\r\n")
+                .map_err(runtime_http_io_error)?;
+        }
+        state
+            .stream
+            .as_mut()
+            .ok_or_else(runtime_response_closed)?
+            .flush()
+            .map_err(runtime_http_io_error)?;
+        state.stream = None;
         state.finished = true;
+        Ok(())
     }
 
     fn is_finished(&self) -> bool {
         self.state.borrow().finished
     }
+}
+
+impl crate::stream::WritableTarget for ServerResponseHandle {
+    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool> {
+        self.write_buffer(chunk)
+    }
+
+    fn drain_target(&mut self) -> NodeResult<()> {
+        Ok(())
+    }
+
+    fn finish_target(&mut self) -> NodeResult<()> {
+        self.end_empty()
+    }
+}
+
+fn begin_runtime_response(
+    state: &mut RuntimeResponseState,
+    known_body_length: Option<usize>,
+) -> NodeResult<()> {
+    if state.headers_sent {
+        return Ok(());
+    }
+    let status_code = runtime_response_status_code(state)?;
+    let omit_body = state.omit_body || matches!(status_code, 204 | 304);
+    let has_content_length = state.headers.contains_key("content-length");
+    let has_explicit_transfer_encoding = match state.headers.get("transfer-encoding") {
+        Some(value) if value.eq_ignore_ascii_case("chunked") => true,
+        Some(_) => {
+            return Err(NodeError::new(
+                "ERR_HTTP_INVALID_HEADER_VALUE",
+                "the only supported response transfer-encoding is chunked",
+            ));
+        }
+        None => false,
+    };
+    if has_explicit_transfer_encoding && has_content_length {
+        return Err(NodeError::new(
+            "ERR_HTTP_CONTENT_LENGTH_MISMATCH",
+            "content-length and transfer-encoding cannot be sent together",
+        ));
+    }
+    state.chunked = !omit_body
+        && (has_explicit_transfer_encoding
+            || (known_body_length.is_none() && !has_content_length));
+
+    let mut headers = format!(
+        "HTTP/1.1 {status_code} {}\r\n",
+        canonical_status_message(status_code)
+    );
+    for (name, value) in &state.headers {
+        headers.push_str(name);
+        headers.push_str(": ");
+        headers.push_str(value);
+        headers.push_str("\r\n");
+    }
+    if !has_content_length && !has_explicit_transfer_encoding && !omit_body {
+        if let Some(length) = known_body_length {
+            headers.push_str(&format!("Content-Length: {length}\r\n"));
+        } else {
+            headers.push_str("Transfer-Encoding: chunked\r\n");
+        }
+    }
+    if !state.headers.contains_key("connection") {
+        headers.push_str("Connection: close\r\n");
+    }
+    headers.push_str("\r\n");
+    state
+        .stream
+        .as_mut()
+        .ok_or_else(runtime_response_closed)?
+        .write_all(headers.as_bytes())
+        .map_err(runtime_http_io_error)?;
+    state.headers_sent = true;
+    Ok(())
+}
+
+fn write_runtime_body_chunk(
+    state: &mut RuntimeResponseState,
+    bytes: &[u8],
+) -> NodeResult<()> {
+    if bytes.is_empty() || runtime_response_omits_body(state)? {
+        return Ok(());
+    }
+    if state.chunked {
+        let stream = state.stream.as_mut().ok_or_else(runtime_response_closed)?;
+        stream
+            .write_all(format!("{:X}\r\n", bytes.len()).as_bytes())
+            .and_then(|_| stream.write_all(bytes))
+            .and_then(|_| stream.write_all(b"\r\n"))
+            .and_then(|_| stream.flush())
+            .map_err(runtime_http_io_error)
+    } else {
+        write_runtime_body_bytes(state, bytes)
+    }
+}
+
+fn write_runtime_body_bytes(
+    state: &mut RuntimeResponseState,
+    bytes: &[u8],
+) -> NodeResult<()> {
+    if bytes.is_empty() || runtime_response_omits_body(state)? {
+        return Ok(());
+    }
+    state
+        .stream
+        .as_mut()
+        .ok_or_else(runtime_response_closed)?
+        .write_all(bytes)
+        .map_err(runtime_http_io_error)
+}
+
+fn runtime_response_omits_body(state: &RuntimeResponseState) -> NodeResult<bool> {
+    Ok(state.omit_body || matches!(runtime_response_status_code(state)?, 204 | 304))
+}
+
+fn runtime_response_status_code(state: &RuntimeResponseState) -> NodeResult<u16> {
+    u16::try_from(state.status_code)
+        .ok()
+        .filter(|code| (100..=999).contains(code))
+        .ok_or_else(|| NodeError::new(
+            "ERR_HTTP_INVALID_STATUS_CODE",
+            "status code must be 100 through 999",
+        ))
+}
+
+fn runtime_response_closed() -> NodeError {
+    NodeError::new("ERR_STREAM_WRITE_AFTER_END", "response has already ended")
 }
 
 pub fn create_server_callable<E>(
@@ -216,10 +411,14 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
                 listen_callbacks.push(callback);
             }
             match server.listener.accept() {
-                Ok((stream, _)) => accepted.push(AcceptedConnection {
-                    stream,
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).map_err(runtime_http_io_error)?;
+                    stream.set_read_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
+                    stream.set_write_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
+                    accepted.push(AcceptedConnection {
+                    stream: Box::new(stream),
                     handler: server.handler.clone(),
-                }),
+                })},
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(runtime_http_io_error(error)),
             }
@@ -251,9 +450,7 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
         ready
     });
     did_work |= !ready.is_empty();
-    for pending in ready {
-        write_runtime_response(pending)?;
-    }
+    drop(ready);
     Ok(did_work)
 }
 
@@ -262,8 +459,6 @@ fn handle_runtime_connection(
 ) -> tsonic_rust_runtime::TsonicResult<Option<PendingResponse>> {
     use std::io::Write;
 
-    let _ = accepted.stream.set_nonblocking(false);
-    let _ = accepted.stream.set_read_timeout(Some(RUNTIME_IO_TIMEOUT));
     let parsed = read_runtime_request(&mut accepted.stream);
     let (request, omit_body) = match parsed {
         Ok(request) => {
@@ -280,16 +475,24 @@ fn handle_runtime_connection(
             return Ok(None);
         }
     };
-    let response = ServerResponseHandle::new();
+    let response = ServerResponseHandle::new(accepted.stream, omit_body);
     accepted.handler.call((request, response.clone()))?;
     Ok(Some(PendingResponse {
-        stream: accepted.stream,
         response,
-        omit_body,
     }))
 }
 
-fn read_runtime_request(stream: &mut std::net::TcpStream) -> NodeResult<IncomingMessage> {
+pub(crate) fn accept_runtime_transport(
+    stream: Box<dyn RuntimeTransport>,
+    handler: RuntimeRequestHandler,
+) -> tsonic_rust_runtime::TsonicResult<()> {
+    if let Some(pending) = handle_runtime_connection(AcceptedConnection { stream, handler })? {
+        PENDING_RESPONSES.with(|responses| responses.borrow_mut().push(pending));
+    }
+    Ok(())
+}
+
+fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<IncomingMessage> {
     use std::io::Read;
 
     let mut bytes = Vec::new();
@@ -381,41 +584,6 @@ fn read_runtime_request(stream: &mut std::net::TcpStream) -> NodeResult<Incoming
         request.set_header(&name, &value);
     }
     Ok(request)
-}
-
-fn write_runtime_response(mut pending: PendingResponse) -> NodeResult<()> {
-    use std::io::Write;
-
-    let state = pending.response.state.borrow();
-    let status_code = u16::try_from(state.status_code)
-        .ok()
-        .filter(|code| (100..=999).contains(code))
-        .ok_or_else(|| NodeError::new("ERR_HTTP_INVALID_STATUS_CODE", "status code must be 100 through 999"))?;
-    let omit_body = pending.omit_body || matches!(status_code, 204 | 304);
-    let body = if omit_body { &[][..] } else { state.body.as_slice() };
-    let mut response = format!(
-        "HTTP/1.1 {status_code} {}\r\n",
-        canonical_status_message(status_code)
-    );
-    for (name, value) in &state.headers {
-        response.push_str(name);
-        response.push_str(": ");
-        response.push_str(value);
-        response.push_str("\r\n");
-    }
-    if !state.headers.contains_key("content-length") {
-        response.push_str(&format!("Content-Length: {}\r\n", state.body.len()));
-    }
-    if !state.headers.contains_key("connection") {
-        response.push_str("Connection: close\r\n");
-    }
-    response.push_str("\r\n");
-    pending
-        .stream
-        .write_all(response.as_bytes())
-        .and_then(|_| pending.stream.write_all(body))
-        .and_then(|_| pending.stream.flush())
-        .map_err(runtime_http_io_error)
 }
 
 fn find_header_end(bytes: &[u8]) -> Option<usize> {

@@ -155,52 +155,33 @@ impl FileHandle {
     }
 
     pub fn create_read_stream(&self) -> NodeResult<fs::ReadStream> {
-        Ok(fs::ReadStream::new(
-            format!("fd:{}", self.fd),
-            crate::stream::Readable::from_chunks(vec![self.read_file_buffer()?]),
-        ))
+        self.create_read_stream_with_options(ReadStreamOptions::default())
     }
 
     pub fn create_read_stream_with_options(
         &self,
         options: ReadStreamOptions,
     ) -> NodeResult<fs::ReadStream> {
-        if options.stream.signal_aborted {
-            return Err(crate::error::NodeError::new(
-                "ABORT_ERR",
-                "read stream creation was aborted",
-            ));
-        }
-        let mut buffer = self.read_file_buffer()?;
-        if let Some(start) = options.stream.start {
-            let start = start as usize;
-            let end = options
-                .stream
-                .end
-                .map(|end| end as usize + 1)
-                .unwrap_or_else(|| buffer.len())
-                .min(buffer.len());
-            buffer = if start >= buffer.len() || start >= end {
-                Buffer::from_bytes(Vec::new())
-            } else {
-                Buffer::from_bytes(buffer.as_bytes()[start..end].to_vec())
-            };
-        }
-        Ok(fs::ReadStream::new(
+        fs::ReadStream::from_file(
             format!("fd:{}", self.fd),
-            crate::stream::Readable::from_chunks(vec![buffer]),
-        ))
+            fs::clone_file_descriptor(self.fd)?,
+            &options,
+        )
     }
 
-    pub fn create_write_stream(&self) -> fs::WriteStream {
-        fs::create_write_stream(&format!("fd:{}", self.fd))
+    pub fn create_write_stream(&self) -> NodeResult<fs::WriteStream> {
+        self.create_write_stream_with_options(WriteStreamOptions::default())
     }
 
     pub fn create_write_stream_with_options(
         &self,
         options: WriteStreamOptions,
     ) -> NodeResult<fs::WriteStream> {
-        fs::create_write_stream_with_options(&format!("fd:{}", self.fd), options)
+        fs::WriteStream::from_file(
+            format!("fd:{}", self.fd),
+            fs::clone_file_descriptor(self.fd)?,
+            &options,
+        )
     }
 
     pub fn read_lines(&self, encoding: &str) -> NodeResult<Vec<String>> {
@@ -209,11 +190,6 @@ impl FileHandle {
             .lines()
             .map(str::to_string)
             .collect())
-    }
-
-    pub fn read_lines_with_options(&self, options: ReadStreamOptions) -> NodeResult<Vec<String>> {
-        let encoding = options.stream.encoding.as_deref().unwrap_or("utf8");
-        self.read_lines(encoding)
     }
 
     pub fn pull(&self, chunk_size: usize) -> NodeResult<crate::stream::Readable> {

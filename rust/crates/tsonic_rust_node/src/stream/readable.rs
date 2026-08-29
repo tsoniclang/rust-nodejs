@@ -1,3 +1,8 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadableSource {
+    Stdin,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Readable {
     chunks: Vec<Buffer>,
@@ -9,6 +14,8 @@ pub struct Readable {
     encoding: Option<String>,
     did_read: bool,
     events: StreamEventState,
+    source: Option<ReadableSource>,
+    source_ended: bool,
 }
 
 impl Readable {
@@ -23,7 +30,20 @@ impl Readable {
             encoding: None,
             did_read: false,
             events: StreamEventState::default(),
+            source: None,
+            source_ended: false,
         }
+    }
+
+    pub fn stdin() -> Self {
+        Self {
+            source: Some(ReadableSource::Stdin),
+            ..Self::from_chunks(Vec::new())
+        }
+    }
+
+    pub(crate) fn is_stdin_source(&self) -> bool {
+        matches!(self.source, Some(ReadableSource::Stdin))
     }
 
     pub fn from_chunks_with_options(chunks: Vec<Buffer>, options: StreamOptions) -> Self {
@@ -34,19 +54,49 @@ impl Readable {
     }
 
     pub fn read(&mut self) -> Option<Buffer> {
+        match self.read_result() {
+            Ok(value) => value,
+            Err(error) => {
+                self.errored = Some(error.to_string());
+                None
+            }
+        }
+    }
+
+    pub fn read_result(&mut self) -> NodeResult<Option<Buffer>> {
         if self.paused || self.destroyed {
-            return None;
+            return Ok(None);
         }
         let chunk = self.chunks.get(self.index).cloned();
         if chunk.is_some() {
             self.index += 1;
             self.did_read = true;
+            return Ok(chunk);
         }
-        chunk
+        if self.source_ended {
+            return Ok(None);
+        }
+        match self.source {
+            Some(ReadableSource::Stdin) => {
+                use std::io::Read;
+                let mut bytes = vec![0_u8; self.options.high_water_mark.max(1)];
+                let read = std::io::stdin()
+                    .read(&mut bytes)
+                    .map_err(|error| crate::NodeError::new("EIO", error.to_string()))?;
+                if read == 0 {
+                    self.source_ended = true;
+                    return Ok(None);
+                }
+                bytes.truncate(read);
+                self.did_read = true;
+                Ok(Some(Buffer::from_bytes(bytes)))
+            }
+            None => Ok(None),
+        }
     }
 
     pub fn is_ended(&self) -> bool {
-        self.index >= self.chunks.len()
+        self.index >= self.chunks.len() && (self.source.is_none() || self.source_ended)
     }
 
     pub fn readable(&self) -> bool {
@@ -93,8 +143,13 @@ impl Readable {
         Self::from_chunks(chunks)
     }
 
-    pub fn pipe(&mut self, writable: &mut Writable) -> NodeResult<()> {
+    pub fn pipe<W: WritableTarget>(&mut self, writable: &mut W) -> NodeResult<()> {
         pipeline(self, writable)
+    }
+
+    pub fn pipe_to<'a, W: WritableTarget>(&mut self, writable: &'a mut W) -> NodeResult<&'a mut W> {
+        pipeline(self, writable)?;
+        Ok(writable)
     }
 
     pub fn unpipe(&mut self, _writable: &mut Writable) -> NodeResult<()> {
@@ -182,8 +237,18 @@ impl Readable {
         self.paused = true;
     }
 
+    pub fn pause_chain(&mut self) -> &mut Self {
+        self.pause();
+        self
+    }
+
     pub fn resume(&mut self) {
         self.paused = false;
+    }
+
+    pub fn resume_chain(&mut self) -> &mut Self {
+        self.resume();
+        self
     }
 
     pub fn is_paused(&self) -> bool {

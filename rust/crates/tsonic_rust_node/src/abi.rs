@@ -219,9 +219,10 @@ pub use crate::http2::{
     NGHTTP2_NO_ERROR, NGHTTP2_PROTOCOL_ERROR, NGHTTP2_REFUSED_STREAM,
 };
 pub use crate::https::{
-    create_server as https_create_server, get as https_get, request as https_request,
-    Agent as HttpsAgent, AgentOptions as HttpsAgentOptions, RequestOptions as HttpsRequestOptions,
-    Server as HttpsServer, ServerOptions as HttpsServerOptions,
+    create_server_callable as https_create_server_callable, get as https_get,
+    get_callable as https_get_callable, request as https_request,
+    request_callable as https_request_callable, ClientRequest as HttpsClientRequest,
+    RequestOptions as HttpsRequestOptions, ServerHandle as HttpsServer,
 };
 pub use crate::module::{
     builtin_modules as module_builtin_modules, create_require as module_create_require,
@@ -307,8 +308,8 @@ pub use crate::process::{
     thread_cpu_usage as process_thread_cpu_usage, title as process_title, umask as process_umask,
     unref_handle as process_unref_handle, uptime as process_uptime, version as process_version,
     versions as process_versions, CpuUsage as ProcessCpuUsage, MemoryUsage as ProcessMemoryUsage,
-    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning, ProcessWriteStream,
-    Release as ProcessRelease, ResourceUsage as ProcessResourceUsage,
+    ProcessConfig, ProcessEvents, ProcessFeatures, ProcessWarning, Release as ProcessRelease,
+    ResourceUsage as ProcessResourceUsage,
 };
 pub use crate::punycode::{to_ascii as punycode_to_ascii, to_unicode as punycode_to_unicode};
 pub use crate::querystring::{
@@ -321,9 +322,8 @@ pub use crate::querystring::{
     StringifyOptions,
 };
 pub use crate::readline::{
-    create_interface as readline_create_interface, promises as readline_promises,
-    CursorPos as ReadlineCursorPos, Interface as ReadlineInterface, Key as ReadlineKey,
-    Readline as ReadlinePromisesController,
+    create_interface as readline_create_interface, CursorPos as ReadlineCursorPos,
+    Interface as ReadlineInterface, SourceInterfaceOptions as ReadlineInterfaceOptions,
 };
 pub use crate::sqlite::{
     DatabaseSync as SqliteDatabaseSync, RunResult as SqliteRunResult, SqlValue,
@@ -340,11 +340,9 @@ pub use crate::timers::{
     set_timeout_with_options, Immediate, Timeout, Timer, TimerOptions,
 };
 pub use crate::tls::{
-    check_server_identity as tls_check_server_identity, connect as tls_connect,
-    connect_get as tls_connect_get, create_secure_context as tls_create_secure_context,
-    default_port as tls_default_port, Certificate as TlsCertificate, CipherInfo as TlsCipherInfo,
-    ConnectOptions as TlsConnectOptions, EphemeralKeyInfo as TlsEphemeralKeyInfo,
-    SecureContext as TlsSecureContext, SecureContextOptions as TlsSecureContextOptions, TlsSocket,
+    connect as tls_connect, connect_callable as tls_connect_callable,
+    create_server as tls_create_server, SourceConnectOptions as TlsConnectOptions,
+    SourceServerOptions as TlsServerOptions, TlsServer, TlsSocket,
 };
 pub use crate::tty::{
     isatty as tty_isatty, ReadStream as TtyReadStream, WriteStream as TtyWriteStream,
@@ -388,13 +386,12 @@ pub use crate::util::{
 };
 pub use crate::worker_threads::{
     get_environment_data as worker_get_environment_data, is_main_thread as worker_is_main_thread,
-    is_marked_as_untransferable_token as worker_is_marked_as_untransferable_token,
-    mark_as_untransferable_token as worker_mark_as_untransferable_token,
-    move_message_port_to_context as worker_move_message_port_to_context,
-    parent_port as worker_parent_port, receive_message_on_port as worker_receive_message_on_port,
-    set_environment_data as worker_set_environment_data, worker_data, BroadcastChannel,
-    ClonedValue as WorkerClonedValue, MessageChannel, MessagePort,
-    ResourceLimits as WorkerResourceLimits, Worker, WorkerOptions,
+    is_marked_as_untransferable as worker_is_marked_as_untransferable,
+    mark_as_untransferable as worker_mark_as_untransferable, parent_port as worker_parent_port,
+    receive_message_on_port as worker_receive_message_on_port,
+    set_environment_data as worker_set_environment_data, thread_id as worker_thread_id,
+    worker_data, MessageChannel, MessagePort, StructuredCloneValue as WorkerStructuredCloneValue,
+    Worker, WorkerOptions,
 };
 pub use crate::zlib::{
     brotli_compress_sync as zlib_brotli_compress_sync,
@@ -404,16 +401,12 @@ pub use crate::zlib::{
     create_deflate as zlib_create_deflate, create_deflate_raw as zlib_create_deflate_raw,
     create_gunzip as zlib_create_gunzip, create_gzip as zlib_create_gzip,
     create_inflate as zlib_create_inflate, create_inflate_raw as zlib_create_inflate_raw,
-    create_unzip as zlib_create_unzip, create_zstd_compress as zlib_create_zstd_compress,
-    create_zstd_decompress as zlib_create_zstd_decompress,
-    deflate_raw_sync as zlib_deflate_raw_sync, deflate_sync as zlib_deflate_sync,
-    deflate_sync_with_options as zlib_deflate_sync_with_options,
+    create_unzip as zlib_create_unzip, deflate_raw_sync as zlib_deflate_raw_sync,
+    deflate_sync as zlib_deflate_sync, deflate_sync_with_options as zlib_deflate_sync_with_options,
     gunzip_string_sync as zlib_gunzip_string_sync, gunzip_sync as zlib_gunzip_sync,
     gzip_string_sync as zlib_gzip_string_sync, gzip_sync as zlib_gzip_sync,
     gzip_sync_with_options as zlib_gzip_sync_with_options,
     inflate_raw_sync as zlib_inflate_raw_sync, inflate_sync as zlib_inflate_sync,
-    unzip_sync as zlib_unzip_sync, zstd_compress_sync as zlib_zstd_compress_sync,
-    zstd_decompress_sync as zlib_zstd_decompress_sync, BrotliOptions, Deflate, DeflateRaw, Gunzip,
-    Gzip, Inflate, InflateRaw, Unzip, Zlib, ZlibMode, ZlibOptions, ZstdCompress, ZstdDecompress,
-    ZstdOptions,
+    unzip_sync as zlib_unzip_sync, BrotliOptions, Deflate, DeflateRaw, Gunzip, Gzip, Inflate,
+    InflateRaw, Unzip, Zlib, ZlibMode, ZlibOptions,
 };

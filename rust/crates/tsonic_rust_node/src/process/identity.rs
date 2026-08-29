@@ -13,6 +13,17 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+pub(crate) fn install_worker_argv(entry_identity: &str, arguments: &[String]) {
+    let executable = exec_path().unwrap_or_default();
+    let mut values = Vec::with_capacity(arguments.len() + 2);
+    values.push(executable);
+    values.push(entry_identity.to_string());
+    values.extend(arguments.iter().cloned());
+    PROCESS_ARGV.with(|slot| {
+        *slot.borrow_mut() = Some(JsArray::from_dense(values));
+    });
+}
+
 pub fn argv() -> NodeResult<JsArray<String>> {
     PROCESS_ARGV.with(|slot| {
         if let Some(existing) = slot.borrow().as_ref() {
