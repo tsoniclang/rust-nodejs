@@ -205,10 +205,16 @@ test("provider type relations carry exact closed target carriers", () => {
       : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
   })));
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
-    implementations: [{
-      traitPath: "core::clone::Clone",
-      requirements: [],
-    }],
+    implementations: [
+      {
+        traitPath: "core::clone::Clone",
+        requirements: [],
+      },
+      {
+        traitPath: "tsonic_rust_js::value::JsClosedValueCarrier",
+        requirements: [],
+      },
+    ],
   });
   assert.equal(
     Object.keys(contribution.definition.carrierTraits).every((id) =>
@@ -585,7 +591,12 @@ test("provider package closes process identity, timing, and memory contracts", (
   );
   assert.deepEqual(
     contribution.definition.carrierTraits["rust.node.MemoryUsage"],
-    contribution.definition.carrierTraits["rust.node.Buffer"],
+    {
+      implementations: [{
+        traitPath: "core::clone::Clone",
+        requirements: [],
+      }],
+    },
   );
 });
 

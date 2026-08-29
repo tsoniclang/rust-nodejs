@@ -705,8 +705,20 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     assert!(watcher.closed());
     assert!(watcher.poll().is_err());
 
+    let mut callable_watcher = fs::watch_callable(
+        &alpha.to_string_lossy(),
+        tsonic_rust_runtime::Callable::new(|(_event_type, _filename): (String, String)| {
+            Ok::<(), String>(())
+        }),
+    )
+    .unwrap();
+    assert!(!callable_watcher.closed());
+    callable_watcher.close();
+
+    let new_file = root.join("new.txt");
+    let new_file_text = new_file.to_string_lossy().to_string();
     let mut file_watcher = fs::watch_file_with_options(
-        &root.join("new.txt").to_string_lossy(),
+        &new_file_text,
         fs::WatchFileOptions {
             bigint: false,
             persistent: false,
@@ -715,9 +727,39 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     )
     .unwrap();
     assert!(!file_watcher.has_ref());
-    assert_eq!(file_watcher.poll().unwrap(), None);
-    fs::write_file_sync_string(&root.join("new.txt").to_string_lossy(), "new", "utf8").unwrap();
-    assert_eq!(file_watcher.poll().unwrap().unwrap().event_type, "rename");
+    assert!(file_watcher.poll().is_err());
+
+    fs::watch_file_callable(
+        &new_file_text,
+        tsonic_rust_runtime::Callable::new(|(_current, _previous): (fs::Stats, fs::Stats)| {
+            Ok::<(), String>(())
+        }),
+    )
+    .unwrap();
+    fs::unwatch_file(&new_file_text);
+
+    let callback_observed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let callback_state = std::rc::Rc::clone(&callback_observed);
+    let callback_path = new_file_text.clone();
+    fs::watch_file_options_callable(
+        &new_file_text,
+        fs::WatchFileOptions {
+            bigint: false,
+            persistent: true,
+            interval_ms: 1,
+        },
+        tsonic_rust_runtime::Callable::new(move |(current, previous): (fs::Stats, fs::Stats)| {
+            assert!(current.is_file);
+            assert!(!previous.is_file);
+            callback_state.set(true);
+            fs::unwatch_file(&callback_path);
+            Ok::<(), String>(())
+        }),
+    )
+    .unwrap();
+    fs::write_file_sync_string(&new_file_text, "new", "utf8").unwrap();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert!(callback_observed.get());
 
     fs::rm_sync_with_options(
         &root_text,
@@ -765,6 +807,7 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     assert_eq!(readable.raw_listeners("open").len(), 0);
     let chunk = readable.read().unwrap().unwrap();
     assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
+    assert_eq!(readable.bytes_read_number(), 3.0);
     readable.close();
     assert!(!readable.pending);
 
@@ -787,6 +830,7 @@ fn fs_stream_option_carriers_are_closed_shapes() {
         .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
         .unwrap());
     assert_eq!(writable.bytes_written, 1);
+    assert_eq!(writable.bytes_written_number(), 1.0);
     writable.close().unwrap();
     assert!(!writable.pending);
     assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");

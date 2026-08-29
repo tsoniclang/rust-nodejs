@@ -6,6 +6,55 @@ use std::time::{Duration, Instant};
 use tsonic_rust_node::{child_process, http, module, net, tls};
 use tsonic_rust_runtime::Callable;
 
+const TEST_TLS_CERTIFICATE: &str = r#"-----BEGIN CERTIFICATE-----
+MIIDJTCCAg2gAwIBAgIUDCouFfDe+OsGoZyvZ0GF0Y72rS0wDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDgyOTAxMzIyNFoXDTM2MDgy
+NjAxMzIyNFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA16Bm+QdBVQ6p3b+O5A+qdupjPXCf055B3tm4HUjBl5TT
+MK3OIkiLVBSQtOZfXdufxDcvooEqkiPGRhBwo/gN/+QCTViPM7kkYBe9rhw8UnIc
+L6wW4SkAp3q7DvtNO5bRS2usduDBUMS7D47voFMEhp1huEKeS/eqlVSgM7rOxah6
+o60hjnmZmjB/4KSE/dHCDNxLu61MhKAaKHCaShl0SSIlqpT6dR2ndyqQEkv409nr
+JEwzjqCeRx17acCwp0WXr0eM+dyWuh6x3FON8xJxn+q/caUQzLHLYXsPOQF8r1Iq
+NW7az8zvZyp8FDHAdbl8g9Foq0WEvY+hk49RARQstQIDAQABo28wbTAdBgNVHQ4E
+FgQUQrzjdlm6QIq/Iu4H2VjDzX7PdxMwHwYDVR0jBBgwFoAUQrzjdlm6QIq/Iu4H
+2VjDzX7PdxMwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SH
+BH8AAAEwDQYJKoZIhvcNAQELBQADggEBADvMnDS9NAiQM37kIWxYFp22qsEaPM1k
+jT2vYD8sJ8ZmCRlwuAzNaGItRJj3z97B4ooXpz8dTf0gO3tCUmLJXf3TG9NIVszq
+eETuoalRmMM5w3WIdziESvolOMjXGmoAgfmZkKdA/QMiXkAn9z4wTDVS+/TSADy2
+TjxaMzm+vHgB/5ZQbNrZ5bBrBaHMYMp+Yq4ChLsjcO9n4IgRiyNal1nDJ5HlBHYI
+a5x1/XQZeiDy7DH8kRMvmp87VjLLyt3/LIqusZbTjyorEZbrch1Opqqjn8N7CLbk
+c4ramADWdN+AoS5kqc4z1qf/CX3lnes5olfR+6y6jMFm7fBvRfXNHOs=
+-----END CERTIFICATE-----"#;
+
+const TEST_TLS_PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDXoGb5B0FVDqnd
+v47kD6p26mM9cJ/TnkHe2bgdSMGXlNMwrc4iSItUFJC05l9d25/ENy+igSqSI8ZG
+EHCj+A3/5AJNWI8zuSRgF72uHDxSchwvrBbhKQCnersO+007ltFLa6x24MFQxLsP
+ju+gUwSGnWG4Qp5L96qVVKAzus7FqHqjrSGOeZmaMH/gpIT90cIM3Eu7rUyEoBoo
+cJpKGXRJIiWqlPp1Had3KpASS/jT2eskTDOOoJ5HHXtpwLCnRZevR4z53Ja6HrHc
+U43zEnGf6r9xpRDMscthew85AXyvUio1btrPzO9nKnwUMcB1uXyD0WirRYS9j6GT
+j1EBFCy1AgMBAAECggEAMLIkXywQyJVBrncS3ZVeIXHojJkRNzjf1mSj7FUgh0uQ
+cEdoLJzmfkwQrBH0yp0NVUJDSzdRdmSG5A7VaWpdOwNys6YC3SL8QIlMCHSO+O2V
+SPzbw+i/IZOZiBYfyIvUY2yDK+uxLLzpI+fbXQEynfYP+g1tc2mQyB2u+k+/X6q1
+PN9EV+66+DWtOBKWbsoM0stvffKwKYyl0dlzI/beyUpR04l0CIeu0uYQcmOgyT2U
+iB/djOnJZrutPYkF4cSheej4WgmOCWPhvhTXYWctxVbl4ITJFL7Bag9c4M42okPO
+P4WOxoB4f43bbcmyVBYVQyW8swyxg6fFpym95lAg4QKBgQDrHM7lxB2FGLcDHgfb
+T6reDYxiYqBqdzhlan71fU6/IDeOoX0O2OIirr9GWIf6ORbWmKieEmWv69xN/0GG
+jCB7leBtxaAqH5gLR/XsTGoN4Z0OB1LKXX4fxZX1Nbkjh0r09m+8RqV15s6+xM9k
+iAj/tI3jtyw0kQ3yQrTNpmbkcQKBgQDqyGws4JN3QytVWGejv+hEExhZec6jjiOg
+4HI6Sc268VuEqQXNAz97br8IXu49HfxhKpbDl+8HFO73clPdFCgojVot7pwXUIGQ
+LBu9gwRRkqb+AbDVpFlL7T7HCZ7KJcNpzhzoYPPPMFrbjz3TkKA/oI3R7XVzoEb1
+CAcPSJ5ehQKBgGIHH+jC7T/6PwwosEProqV05qx6zMG3NadrUMYQWg3sY92vTVIs
+cZTeYVf2P7O/q9sLyXom14kTAUbv/6UWtdBxfCKovI/znlRNy6abcbiZ8f7QZN+F
+PboHiu+zV58NoN4kBhBtMD3JXzhBHOugoIflAygHzoGYXUU+NN5t3AaxAoGBAKmU
+Kc4gR2MU+O+j8verXTAOOsAl4sLvn3xLoTXIqPgl7FxdWPtDJU8aJpD9QEaUqf3k
+rRCJZPRQgmnoAfrk3DyuHDyg481TMMHZmg+/2haxPjypK/ijxHu62GUa5b5MmGCL
+pwWRQYic/IMpaxasl5JdfRHr2bGySo4hRjgb04ehAoGBANq9TT7xsC5cj2hQvExB
+2s2QuDXJjZvM/ouN3peEMZIwxvzWAiJIRZzzqAagOldO2DQ8Tys1AXGr6Zox1Xj6
+FE4CTN/wKnzOFgSS3cjWy3A8WfhHn6KDHRaZ3MdDNUhJr8zb1Ek4J3MDysZcXHbA
+2i/ZPzXn29BOTHe0EP9tk1HH
+-----END PRIVATE KEY-----"#;
+
 #[test]
 fn net_socket_and_http_client_use_real_local_tcp() {
     let mut server = net::create_server();
@@ -40,13 +89,15 @@ fn net_socket_and_http_client_use_real_local_tcp() {
         assert!(socket.local_port().unwrap() > 0);
         assert_eq!(socket.local_family().unwrap(), "IPv4");
         assert_eq!(socket.address().unwrap().family, "IPv4");
-        socket.set_no_delay(true).unwrap();
-        socket.set_timeout(1_000).unwrap();
+        socket.set_no_delay_chain(true).unwrap();
+        socket.set_timeout_number(1_000.0).unwrap();
         assert_eq!(socket.timeout(), Some(1_000));
         socket.set_encoding("utf8");
         assert_eq!(socket.encoding(), Some("utf8"));
         assert!(socket.write(b"ping").unwrap());
         assert_eq!(socket.bytes_written(), 4);
+        assert_eq!(socket.bytes_written_number(), 4.0);
+        assert_eq!(socket.bytes_read_number(), 0.0);
         assert!(socket.has_ref());
         socket.unref();
         assert!(!socket.has_ref());
@@ -58,7 +109,83 @@ fn net_socket_and_http_client_use_real_local_tcp() {
     let data = socket.read_to_end().unwrap();
     assert_eq!(data, b"ping");
     assert_eq!(socket.bytes_read(), 4);
+    assert_eq!(socket.bytes_read_number(), 4.0);
+    assert_eq!(socket.bytes_written_number(), 0.0);
     handle.join().unwrap();
+
+    assert_eq!(net::is_ip_number("127.0.0.1"), 4.0);
+}
+
+#[test]
+fn net_source_abi_listen_and_default_host_adapters_are_exact() {
+    let callback_count = std::rc::Rc::new(std::cell::Cell::new(0));
+
+    let mut port_server = net::create_server();
+    port_server.listen_port(0.0).unwrap();
+    assert!(port_server.listening());
+    port_server.close();
+
+    let mut host_server = net::create_server();
+    host_server.listen_port_host(0.0, "127.0.0.1").unwrap();
+    assert!(host_server.listening());
+    host_server.close();
+
+    let mut callback_server = net::create_server();
+    let callback_state = std::rc::Rc::clone(&callback_count);
+    callback_server
+        .listen_port_callable(
+            0.0,
+            Callable::new(move |()| {
+                callback_state.set(callback_state.get() + 1);
+                Ok::<(), String>(())
+            }),
+        )
+        .unwrap();
+    callback_server.close();
+
+    let mut host_callback_server = net::create_server();
+    let callback_state = std::rc::Rc::clone(&callback_count);
+    host_callback_server
+        .listen_port_host_callable(
+            0.0,
+            "127.0.0.1",
+            Callable::new(move |()| {
+                callback_state.set(callback_state.get() + 1);
+                Ok::<(), String>(())
+            }),
+        )
+        .unwrap();
+    host_callback_server.close();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert_eq!(callback_count.get(), 2);
+
+    let mut bound = net::create_bound_server("127.0.0.1", 0).unwrap();
+    assert!(bound.listening());
+    bound.close();
+
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accepted = thread::spawn(move || {
+        for _ in 0..2 {
+            let (_socket, _) = listener.accept().unwrap();
+        }
+    });
+    let mut first = net::create_connection_default_host(f64::from(port)).unwrap();
+    first.end(None).unwrap();
+    let connected = std::rc::Rc::new(std::cell::Cell::new(false));
+    let connected_state = std::rc::Rc::clone(&connected);
+    let mut second = net::create_connection_default_host_callable(
+        f64::from(port),
+        Callable::new(move |()| {
+            connected_state.set(true);
+            Ok::<(), String>(())
+        }),
+    )
+    .unwrap();
+    second.end(None).unwrap();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert!(connected.get());
+    accepted.join().unwrap();
 }
 
 #[test]
@@ -94,11 +221,47 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
         socket.write_string("early").unwrap_err().code,
         "ERR_SOCKET_CONNECTING"
     );
+    assert_eq!(
+        socket.read_optional_buffer().unwrap_err().code,
+        "ERR_SOCKET_CONNECTING"
+    );
+    assert_eq!(socket.servername_string(), "localhost");
+    assert_eq!(socket.bytes_read_number(), 0.0);
+    assert_eq!(socket.bytes_written_number(), 0.0);
 
     tsonic_rust_node::run_event_loop().unwrap();
     assert!(!callback_called.get());
     assert_eq!(socket.write_string("late").unwrap_err().code, "ERR_TLS_IO");
     server.join().unwrap();
+}
+
+#[test]
+fn tls_default_host_listener_uses_the_exact_source_callback_contract() {
+    let connection = Callable::new(|(_socket,): (tls::TlsSocket,)| Ok::<(), String>(()));
+    let mut server = tls::TlsServer::create(
+        tls::SourceServerOptions {
+            key: Some(TEST_TLS_PRIVATE_KEY.to_string()),
+            cert: Some(TEST_TLS_CERTIFICATE.to_string()),
+            ..Default::default()
+        },
+        connection,
+    )
+    .unwrap();
+    let listening = std::rc::Rc::new(std::cell::Cell::new(false));
+    let listening_state = std::rc::Rc::clone(&listening);
+    server
+        .listen_default_host_callable(
+            0.0,
+            Callable::new(move |()| {
+                listening_state.set(true);
+                Ok::<(), String>(())
+            }),
+        )
+        .unwrap();
+    assert!(server.listening());
+    server.close();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert!(listening.get());
 }
 
 #[test]

@@ -64,6 +64,12 @@ fn process_next_tick_executes_without_event_loop_guessing() {
 
 #[test]
 fn worker_message_channel_structured_clones_js_values() {
+    assert_eq!(worker_threads::initialize_worker_process().unwrap(), None);
+    let spawn_error = match worker_threads::Worker::spawn_default("") {
+        Ok(_) => panic!("empty worker entry identity must reject"),
+        Err(error) => error,
+    };
+    assert_eq!(spawn_error.code, "ERR_WORKER_PATH");
     let mut channel = worker_threads::MessageChannel::new();
     channel.port1.start();
     assert!(channel.port1.has_ref());
