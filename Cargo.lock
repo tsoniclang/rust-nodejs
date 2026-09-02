@@ -1717,6 +1717,7 @@ dependencies = [
 name = "tsonic_rust_runtime"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "num-bigint",
  "ryu-js",
 ]
