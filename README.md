@@ -1,15 +1,23 @@
-# Tsonic Rust Node Runtime
+# `@tsonic/rust-nodejs`
 
-Rust Node.js surface runtime crate for Tsonic-emitted Rust.
+Rust Node capability for Tsonic. It owns exact `node:*` provider declarations,
+Rust operation rows, installed-runtime contributions, and the
+`tsonic_rust_node` crate.
 
-The npm artifact `@tsonic/rust-nodejs` owns both the installed Node capability
-plugin and the canonical Node runtime source tree. The capability contributes
-`rust/crates/tsonic_rust_node`; no copied runtime tree is shipped. The package
-requires `@tsonic/rust-js` and `@tsonic/rust-runtime` peers, but their physical
-npm locations are independent. The generated Cargo project binds every
-canonical crate through explicit installed paths and explicit crates.io source
-patch declarations.
+Canonical product documentation:
 
-## Crate
+- [Node capability](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/node-capability.md)
+- [Rust Node support](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/node-capability.md)
+- [Rust support inventory](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/support-inventory.md)
 
-- Package/crate: `tsonic_rust_node`
+## Development
+
+```sh
+npm install
+npm run build
+npm test
+```
+
+The gate covers provider contracts and the runtime Cargo workspace. Generated
+projects bind the canonical runtime crates through explicit installed paths;
+physical npm sibling layout is not semantic input.
