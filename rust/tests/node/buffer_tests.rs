@@ -96,8 +96,8 @@ fn buffer_common_mutation_search_and_predicates() {
     assert_eq!(buffer.index_of(&[b'b', 255], 0), Some(1));
     assert_eq!(buffer.last_index_of(b"a", None), Some(7));
 
-    let mut target = Buffer::alloc(4);
-    assert_eq!(buffer.copy(&mut target, 1, 0, Some(3)).unwrap(), 3);
+    let target = Buffer::alloc(4);
+    assert_eq!(buffer.copy(&target, 1, 0, Some(3)).unwrap(), 3);
     assert_eq!(target.as_bytes(), vec![0, b'a', b'b', 255]);
 
     let mut subarray = buffer.subarray(1, Some(3));
@@ -376,9 +376,9 @@ fn buffer_btoa_and_atob_round_trip_latin1_and_base64() {
 #[test]
 fn buffer_source_abi_preserves_views_mutation_and_numeric_results() {
     let source = Buffer::from_bytes(vec![1, 2, 3, 4]);
-    let mut target = Buffer::alloc(6);
+    let target = Buffer::alloc(6);
     let copied =
-        tsonic_rust_node::buffer::copy_closed_number(&source, &mut target, 1.0, 0.0, 4.0).unwrap();
+        tsonic_rust_node::buffer::copy_closed_number(&source, &target, 1.0, 0.0, 4.0).unwrap();
     assert_eq!(copied, 4.0);
     assert_eq!(target.as_bytes(), vec![0, 1, 2, 3, 4, 0]);
 

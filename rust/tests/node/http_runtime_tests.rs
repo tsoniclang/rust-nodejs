@@ -22,10 +22,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
             assert_eq!(request.url(), "/asset.bin");
             response.set_status_code(201);
             response
-                .set_header(
-                    &"content-type".to_string(),
-                    &"application/octet-stream".to_string(),
-                )
+                .set_header("content-type", "application/octet-stream")
                 .unwrap();
             response
                 .end_buffer(Buffer::from_bytes(vec![0, 255, 1]))
