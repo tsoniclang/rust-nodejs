@@ -333,6 +333,7 @@ pub fn unavailable(message: &str) -> NodeError {
 
 #[cfg(unix)]
 fn uid() -> Option<u32> {
+    // SAFETY: getuid has no pointer arguments or caller preconditions.
     Some(unsafe { libc::getuid() })
 }
 
@@ -343,6 +344,7 @@ fn uid() -> Option<u32> {
 
 #[cfg(unix)]
 fn gid() -> Option<u32> {
+    // SAFETY: getgid has no pointer arguments or caller preconditions.
     Some(unsafe { libc::getgid() })
 }
 

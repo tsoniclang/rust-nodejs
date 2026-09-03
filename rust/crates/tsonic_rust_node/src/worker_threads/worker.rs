@@ -364,8 +364,10 @@ impl Drop for WorkerState {
     }
 }
 
+type RuntimeWorker = (Weak<RefCell<WorkerState>>, Weak<RefCell<EventEmitter>>);
+
 thread_local! {
-    static WORKERS: RefCell<Vec<(Weak<RefCell<WorkerState>>, Weak<RefCell<EventEmitter>>)>> =
+    static WORKERS: RefCell<Vec<RuntimeWorker>> =
         const { RefCell::new(Vec::new()) };
 }
 

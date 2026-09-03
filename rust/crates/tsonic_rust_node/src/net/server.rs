@@ -213,7 +213,7 @@ struct RuntimeServer {
 
 thread_local! {
     static RUNTIME_SERVERS: std::cell::RefCell<std::collections::BTreeMap<u64, RuntimeServer>> =
-        std::cell::RefCell::new(std::collections::BTreeMap::new());
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
 static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =

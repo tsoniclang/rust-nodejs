@@ -35,6 +35,10 @@ enum TlsStream {
     Server(rustls::StreamOwned<rustls::ServerConnection, TcpStream>),
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "keeps an established TLS stream allocation-free after connection"
+)]
 enum TlsSocketPhase {
     Connecting,
     Ready(TlsStream),
@@ -148,7 +152,7 @@ impl TlsSocket {
 
     pub fn read_optional_buffer(&mut self) -> NodeResult<Option<Buffer>> {
         let value = self.read_buffer()?;
-        Ok((value.len() > 0).then_some(value))
+        Ok((!value.is_empty()).then_some(value))
     }
 
     pub fn end(&mut self) -> NodeResult<()> {
@@ -497,7 +501,7 @@ struct RuntimeServer {
 
 thread_local! {
     static RUNTIME_SERVERS: RefCell<std::collections::BTreeMap<u64, RuntimeServer>> =
-        RefCell::new(std::collections::BTreeMap::new());
+        const { RefCell::new(std::collections::BTreeMap::new()) };
 }
 
 static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);

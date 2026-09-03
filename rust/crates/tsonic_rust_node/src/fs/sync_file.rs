@@ -217,6 +217,7 @@ fn file_time_from_seconds(value: f64) -> NodeResult<FileTime> {
 #[cfg(unix)]
 fn chown_impl(path: &str, uid: u32, gid: u32) -> NodeResult<()> {
     let path = path_cstring(path)?;
+    // SAFETY: `path` is a live, NUL-terminated CString for the duration of the call.
     let result = unsafe { libc::chown(path.as_ptr(), uid, gid) };
     if result == 0 {
         Ok(())
@@ -236,6 +237,7 @@ fn chown_impl(_path: &str, _uid: u32, _gid: u32) -> NodeResult<()> {
 #[cfg(unix)]
 fn lchown_impl(path: &str, uid: u32, gid: u32) -> NodeResult<()> {
     let path = path_cstring(path)?;
+    // SAFETY: `path` is a live, NUL-terminated CString for the duration of the call.
     let result = unsafe { libc::lchown(path.as_ptr(), uid, gid) };
     if result == 0 {
         Ok(())
@@ -260,6 +262,7 @@ fn fchown_impl(fd: i32, uid: u32, gid: u32) -> NodeResult<()> {
     let file = table
         .get(&fd)
         .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
+    // SAFETY: the descriptor comes from the live file table entry held by `table`.
     let result = unsafe { libc::fchown(file.as_raw_fd(), uid, gid) };
     if result == 0 {
         Ok(())
@@ -295,10 +298,12 @@ fn statfs_impl(path: &str) -> NodeResult<StatFs> {
 
     let path = path_cstring(path)?;
     let mut stats = MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: `path` is a live CString and `stats` points to writable storage for one statfs value.
     let result = unsafe { libc::statfs(path.as_ptr(), stats.as_mut_ptr()) };
     if result != 0 {
         return Err(map_io_error(std::io::Error::last_os_error()));
     }
+    // SAFETY: a successful statfs call initialized the complete output value.
     let stats = unsafe { stats.assume_init() };
     Ok(StatFs {
         r#type: stats.f_type,

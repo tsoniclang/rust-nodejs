@@ -19,7 +19,7 @@ struct TimerEntry {
 }
 
 thread_local! {
-    static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = RefCell::new(BTreeMap::new());
+    static TIMERS: RefCell<BTreeMap<u64, TimerEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -108,9 +108,11 @@ impl tsonic_rust_js::value::JsClosedValueCarrier for Buffer {
             .take(INSPECT_MAX_BYTES)
             .map(|byte| format!("{byte:02x}"))
             .collect::<Vec<_>>();
-        let suffix = (self.len > INSPECT_MAX_BYTES)
-            .then(|| format!(" ... {} more bytes", self.len - INSPECT_MAX_BYTES))
-            .unwrap_or_default();
+        let suffix = if self.len > INSPECT_MAX_BYTES {
+            format!(" ... {} more bytes", self.len - INSPECT_MAX_BYTES)
+        } else {
+            String::new()
+        };
         format!("<Buffer {}{}>", bytes.join(" "), suffix)
     }
 
