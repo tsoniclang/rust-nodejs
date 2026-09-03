@@ -106,15 +106,16 @@ function createApplication(label, { nestedNode = false } = {}) {
     const pluginRoot = join(applicationRoot, "plugins/node-capability");
     mkdirSync(pluginRoot, { recursive: true });
     writeFileSync(join(pluginRoot, "package.json"), JSON.stringify({ private: true }, null, 2));
-    npmInstall(pluginRoot, ["rust-runtime", "rust-js", "rust-nodejs"].map(
-      (name) => packed.packages.get(name).tarball,
-    ), ["--legacy-peer-deps"]);
+    npmInstall(
+      pluginRoot,
+      [...packed.packages.values()].map(({ tarball }) => tarball),
+    );
     nodePackageRoot = join(pluginRoot, "node_modules/@tsonic/rust-nodejs");
   }
   return { root, applicationRoot, nodePackageRoot };
 }
 
-function npmInstall(root, tarballs, extraArguments = []) {
+function npmInstall(root, tarballs) {
   execFileSync(
     "npm",
     [
@@ -124,7 +125,6 @@ function npmInstall(root, tarballs, extraArguments = []) {
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
-      ...extraArguments,
       ...tarballs,
     ],
     { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
