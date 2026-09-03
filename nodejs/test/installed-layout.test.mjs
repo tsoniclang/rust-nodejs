@@ -106,7 +106,9 @@ function createApplication(label, { nestedNode = false } = {}) {
     const pluginRoot = join(applicationRoot, "plugins/node-capability");
     mkdirSync(pluginRoot, { recursive: true });
     writeFileSync(join(pluginRoot, "package.json"), JSON.stringify({ private: true }, null, 2));
-    npmInstall(pluginRoot, [packed.packages.get("rust-nodejs").tarball], ["--legacy-peer-deps"]);
+    npmInstall(pluginRoot, ["rust-runtime", "rust-js", "rust-nodejs"].map(
+      (name) => packed.packages.get(name).tarball,
+    ), ["--legacy-peer-deps"]);
     nodePackageRoot = join(pluginRoot, "node_modules/@tsonic/rust-nodejs");
   }
   return { root, applicationRoot, nodePackageRoot };
