@@ -79,7 +79,7 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
         Callable::new(
             move |(error, output): (Option<tsonic_rust_node::NodeError>, Buffer)| {
                 assert!(error.is_none());
-                assert!(output.len() > 0);
+                assert!(!output.is_empty());
                 completions.set(completions.get() + 1);
                 Ok::<(), String>(())
             },
