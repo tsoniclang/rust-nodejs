@@ -148,6 +148,7 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     projectRoot,
     outputRoot: join(projectRoot, "out"),
     targetOutputRoot: join(projectRoot, "out/rust"),
+    cacheRoot: join(projectRoot, ".tsonic/cache"),
   };
   const compositionContext = {
     project,

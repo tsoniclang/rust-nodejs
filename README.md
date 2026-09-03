@@ -10,7 +10,17 @@ Canonical product documentation:
 - [Rust Node support](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/node-capability.md)
 - [Rust support inventory](https://github.com/tsoniclang/tsonic/blob/main/docs/reference/targets/rust/support-inventory.md)
 
-## Development
+Install this capability next to the Rust target in the application package:
+
+```sh
+npm install --save-dev @tsonic/rust-nodejs@^0.1.0
+```
+
+Authored source then imports standard modules such as `node:fs`. Selecting the
+JavaScript source surface is a separate choice and is not required for Node
+module imports.
+
+## Develop this capability
 
 ```sh
 npm install

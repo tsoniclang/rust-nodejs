@@ -9,6 +9,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 test("the npm artifact declares one canonical Node runtime tree", () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   assert.ok(manifest.files.includes("rust/crates"));
+  assert.ok(manifest.files.includes("!rust/crates/**/.temp/**"));
+  assert.ok(manifest.files.includes("!dist/**/*.tsbuildinfo"));
   assert.ok(manifest.files.includes("rust/tests"));
   assert.ok(!manifest.files.includes("rust"));
   assert.ok(!manifest.files.includes("Cargo.toml"));
