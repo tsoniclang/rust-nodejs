@@ -1,5 +1,8 @@
 //! Node runtime error surface.
 
+#![deny(unsafe_op_in_unsafe_fn)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 pub mod abi;
 pub mod assert;
 pub mod async_hooks;

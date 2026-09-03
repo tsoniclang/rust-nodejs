@@ -67,6 +67,7 @@ pub fn ppid() -> u32 {
 pub fn getuid() -> Option<u32> {
     #[cfg(unix)]
     {
+        // SAFETY: getuid has no pointer arguments or caller preconditions.
         Some(unsafe { libc::getuid() })
     }
     #[cfg(not(unix))]
@@ -78,6 +79,7 @@ pub fn getuid() -> Option<u32> {
 pub fn geteuid() -> Option<u32> {
     #[cfg(unix)]
     {
+        // SAFETY: geteuid has no pointer arguments or caller preconditions.
         Some(unsafe { libc::geteuid() })
     }
     #[cfg(not(unix))]
@@ -89,6 +91,7 @@ pub fn geteuid() -> Option<u32> {
 pub fn getgid() -> Option<u32> {
     #[cfg(unix)]
     {
+        // SAFETY: getgid has no pointer arguments or caller preconditions.
         Some(unsafe { libc::getgid() })
     }
     #[cfg(not(unix))]
@@ -100,6 +103,7 @@ pub fn getgid() -> Option<u32> {
 pub fn getegid() -> Option<u32> {
     #[cfg(unix)]
     {
+        // SAFETY: getegid has no pointer arguments or caller preconditions.
         Some(unsafe { libc::getegid() })
     }
     #[cfg(not(unix))]

@@ -39,7 +39,7 @@ struct PendingResponse {
 
 thread_local! {
     static RUNTIME_SERVERS: std::cell::RefCell<std::collections::BTreeMap<u64, RuntimeServer>> =
-        std::cell::RefCell::new(std::collections::BTreeMap::new());
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
     static PENDING_RESPONSES: std::cell::RefCell<Vec<PendingResponse>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }

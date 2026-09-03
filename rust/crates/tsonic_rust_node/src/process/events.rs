@@ -110,6 +110,7 @@ fn parent_process_id() -> Option<u32> {
 
 #[cfg(unix)]
 fn getgroups_impl() -> NodeResult<Vec<u32>> {
+    // SAFETY: a zero count with a null output pointer is the specified size-query form.
     let count = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
     if count < 0 {
         return Err(NodeError::new(
@@ -118,6 +119,7 @@ fn getgroups_impl() -> NodeResult<Vec<u32>> {
         ));
     }
     let mut groups = vec![0 as libc::gid_t; count as usize];
+    // SAFETY: `groups` provides writable storage for exactly `count` gid_t values.
     let actual = unsafe { libc::getgroups(count, groups.as_mut_ptr()) };
     if actual < 0 {
         return Err(NodeError::new(
@@ -142,6 +144,7 @@ fn kill_impl(pid: u32, signal: i32) -> NodeResult<bool> {
             "pid is outside pid_t range",
         ));
     }
+    // SAFETY: the checked pid fits pid_t and kill has no memory-safety preconditions.
     let result = unsafe { libc::kill(pid as libc::pid_t, signal) };
     if result == 0 {
         Ok(true)
@@ -161,8 +164,10 @@ fn kill_impl(_pid: u32, _signal: i32) -> NodeResult<bool> {
 
 #[cfg(unix)]
 fn umask_impl(mask: Option<u32>) -> u32 {
+    // SAFETY: umask accepts every mode_t value and has no pointer arguments.
     let current = unsafe { libc::umask(mask.unwrap_or(0) as libc::mode_t) } as u32;
     if mask.is_none() {
+        // SAFETY: restoring the mode returned by umask is valid and has no memory preconditions.
         unsafe {
             libc::umask(current as libc::mode_t);
         }

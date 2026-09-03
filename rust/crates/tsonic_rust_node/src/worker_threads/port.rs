@@ -367,8 +367,10 @@ impl Default for MessageChannel {
     }
 }
 
+type RuntimePort = (Weak<RefCell<MessagePortState>>, Weak<RefCell<EventEmitter>>);
+
 thread_local! {
-    static PORTS: RefCell<Vec<(Weak<RefCell<MessagePortState>>, Weak<RefCell<EventEmitter>>)>> =
+    static PORTS: RefCell<Vec<RuntimePort>> =
         const { RefCell::new(Vec::new()) };
 }
 

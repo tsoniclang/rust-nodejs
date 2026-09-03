@@ -167,7 +167,7 @@ struct RuntimeWatcher {
 
 thread_local! {
     static RUNTIME_WATCHERS: std::cell::RefCell<std::collections::BTreeMap<u64, RuntimeWatcher>> =
-        std::cell::RefCell::new(std::collections::BTreeMap::new());
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
 static NEXT_RUNTIME_WATCHER_ID: std::sync::atomic::AtomicU64 =

@@ -68,7 +68,7 @@ impl Utf8Stream {
             return false;
         }
         self.writing = true;
-        self.buffer.extend_from_slice(&bytes);
+        self.buffer.extend_from_slice(bytes);
         if self.sync || self.buffer.len() >= self.min_length {
             self.flush_sync().is_ok()
         } else {
