@@ -131,7 +131,11 @@ function npmInstall(root, tarballs) {
   );
 }
 
-async function generateInstalledProject(applicationRoot, nodePackageRoot) {
+async function generateInstalledProject(
+  applicationRoot,
+  nodePackageRoot,
+  { includeJsSurface },
+) {
   const scopeRoot = join(applicationRoot, "node_modules/@tsonic");
   const targetModule = await import(pathToFileURL(join(scopeRoot, "target-rust/dist/index.js")).href);
   const nodeModule = await import(pathToFileURL(join(nodePackageRoot, "dist/index.js")).href);
@@ -152,12 +156,13 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     targetOutputRoot: join(projectRoot, "out/rust"),
     cacheRoot: join(projectRoot, ".tsonic/cache"),
   };
+  const selectedSurfaceIds = includeJsSurface ? [jsSurface.id] : [];
   const compositionContext = {
     project,
     projectDirectory: projectRoot,
     target,
     selectedCapabilityIds: [nodeCapability.id],
-    selectedSurfaceIds: [jsSurface.id],
+    selectedSurfaceIds,
   };
   const capabilityContext = {
     ...compositionContext,
@@ -185,7 +190,9 @@ async function generateInstalledProject(applicationRoot, nodePackageRoot) {
     const runtimeContext = { ...compositionContext, paths };
     const runtimeReferences = [
       ...session.runtimeContributions().references,
-      ...jsSurface.runtimeContributions(runtimeContext).references,
+      ...(includeJsSurface
+        ? jsSurface.runtimeContributions(runtimeContext).references
+        : []),
       ...nodeCapability.runtimeContributions({
         ...runtimeContext,
         capability: nodeCapability,
@@ -339,7 +346,11 @@ function findOwningNpmPackage(start, installationRoot) {
 
 test("real npm artifacts produce one buildable installed Cargo graph", { timeout: 600_000 }, async () => {
   const installation = createApplication("installed-standard");
-  const generated = await generateInstalledProject(installation.applicationRoot, installation.nodePackageRoot);
+  const generated = await generateInstalledProject(
+    installation.applicationRoot,
+    installation.nodePackageRoot,
+    { includeJsSurface: false },
+  );
   const manifest = readFileSync(join(generated.projectRoot, "Cargo.toml"), "utf8");
   for (const crate of ["tsonic_rust_runtime", "tsonic_rust_js", "tsonic_rust_node"]) {
     assert.equal(manifest.split("\n").filter((line) => line.startsWith(`${crate} = `)).length, 2,
@@ -350,6 +361,10 @@ test("real npm artifacts produce one buildable installed Cargo graph", { timeout
 
 test("real npm artifacts resolve a nested capability without sibling assumptions", { timeout: 600_000 }, async () => {
   const installation = createApplication("installed-nested", { nestedNode: true });
-  const generated = await generateInstalledProject(installation.applicationRoot, installation.nodePackageRoot);
+  const generated = await generateInstalledProject(
+    installation.applicationRoot,
+    installation.nodePackageRoot,
+    { includeJsSurface: true },
+  );
   validateCargoProject(generated.projectRoot, installation.applicationRoot, { check: false });
 });

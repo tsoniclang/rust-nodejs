@@ -9,7 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 test("runtime contribution references the canonical package-owned crate", () => {
   const plugin = createTsonicPlugin();
-  const contributions = plugin.runtimeContributions({});
+  const contributions = plugin.runtimeContributions({ selectedSurfaceIds: ["js"] });
   assert.ok(Array.isArray(contributions.references));
   assert.equal(contributions.references.length, 1);
   const reference = contributions.references[0];
@@ -24,9 +24,26 @@ test("runtime contribution references the canonical package-owned crate", () => 
 
 test("canonical crate path resolves inside this package and exists on disk", () => {
   const plugin = createTsonicPlugin();
-  const [reference] = plugin.runtimeContributions({}).references;
+  const [reference] = plugin.runtimeContributions({ selectedSurfaceIds: ["js"] }).references;
   assert.equal(reference.include, resolve(repoRoot, "rust/crates/tsonic_rust_node"));
   assert.ok(existsSync(reference.include), `missing runtime crate at '${reference.include}'`);
   assert.ok(existsSync(join(reference.include, "Cargo.toml")), "packaged crate lacks Cargo.toml");
   assert.ok(existsSync(join(reference.include, "src", "lib.rs")), "packaged crate lacks src/lib.rs");
+});
+
+test("Node supplies its JS runtime dependency when the JS source surface is absent", () => {
+  const plugin = createTsonicPlugin();
+  const references = plugin.runtimeContributions({ selectedSurfaceIds: [] }).references;
+  assert.deepEqual(
+    references.map((reference) => reference.attributes.crate),
+    ["tsonic_rust_node", "tsonic_rust_js"],
+  );
+  const jsReference = references[1];
+  assert.ok(
+    jsReference.include.endsWith(join("rust-js", "crates", "tsonic_rust_js")),
+    `expected the installed Rust JS crate, got '${jsReference.include}'`,
+  );
+  assert.ok(existsSync(join(jsReference.include, "Cargo.toml")));
+  assert.equal(jsReference.attributes.registryPatch, "crates-io");
+  assert.equal(jsReference.attributes.minimumFoundation, "std");
 });

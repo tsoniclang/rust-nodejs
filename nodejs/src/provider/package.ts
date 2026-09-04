@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
@@ -86,9 +87,11 @@ import {
 // Compiled layout is dist/provider/package.js, so the installed package root
 // is two directories up from this module.
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const require = createRequire(import.meta.url);
+const rustJsPackageRoot = dirname(require.resolve("@tsonic/rust-js/package.json"));
 
 export function createRustNodejsProviderPackage(): RustProviderPackageImplementation {
-  return createRustProviderPackage({
+  const providerPackage = createRustProviderPackage({
     id: "@tsonic/rust-nodejs",
     displayName: "Node.js for Rust",
     version: "0.0.1",
@@ -371,5 +374,35 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       cargoPath: resolve(packageRoot, "rust/crates/tsonic_rust_node"),
       registryPatch: "crates-io",
     }],
+  });
+  const contributeProviderRuntime = providerPackage.runtimeContributions;
+  if (contributeProviderRuntime === undefined) {
+    throw new Error("The Rust Node provider package did not expose its runtime crate.");
+  }
+  return Object.freeze({
+    ...providerPackage,
+    runtimeContributions(
+      context: Parameters<NonNullable<RustProviderPackageImplementation["runtimeContributions"]>>[0],
+    ) {
+      const ownContributions = contributeProviderRuntime(context);
+      if (context.selectedSurfaceIds.includes("js")) {
+        return ownContributions;
+      }
+      return Object.freeze({
+        ...ownContributions,
+        references: Object.freeze([
+          ...(ownContributions.references ?? []),
+          Object.freeze({
+            kind: "cargo-path",
+            include: resolve(rustJsPackageRoot, "crates/tsonic_rust_js"),
+            attributes: Object.freeze({
+              crate: "tsonic_rust_js",
+              registryPatch: "crates-io",
+              minimumFoundation: "std",
+            }),
+          }),
+        ]),
+      });
+    },
   });
 }
