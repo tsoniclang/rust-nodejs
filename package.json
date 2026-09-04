@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/rust-nodejs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Node.js target capability for the Tsonic Rust target",
   "license": "MIT",
   "repository": {
@@ -32,11 +32,11 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@tsonic/rust-runtime": "0.1.0",
-    "@tsonic/rust-js": "0.1.0"
+    "@tsonic/rust-runtime": "0.1.1",
+    "@tsonic/rust-js": "0.1.1"
   },
   "peerDependencies": {
-    "@tsonic/target-rust": "0.1.0"
+    "@tsonic/target-rust": "0.1.1"
   },
   "devDependencies": {
     "@tsonic/target-rust": "file:../tsonic-rust",
