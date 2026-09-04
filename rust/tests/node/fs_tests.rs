@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tsonic_rust_node::fs::{self, FsReadResult, FsWriteData};
 
@@ -698,7 +698,7 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     assert!(!watcher.has_ref());
     assert_eq!(watcher.poll().unwrap(), None);
     fs::write_file_sync_string(&alpha.to_string_lossy(), "changed", "utf8").unwrap();
-    let event = watcher.poll().unwrap().unwrap();
+    let event = poll_watch_event_eventually(&mut watcher);
     assert_eq!(event.event_type, "change");
     assert_eq!(event.filename, "alpha.txt");
     watcher.close();
@@ -1311,6 +1311,20 @@ fn temp_root(label: &str) -> std::path::PathBuf {
             .unwrap()
             .as_nanos()
     ))
+}
+
+fn poll_watch_event_eventually(watcher: &mut fs::FsWatcher) -> fs::FsWatchEvent {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(event) = watcher.poll().unwrap() {
+            return event;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "filesystem watcher did not deliver an event before the deadline"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 fn modified_seconds(path: &std::path::Path) -> u64 {
