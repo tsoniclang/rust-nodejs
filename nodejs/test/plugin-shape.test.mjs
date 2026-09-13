@@ -19,6 +19,12 @@ test("plugin exposes source, target-policy, and runtime contributions", () => {
   assert.equal(typeof plugin.sourceCompilerContributions, "function");
   assert.equal(typeof plugin.createTargetContributions, "function");
   assert.equal(typeof plugin.runtimeContributions, "function");
+  assert.deepEqual(plugin.sourceProfileContributions({}), {
+    declarations: [{
+      fileName: "node-globals.d.ts",
+      text: 'declare var process: typeof import("node:process").default;',
+    }],
+  });
   const source = plugin.sourceCompilerContributions({});
   assert.equal(source.extensions.length, 1);
   assert.equal(source.extensions[0].identity.id, "tsonic.rust.provider-package.@tsonic/rust-nodejs");
