@@ -58,6 +58,30 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
     let file = root.join(&file_name);
     std::fs::write(&file, b"bytes").unwrap();
     let file_buffer = path_buffer(&file);
+    let encoding = fs::BufferEncodingOptions {
+        encoding: "buffer".into(),
+    };
+    let resolved = fs::realpath_sync_buffer_path_bytes(&file_buffer, encoding.clone()).unwrap();
+    assert_eq!(
+        resolved.as_bytes(),
+        path_buffer(&std::fs::canonicalize(&file).unwrap()).as_bytes()
+    );
+    assert_eq!(
+        fs::realpath_sync_buffer_path(&root_buffer).unwrap(),
+        fs::realpath_sync(root.to_str().unwrap()).unwrap()
+    );
+    assert_eq!(
+        fs::realpath_sync_bytes(root.to_str().unwrap(), encoding.clone())
+            .unwrap()
+            .as_bytes(),
+        path_buffer(&std::fs::canonicalize(&root).unwrap()).as_bytes()
+    );
+    assert!(fs::realpath_sync_buffer_path_bytes(&absent, encoding.clone()).is_err());
+    assert!(
+        fs::realpath_sync_buffer_path_bytes(&Buffer::from_bytes(vec![0]), encoding.clone())
+            .is_err()
+    );
+    assert!(fs::realpath_sync_buffer_path_bytes(&file_buffer, Default::default()).is_err());
     fs::utimes_sync_buffer(&file_buffer, 1_700_000_000.25, 1_700_000_001.5).unwrap();
     let stats = fs::stat_sync_buffer_with_options(&file_buffer, options)
         .unwrap()
@@ -95,6 +119,10 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
         )
         .unwrap();
         assert_eq!(entries.len(), 4);
+        let resolved_link =
+            fs::realpath_sync_buffer_path_bytes(&path_buffer(&root.join("link")), encoding.clone())
+                .unwrap();
+        assert_eq!(resolved_link.as_bytes(), resolved.as_bytes());
         let entries: Vec<_> = entries.values().into_iter().map(Option::unwrap).collect();
         assert!(entries
             .iter()

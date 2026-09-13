@@ -31,3 +31,9 @@ npm test
 The gate covers provider contracts and the runtime Cargo workspace. Generated
 projects bind the canonical runtime crates through explicit installed paths;
 physical npm sibling layout is not semantic input.
+
+Generated binaries initialize the performance clock before authored module
+initializers. Native Rust embedders must call
+`tsonic_rust_node::perf_hooks::initialize_clock()` before using this clock or
+calling an emitted library that uses it. Initialization is idempotent; it never
+changes the origin of a running clock.

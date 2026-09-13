@@ -80,8 +80,9 @@ fn assert_and_perf_hooks_are_closed_runtime_helpers() {
         None,
     )
     .unwrap();
+    perf_hooks::initialize_clock();
     assert!(perf_hooks::performance_now() >= 0.0);
-    assert_eq!(perf_hooks::time_origin(), 0.0);
+    assert!(perf_hooks::time_origin() > 0.0);
     let performance = perf_hooks::performance();
     assert!(performance.now() >= 0.0);
     assert!(performance

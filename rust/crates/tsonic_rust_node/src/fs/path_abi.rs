@@ -32,6 +32,58 @@ fn validate_number_stat_options(options: StatOptions) -> NodeResult<()> {
     Ok(())
 }
 
+#[derive(Clone, Default)]
+pub struct BufferEncodingOptions {
+    pub encoding: String,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct RealpathSync;
+
+pub fn realpath_function() -> RealpathSync {
+    RealpathSync
+}
+
+fn realpath_bytes(path: &std::path::Path, options: BufferEncodingOptions) -> NodeResult<Buffer> {
+    if options.encoding != "buffer" {
+        return Err(NodeError::new(
+            "ERR_INVALID_ARG_VALUE",
+            "expected buffer path encoding",
+        ));
+    }
+    let resolved = fs::canonicalize(path).map_err(map_io_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        Ok(Buffer::from_bytes(resolved.into_os_string().into_vec()))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(Buffer::from_bytes(
+            resolved.to_string_lossy().as_bytes().to_vec(),
+        ))
+    }
+}
+
+pub fn realpath_sync_buffer_path(path: &Buffer) -> NodeResult<String> {
+    with_buffer_path(path, |path| {
+        fs::canonicalize(path)
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(map_io_error)
+    })
+}
+
+pub fn realpath_sync_bytes(path: &str, options: BufferEncodingOptions) -> NodeResult<Buffer> {
+    realpath_bytes(std::path::Path::new(path), options)
+}
+
+pub fn realpath_sync_buffer_path_bytes(
+    path: &Buffer,
+    options: BufferEncodingOptions,
+) -> NodeResult<Buffer> {
+    with_buffer_path(path, |path| realpath_bytes(path, options))
+}
+
 pub fn stat_sync_buffer(path: &Buffer) -> NodeResult<Stats> {
     with_buffer_path(path, |path| stat_sync(path))
 }

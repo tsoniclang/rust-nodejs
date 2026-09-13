@@ -58,6 +58,7 @@ import { cryptoModule, cryptoRows } from "./modules/crypto.js";
 import { childProcessModule, childProcessRows } from "./modules/child-process.js";
 import { fsModule, fsRows } from "./modules/filesystem.js";
 import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem-paths.js";
+import { bufferEncodingOptionsCarrier } from "./modules/filesystem-realpath.js";
 import {
   fsPromisesModule,
   fsPromisesRows,
@@ -67,6 +68,7 @@ import { osModule, osRows } from "./modules/os.js";
 import { pathModule, pathRows } from "./modules/path.js";
 import { processModule, processRows } from "./modules/process.js";
 import { processCpuCarrier } from "./modules/process-metrics.js";
+import { performanceCarrier, performanceModule, performanceRows } from "./modules/performance.js";
 import { timersModule, timersRows } from "./modules/timers.js";
 import { eventsModule, eventsRows } from "./modules/events.js";
 import { streamModule, streamRows } from "./modules/stream.js";
@@ -97,7 +99,10 @@ const rustJsPackageRoot = dirname(require.resolve("@tsonic/rust-js/package.json"
 export function createRustNodejsProviderPackage(typedArrays: boolean): RustProviderPackageImplementation {
   const providerPackage = createRustProviderPackage({
     id: "@tsonic/rust-nodejs",
-    ...(typedArrays ? { sourceGlobals: { crypto: "node:crypto::webcrypto" } } : {}),
+    sourceGlobals: {
+      performance: "node:perf_hooks::performance",
+      ...(typedArrays ? { crypto: "node:crypto::webcrypto" } : {}),
+    },
     displayName: "Node.js for Rust",
     version: "0.0.1",
     moduleAliases: [
@@ -113,6 +118,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
       { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
       { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
+      { moduleSpecifier: "perf_hooks", canonicalModuleSpecifier: "node:perf_hooks" },
       { moduleSpecifier: "timers", canonicalModuleSpecifier: "node:timers" },
       { moduleSpecifier: "events", canonicalModuleSpecifier: "node:events" },
       { moduleSpecifier: "stream", canonicalModuleSpecifier: "node:stream" },
@@ -134,6 +140,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       fsModule(typedArrays),
       fsPromisesModule(),
       processModule(),
+      performanceModule(),
       bufferModule(typedArrays),
       childProcessModule(),
       urlModule(),
@@ -153,10 +160,12 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:perf_hooks::Performance", targetCarrier: performanceCarrier },
       { exportId: "node:process::CpuUsage", targetCarrier: processCpuCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
       { exportId: "node:fs::StatOptions", targetCarrier: statOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::BufferDirectoryOptions", targetCarrier: directoryOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
+      { exportId: "node:fs::BufferEncodingOptions", targetCarrier: bufferEncodingOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::FsConstants", targetCarrier: fsConstantsCarrier },
       { exportId: "node:fs::Dirent", targetCarrier: direntCarrier({ kind: "type-parameter", name: "Name" }), genericParameters: direntGenerics },
       {
@@ -255,6 +264,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       ...fsRows(typedArrays),
       ...fsPromisesRows(),
       ...processRows(),
+      ...performanceRows(),
       ...bufferRows(typedArrays),
       ...childProcessRows(),
       ...urlRows(),
@@ -304,6 +314,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Dirent": "tsonic_rust_node::fs::Dirent",
       "rust.node.MakeDirectoryOptions": "tsonic_rust_node::fs::MakeDirectoryOptions",
       "rust.node.RmOptions": "tsonic_rust_node::fs::RmOptions",
+      "rust.node.BufferEncodingOptions": "tsonic_rust_node::fs::BufferEncodingOptions",
+      "rust.node.RealpathSync": "tsonic_rust_node::fs::RealpathSync",
       "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
       "rust.node.SpawnSyncResult": "tsonic_rust_node::child_process::SpawnSyncResult",
       "rust.node.Url": "tsonic_rust_node::url::Url",
@@ -314,6 +326,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
       "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
       "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
+      "rust.node.Performance": "tsonic_rust_node::perf_hooks::Performance",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
@@ -365,6 +378,9 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hmac": cloneOnlyCarrierTraits,
       "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
       "rust.node.CpuUsage": cloneDefaultCarrierTraits,
+      "rust.node.BufferEncodingOptions": cloneDefaultCarrierTraits,
+      "rust.node.RealpathSync": copyDefaultCarrierTraits,
+      "rust.node.Performance": copyDefaultCarrierTraits,
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
@@ -386,14 +402,21 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.WorkerOptions": workerThreadCarrierTraits.options,
       "rust.node.MessagePort": workerThreadCarrierTraits.port,
     },
-    binaryEpilogues: [{
+    binaryHooks: [{
+      id: "node-performance-clock",
+      phase: "before-initialization",
+      path: "tsonic_rust_node::perf_hooks::initialize_clock",
+      requiredCrate: "tsonic_rust_node",
+    }, {
       id: "node-event-loop",
+      phase: "after-entry",
       path: "tsonic_rust_node::run_event_loop",
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",
     }, {
       id: "node-process-exit-code",
+      phase: "after-entry",
       path: "tsonic_rust_node::process::apply_exit_code",
       requiredCrate: "tsonic_rust_node",
     }],

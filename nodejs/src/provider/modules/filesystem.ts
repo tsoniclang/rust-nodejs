@@ -36,6 +36,7 @@ import type {
 } from "../model.js";
 import { fileDescriptorExports, fileDescriptorRows } from "./filesystem-descriptors.js";
 import { filePathExports, filePathRows } from "./filesystem-paths.js";
+import { realpathExports, realpathRows } from "./filesystem-realpath.js";
 
 export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:fs";
@@ -172,7 +173,7 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
       fnExport(m, "symlinkSync", [{ name: "target", type: stringType }, { name: "path", type: stringType }], voidType),
       fnExport(m, "copyFileSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
       fnExport(m, "renameSync", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
-      fnExport(m, "realpathSync", [{ name: "path", type: stringType }], stringType),
+      ...realpathExports(),
       {
         id: statsId,
         name: "Stats",
@@ -435,7 +436,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     fallible("symlinkSync", "node_fs::symlink_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("copyFileSync", "node_fs::copy_file_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
     fallible("renameSync", "node_fs::rename_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
-    fallible("realpathSync", "node_fs::realpath_sync", stringCarrier, [stringCarrier]),
+    ...realpathRows(),
     {
       ...fallible("watch", "node_fs::watch", fsWatcherCarrier, [stringCarrier]),
       signatureId: "node:fs::watch(path)",

@@ -199,39 +199,7 @@ export const numberArrayType = { kind: "array", elementType: numberType } as con
 export const nullType = { kind: "literal", value: null } as const;
 export const undefinedType = { kind: "undefined" } as const;
 
-export type ProviderTypeExpr =
-  | typeof stringType
-  | typeof numberType
-  | typeof booleanType
-  | typeof voidType
-  | typeof int32Type
-  | typeof stringArrayType
-  | typeof numberArrayType
-  | typeof undefinedType
-  | {
-      readonly kind: "provider-ref";
-      readonly moduleSpecifier: string;
-      readonly exportName: string;
-      readonly typeArguments?: readonly ProviderTypeExpr[];
-    }
-  | {
-      readonly kind: "source-global";
-      readonly name: string;
-      readonly typeArguments?: readonly ProviderTypeExpr[];
-    }
-  | { readonly kind: "type-parameter"; readonly name: string }
-  | { readonly kind: "array"; readonly elementType: ProviderTypeExpr }
-  | { readonly kind: "union"; readonly types: readonly ProviderTypeExpr[] }
-  | { readonly kind: "literal"; readonly value: string | number | boolean | null }
-  | typeof nullType
-  | { readonly kind: "any" }
-  | { readonly kind: "never" }
-  | {
-      readonly kind: "function";
-      readonly id: string;
-      readonly parameters: readonly { readonly name: string; readonly type: ProviderTypeExpr }[];
-      readonly returnType: ProviderTypeExpr;
-    };
+export type ProviderTypeExpr = NonNullable<RustProviderModuleDefinition["exports"][number]["type"]>;
 
 // Node is a provider package, not a compiler surface. Supported rows map to
 // closed tsonic_rust_node APIs with exact declaration identities; every
