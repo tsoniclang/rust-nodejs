@@ -22,6 +22,7 @@ import {
   statsCarrier,
   timeoutCarrier,
   textDecoderCarrier,
+  textEncoderCarrier,
   urlCarrier,
   urlObjectCarrier,
   eventEmitterCarrier,
@@ -90,7 +91,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(import.meta.url);
 const rustJsPackageRoot = dirname(require.resolve("@tsonic/rust-js/package.json"));
 
-export function createRustNodejsProviderPackage(): RustProviderPackageImplementation {
+export function createRustNodejsProviderPackage(typedArrays: boolean): RustProviderPackageImplementation {
   const providerPackage = createRustProviderPackage({
     id: "@tsonic/rust-nodejs",
     displayName: "Node.js for Rust",
@@ -133,7 +134,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       childProcessModule(),
       urlModule(),
       cryptoModule(),
-      utilModule(),
+      utilModule(typedArrays),
       httpModule(),
       timersModule(),
       eventsModule(),
@@ -175,6 +176,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
       { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
       { exportId: "node:util::TextDecoder", targetCarrier: textDecoderCarrier },
+      ...(typedArrays ? [{ exportId: "node:util::TextEncoder", targetCarrier: textEncoderCarrier }] : []),
       { exportId: "node:events::EventEmitter", targetCarrier: eventEmitterCarrier },
       { exportId: "node:stream::Readable", targetCarrier: readableCarrier },
       { exportId: "node:stream::Writable", targetCarrier: writableCarrier },
@@ -245,7 +247,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       ...childProcessRows(),
       ...urlRows(),
       ...cryptoRows(),
-      ...utilRows(),
+      ...utilRows(typedArrays),
       ...httpRows(),
       ...timersRows(),
       ...eventsRows(),
@@ -300,6 +302,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
       "rust.node.TextDecoder": "tsonic_rust_node::util::TextDecoder",
+      "rust.node.TextEncoder": "tsonic_rust_node::util::TextEncoder",
       "rust.node.EventEmitter": "tsonic_rust_node::events::EventEmitter",
       "rust.node.Readable": "tsonic_rust_node::stream::Readable",
       "rust.node.Writable": "tsonic_rust_node::stream::Writable",
@@ -344,6 +347,7 @@ export function createRustNodejsProviderPackage(): RustProviderPackageImplementa
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
       "rust.node.Timeout": cloneOnlyCarrierTraits,
       "rust.node.TextDecoder": cloneOnlyCarrierTraits,
+      "rust.node.TextEncoder": copyDefaultCarrierTraits,
       "rust.node.NodeError": cloneOnlyCarrierTraits,
       "rust.node.FsWatcher": cloneOnlyCarrierTraits,
       "rust.node.DnsLookupAddress": cloneOnlyCarrierTraits,

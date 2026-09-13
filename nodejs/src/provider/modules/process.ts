@@ -29,6 +29,7 @@ import {
   voidType,
   writableCarrier,
 } from "../model.js";
+import { rustNeverTargetType } from "@tsonic/target-rust/provider";
 
 import type {
   ProviderTypeExpr,
@@ -144,7 +145,7 @@ export function processModule(): RustProviderModuleDefinition {
       valueExport("execPath", stringType),
       valueExport("exitCode", { kind: "union", types: [numberType, nullType] }),
       valueExport("version", stringType),
-      fnExport(m, "exit", [{ name: "code", type: numberType }], voidType),
+      fnExport(m, "exit", [{ name: "code", type: numberType }], { kind: "never" }),
       {
         id: defaultId,
         name: "NodeProcessModule",
@@ -187,7 +188,7 @@ export function processModule(): RustProviderModuleDefinition {
             readonly: false,
             static: true,
           }),
-          methodMember(defaultId, "exit", [{ name: "code", type: numberType }], voidType, { static: true }),
+          methodMember(defaultId, "exit", [{ name: "code", type: numberType }], { kind: "never" }, { static: true }),
         ],
       },
     ],
@@ -232,7 +233,7 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.isTTY`, operationKind: "property", target: { form: "receiver-method", name: "is_tty" }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.fd`, operationKind: "property", target: { form: "receiver-method", name: "fd" }, resultCarrier: int32Carrier, receiverCarrier: writableCarrier },
-    { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [int32Carrier] },
+    { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: rustNeverTargetType(), parameterCarriers: [int32Carrier] },
     { exportId: defaultId, memberId: `${defaultId}.availableMemory`, signatureId: `${defaultId}.availableMemory()`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: defaultId, memberId: `${defaultId}.chdir`, signatureId: `${defaultId}.chdir(directory)`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.constrainedMemory`, signatureId: `${defaultId}.constrainedMemory()`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
@@ -255,7 +256,7 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
     { exportId: defaultId, memberId: `${defaultId}.version`, operationKind: "property", target: { form: "call", path: "node_process::version" }, resultCarrier: stringCarrier },
-    { exportId: defaultId, memberId: `${defaultId}.exit`, signatureId: `${defaultId}.exit(code)`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: unitCarrier, parameterCarriers: [int32Carrier] },
+    { exportId: defaultId, memberId: `${defaultId}.exit`, signatureId: `${defaultId}.exit(code)`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: rustNeverTargetType(), parameterCarriers: [int32Carrier] },
   ];
 }
 

@@ -14,15 +14,18 @@ import {
   stringCarrier,
   stringType,
   textDecoderCarrier,
+  textEncoderCarrier,
 } from "../model.js";
+import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
 import type {
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
 } from "../model.js";
-export function utilModule(): RustProviderModuleDefinition {
+export function utilModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:util";
   const textDecoderId = `${m}::TextDecoder`;
+  const textEncoderId = `${m}::TextEncoder`;
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.util",
@@ -31,6 +34,23 @@ export function utilModule(): RustProviderModuleDefinition {
       namedImports: [{ exportedName: "Buffer" }],
     }],
     exports: [
+      ...(typedArrays ? [{
+        id: textEncoderId,
+        name: "TextEncoder",
+        kind: "class",
+        members: [
+          constructorMember(textEncoderId, []),
+          {
+            id: `${textEncoderId}.encode`, name: "encode", kind: "method",
+            signatures: [{
+              id: `${textEncoderId}.encode(input)`,
+              parameters: [{ name: "input", type: stringType }],
+              returnType: { kind: "source-global", name: "Uint8Array" },
+            }],
+          },
+          propertyMember(textEncoderId, "encoding", stringType),
+        ],
+      } satisfies RustProviderModuleDefinition["exports"][number]] : []),
       {
         id: textDecoderId,
         name: "TextDecoder",
@@ -45,7 +65,11 @@ export function utilModule(): RustProviderModuleDefinition {
               id: `${textDecoderId}.decode(input)`,
               parameters: [{ name: "input", type: providerRef("node:buffer", "Buffer") }],
               returnType: stringType,
-            }],
+            }, ...(typedArrays ? [{
+              id: `${textDecoderId}.decode(bytes)`,
+              parameters: [{ name: "input", type: { kind: "source-global" as const, name: "Uint8Array" } }],
+              returnType: stringType,
+            }] : [])],
           },
           propertyMember(textDecoderId, "encoding", stringType),
           propertyMember(textDecoderId, "fatal", booleanType),
@@ -63,12 +87,19 @@ export function utilModule(): RustProviderModuleDefinition {
   };
 }
 
-export function utilRows(): readonly RustProviderOperationDefinition[] {
+export function utilRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
   const m = "node:util";
   const textDecoderId = `${m}::TextDecoder`;
+  const textEncoderId = `${m}::TextEncoder`;
   return [
+    ...(typedArrays ? [
+    { exportId: textEncoderId, memberId: `${textEncoderId}.constructor`, signatureId: `${textEncoderId}.constructor()`, operationKind: "constructor", target: { form: "call", path: "node_util::TextEncoder::new" }, resultCarrier: textEncoderCarrier, parameterCarriers: [] },
+    { exportId: textEncoderId, memberId: `${textEncoderId}.encode`, signatureId: `${textEncoderId}.encode(input)`, operationKind: "method", target: { form: "receiver-method", name: "encode_uint8", argModes: ["ref"] }, resultCarrier: rustJsTypedArrayTargetType("Uint8Array"), parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: textEncoderId, memberId: `${textEncoderId}.encoding`, operationKind: "property", target: { form: "receiver-method", name: "encoding" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion },
+    { exportId: textDecoderId, memberId: `${textDecoderId}.decode`, signatureId: `${textDecoderId}.decode(bytes)`, operationKind: "method", target: { form: "receiver-method", name: "decode_uint8", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [rustJsTypedArrayTargetType("Uint8Array")], ...providerNativeFallibility },
+    ] satisfies RustProviderOperationDefinition[] : []),
     { exportId: textDecoderId, memberId: `${textDecoderId}.constructor`, signatureId: `${textDecoderId}.constructor()`, operationKind: "constructor", target: { form: "call", path: "node_util::text_decoder_new" }, resultCarrier: textDecoderCarrier, parameterCarriers: [] },
-    { exportId: textDecoderId, memberId: `${textDecoderId}.decode`, operationKind: "method", target: { form: "receiver-method", name: "decode_buffer", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: textDecoderId, memberId: `${textDecoderId}.decode`, signatureId: `${textDecoderId}.decode(input)`, operationKind: "method", target: { form: "receiver-method", name: "decode_buffer", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
     { exportId: textDecoderId, memberId: `${textDecoderId}.encoding`, operationKind: "property", target: { form: "receiver-method", name: "encoding" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion },
     { exportId: textDecoderId, memberId: `${textDecoderId}.fatal`, operationKind: "property", target: { form: "receiver-method", name: "fatal" }, resultCarrier: boolCarrier },
     { exportId: textDecoderId, memberId: `${textDecoderId}.ignoreBOM`, operationKind: "property", target: { form: "receiver-method", name: "ignore_bom" }, resultCarrier: boolCarrier },

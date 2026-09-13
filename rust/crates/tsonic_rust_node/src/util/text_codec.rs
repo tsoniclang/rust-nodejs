@@ -16,6 +16,11 @@ impl TextEncoder {
         input.as_bytes().to_vec()
     }
 
+    pub fn encode_uint8(&self, input: &str) -> NodeResult<Uint8Array> {
+        Uint8Array::from_buffer_only(ArrayBuffer::from_bytes(self.encode(input)))
+            .map_err(|error| NodeError::new("ERR_OUT_OF_RANGE", error.to_string()))
+    }
+
     pub fn encode_into(&self, input: &str, destination: &mut [u8]) -> TextEncoderEncodeIntoResult {
         let bytes = input.as_bytes();
         let written = bytes.len().min(destination.len());
@@ -81,11 +86,19 @@ impl TextDecoder {
         Ok(String::from_utf8_lossy(input).into_owned())
     }
 
-    pub fn decode_with_options(&self, input: &[u8], _options: TextDecodeOptions) -> NodeResult<String> {
+    pub fn decode_with_options(
+        &self,
+        input: &[u8],
+        _options: TextDecodeOptions,
+    ) -> NodeResult<String> {
         self.decode(input)
     }
 
     pub fn decode_buffer(&self, input: &crate::buffer::Buffer) -> NodeResult<String> {
+        input.with_bytes(|bytes| self.decode(bytes))
+    }
+
+    pub fn decode_uint8(&self, input: &Uint8Array) -> NodeResult<String> {
         input.with_bytes(|bytes| self.decode(bytes))
     }
 }

@@ -6,6 +6,31 @@ use tsonic_rust_js::{ArrayBuffer, JsObject, JsString, Uint8Array};
 use tsonic_rust_node::{buffer::Buffer, util};
 
 #[test]
+fn text_codecs_use_exact_typed_array_views() {
+    let encoder = util::TextEncoder::new();
+    let decoder = util::TextDecoder::new(None);
+    let bytes = encoder.encode_uint8("aé😀z").unwrap();
+    assert_eq!(bytes.with_bytes(|bytes| bytes.to_vec()), "aé😀z".as_bytes());
+    assert_eq!(decoder.decode_uint8(&bytes).unwrap(), "aé😀z");
+    let view = bytes.subarray(1.0, Some(7.0));
+    assert_eq!(decoder.decode_uint8(&view).unwrap(), "é😀");
+    bytes.set_number(1.0, 65.0);
+    assert_eq!(decoder.decode_uint8(&view).unwrap(), "A�😀");
+    assert!(util::TextDecoder::new_with_options(None, true, false)
+        .decode_uint8(&view)
+        .is_err());
+    let empty = encoder.encode_uint8("").unwrap();
+    assert_eq!(empty.length(), 0.0);
+    assert_eq!(decoder.decode_uint8(&empty).unwrap(), "");
+    assert_eq!(
+        decoder
+            .decode_uint8(&encoder.encode_uint8("\u{feff}x").unwrap())
+            .unwrap(),
+        "x"
+    );
+}
+
+#[test]
 fn util_format_and_inspect_closed_values() {
     let output = util::format(
         "%s:%d:%j:%%",

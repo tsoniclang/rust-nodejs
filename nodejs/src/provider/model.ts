@@ -61,6 +61,7 @@ export const httpServerResponseCarrier: RustTargetTypeRef = { kind: "target-name
 export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
 export const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
 export const textDecoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextDecoder" };
+export const textEncoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextEncoder" };
 export const eventEmitterCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.EventEmitter" };
 export const readableCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Readable" };
 export const writableCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Writable" };
@@ -218,6 +219,7 @@ export type ProviderTypeExpr =
   | { readonly kind: "literal"; readonly value: string | number | boolean | null }
   | typeof nullType
   | { readonly kind: "any" }
+  | { readonly kind: "never" }
   | {
       readonly kind: "function";
       readonly id: string;
