@@ -23,6 +23,10 @@ export function createRustNodejsCapability(): RustNodejsCapabilityPlugin {
           fileName: "node-globals.d.ts",
           text: [
             'declare var process: typeof import("node:process").default;',
+            'declare namespace NodeJS {',
+            '  type ProcessEnv = import("node:process").ProcessEnv;',
+            '  type Signals = import("node:process").Signals;',
+            '}',
             ...(context.selectedSurfaceIds?.includes("js") === true
               ? [
                   'declare var TextEncoder: typeof import("node:util").TextEncoder;',
