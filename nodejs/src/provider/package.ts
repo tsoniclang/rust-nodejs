@@ -15,6 +15,7 @@ import {
   httpServerCarrier,
   httpServerResponseCarrier,
   makeDirectoryOptionsCarrier,
+  nodeErrorCarrier,
   processEnvCarrier,
   processMemoryUsageCarrier,
   rmOptionsCarrier,
@@ -160,6 +161,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:child_process::SpawnSyncError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:child_process::SpawnSyncOptionsWithBufferEncoding", targetCarrier: spawnOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:perf_hooks::Performance", targetCarrier: performanceCarrier },
       { exportId: "node:process::CpuUsage", targetCarrier: processCpuCarrier, objectLiteralConstruction: { kind: "struct-default" } },

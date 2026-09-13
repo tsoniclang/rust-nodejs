@@ -155,6 +155,7 @@ test("provider type relations carry exact closed target carriers", () => {
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
+    ["node:child_process::SpawnSyncError", "rust.node.NodeError"],
     ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
     ["node:perf_hooks::Performance", "rust.node.Performance"],
     ["node:process::CpuUsage", "rust.node.CpuUsage", "struct-default"],
