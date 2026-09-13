@@ -40,6 +40,8 @@ mod performance_clock_tests;
 mod process_cpu_tests;
 #[path = "node/process_environment_tests.rs"]
 mod process_environment_tests;
+#[path = "node/process_signal_tests.rs"]
+mod process_signal_tests;
 #[path = "node/process_tests.rs"]
 mod process_tests;
 #[path = "node/readline_worker_tests.rs"]

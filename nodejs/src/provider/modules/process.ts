@@ -1,3 +1,4 @@
+import { processSignalMembers, processSignalRows, processCarrier } from "./process-signals.js";
 import { processArchitectureType, processPlatformType, processMetricExports, processMetricMembers, processMetricRows } from "./process-metrics.js";
 import {
   boolCarrier,
@@ -42,7 +43,7 @@ export function processModule(): RustProviderModuleDefinition {
   const envId = "node:process::ProcessEnv";
   const memoryUsageId = "node:process::MemoryUsage";
   const writeStreamId = "node:process::ProcessWriteStream";
-  const defaultId = "node:process.default";
+  const defaultId = "node:process::Process";
   const valueExport = (name: string, type: ProviderTypeExpr, documentation?: string) => ({
     id: `${m}::${name}`,
     name,
@@ -62,6 +63,7 @@ export function processModule(): RustProviderModuleDefinition {
     }],
     exports: [
       ...processMetricExports(),
+      { id: `${m}::default`, name: "process", kind: "value", exportKind: "default", type: providerRef(m, "Process") },
       {
         id: `${m}::Signals`, name: "Signals", kind: "type",
         type: { kind: "union", types: [
@@ -161,20 +163,19 @@ export function processModule(): RustProviderModuleDefinition {
       fnExport(m, "exit", [{ name: "code", type: numberType }], { kind: "never" }),
       {
         id: defaultId,
-        name: "NodeProcessModule",
-        exportKind: "default",
-        kind: "class",
+        name: "Process",
+        kind: "interface",
         members: [
           ...processMetricMembers(),
-          methodMember(defaultId, "availableMemory", [], numberType, { static: true }),
-          methodMember(defaultId, "chdir", [{ name: "directory", type: stringType }], voidType, { static: true }),
-          methodMember(defaultId, "constrainedMemory", [], numberType, { static: true }),
-          methodMember(defaultId, "cwd", [], stringType, { static: true }),
+          ...processSignalMembers(),
+          methodMember(defaultId, "availableMemory", [], numberType),
+          methodMember(defaultId, "chdir", [{ name: "directory", type: stringType }], voidType),
+          methodMember(defaultId, "constrainedMemory", [], numberType),
+          methodMember(defaultId, "cwd", [], stringType),
           {
             id: `${defaultId}.hrtime`,
             name: "hrtime",
             kind: "method",
-            static: true,
             signatures: [
               { id: `${defaultId}.hrtime()`, parameters: [], returnType: numberArrayType },
               {
@@ -184,26 +185,25 @@ export function processModule(): RustProviderModuleDefinition {
               },
             ],
           },
-          methodMember(defaultId, "memoryUsage", [], providerRef(m, "MemoryUsage"), { static: true }),
-          methodMember(defaultId, "uptime", [], numberType, { static: true }),
-          propertyMember(defaultId, "env", providerRef(m, "ProcessEnv"), { static: true }),
-          propertyMember(defaultId, "stdout", providerRef(m, "ProcessWriteStream"), { static: true }),
-          propertyMember(defaultId, "stderr", providerRef(m, "ProcessWriteStream"), { static: true }),
-          propertyMember(defaultId, "stdin", providerRef("node:stream", "Readable"), { static: true }),
-          propertyMember(defaultId, "platform", processPlatformType, { static: true }),
-          propertyMember(defaultId, "arch", processArchitectureType, { static: true }),
-          propertyMember(defaultId, "execArgv", stringArrayType, { static: true }),
-          propertyMember(defaultId, "argv", stringArrayType, { static: true }),
-          propertyMember(defaultId, "argv0", stringType, { static: true }),
-          propertyMember(defaultId, "pid", numberType, { static: true }),
-          propertyMember(defaultId, "ppid", numberType, { static: true }),
-          propertyMember(defaultId, "execPath", stringType, { static: true }),
-          propertyMember(defaultId, "version", stringType, { static: true }),
+          methodMember(defaultId, "memoryUsage", [], providerRef(m, "MemoryUsage")),
+          methodMember(defaultId, "uptime", [], numberType),
+          propertyMember(defaultId, "env", providerRef(m, "ProcessEnv")),
+          propertyMember(defaultId, "stdout", providerRef(m, "ProcessWriteStream")),
+          propertyMember(defaultId, "stderr", providerRef(m, "ProcessWriteStream")),
+          propertyMember(defaultId, "stdin", providerRef("node:stream", "Readable")),
+          propertyMember(defaultId, "platform", processPlatformType),
+          propertyMember(defaultId, "arch", processArchitectureType),
+          propertyMember(defaultId, "execArgv", stringArrayType),
+          propertyMember(defaultId, "argv", stringArrayType),
+          propertyMember(defaultId, "argv0", stringType),
+          propertyMember(defaultId, "pid", numberType),
+          propertyMember(defaultId, "ppid", numberType),
+          propertyMember(defaultId, "execPath", stringType),
+          propertyMember(defaultId, "version", stringType),
           propertyMember(defaultId, "exitCode", { kind: "union", types: [numberType, nullType] }, {
             readonly: false,
-            static: true,
           }),
-          methodMember(defaultId, "exit", [{ name: "code", type: numberType }], { kind: "never" }, { static: true }),
+          methodMember(defaultId, "exit", [{ name: "code", type: numberType }], { kind: "never" }),
         ],
       },
     ],
@@ -212,11 +212,13 @@ export function processModule(): RustProviderModuleDefinition {
 
 export function processRows(): readonly RustProviderOperationDefinition[] {
   const m = "node:process";
-  const defaultId = "node:process.default";
+  const defaultId = "node:process::Process";
   const memoryUsageId = `${m}::MemoryUsage`;
   const writeStreamId = `${m}::ProcessWriteStream`;
   return [
     ...processMetricRows(),
+    ...processSignalRows(),
+    { exportId: `${m}::default`, operationKind: "property", target: { form: "call", path: "node_process::process" }, resultCarrier: processCarrier },
     { exportId: `${m}::execArgv`, operationKind: "property", target: { form: "call", path: "node_process::exec_argv" }, resultCarrier: stringArrayCarrier },
     { exportId: defaultId, memberId: `${defaultId}.execArgv`, operationKind: "property", target: { form: "call", path: "node_process::exec_argv" }, resultCarrier: stringArrayCarrier },
     { exportId: `${m}::availableMemory`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },

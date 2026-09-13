@@ -6,7 +6,7 @@ import type { ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperat
 
 const moduleSpecifier = "node:process";
 const cpuId = `${moduleSpecifier}::CpuUsage`;
-const defaultId = "node:process.default";
+const defaultId = "node:process::Process";
 
 export const processCpuCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.CpuUsage" };
 
@@ -38,7 +38,7 @@ export function processMetricExports(): RustProviderModuleDefinition["exports"] 
 }
 
 export function processMetricMembers() {
-  return [{ id: `${defaultId}.cpuUsage`, name: "cpuUsage", kind: "method" as const, static: true, signatures: cpuSignatures(`${defaultId}.cpuUsage`) }];
+  return [{ id: `${defaultId}.cpuUsage`, name: "cpuUsage", kind: "method" as const, signatures: cpuSignatures(`${defaultId}.cpuUsage`) }];
 }
 
 export function processMetricRows(): readonly RustProviderOperationDefinition[] {

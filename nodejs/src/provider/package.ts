@@ -68,6 +68,7 @@ import { httpModule, httpRows } from "./modules/http.js";
 import { osModule, osRows } from "./modules/os.js";
 import { pathModule, pathRows } from "./modules/path.js";
 import { processModule, processRows } from "./modules/process.js";
+import { processCarrier } from "./modules/process-signals.js";
 import { processCpuCarrier } from "./modules/process-metrics.js";
 import { performanceCarrier, performanceModule, performanceRows } from "./modules/performance.js";
 import { timersModule, timersRows } from "./modules/timers.js";
@@ -161,6 +162,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:process::Process", targetCarrier: processCarrier },
       { exportId: "node:child_process::SpawnSyncError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:child_process::SpawnSyncOptionsWithBufferEncoding", targetCarrier: spawnOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:perf_hooks::Performance", targetCarrier: performanceCarrier },
@@ -328,6 +330,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hash": "tsonic_rust_node::crypto::Hash",
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
+      "rust.node.Process": "tsonic_rust_node::process::Process",
       "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
       "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
       "rust.node.Performance": "tsonic_rust_node::perf_hooks::Performance",
@@ -383,6 +386,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hmac": cloneOnlyCarrierTraits,
       "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
       "rust.node.ProcessEnv": cloneDefaultCarrierTraits,
+      "rust.node.Process": copyDefaultCarrierTraits,
       "rust.node.CpuUsage": cloneDefaultCarrierTraits,
       "rust.node.BufferEncodingOptions": cloneDefaultCarrierTraits,
       "rust.node.RealpathSync": copyDefaultCarrierTraits,

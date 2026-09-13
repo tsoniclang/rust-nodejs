@@ -27,6 +27,7 @@ webpki-roots = "1"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "=0.3.3"
+signal-hook = "=0.3.18"
 nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal"] }
 
 [[test]]

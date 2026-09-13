@@ -155,6 +155,7 @@ test("provider type relations carry exact closed target carriers", () => {
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
+    ["node:process::Process", "rust.node.Process"],
     ["node:child_process::SpawnSyncError", "rust.node.NodeError"],
     ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
     ["node:perf_hooks::Performance", "rust.node.Performance"],
@@ -498,7 +499,7 @@ test("provider package maps process argv through the fallible native snapshot", 
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
   const rows = contribution.definition.operations.filter((row) =>
-    row.exportId === "node:process::argv" || row.memberId === "node:process.default.argv");
+    row.exportId === "node:process::argv" || row.memberId === "node:process::Process.argv");
   assert.equal(rows.length, 2);
   for (const row of rows) {
     assert.equal(row.operationKind, "property");
@@ -526,14 +527,17 @@ test("provider package exposes exact process env absence and writable exit statu
     types: [{ kind: "number" }, { kind: "literal", value: null }],
   });
   const defaultObject = processModule.exports.find((entry) => entry.exportKind === "default");
-  assert.equal(defaultObject?.name, "NodeProcessModule");
-  const defaultExitCode = defaultObject.members.find((member) => member.name === "exitCode");
+  assert.equal(defaultObject?.kind, "value");
+  assert.deepEqual(defaultObject?.type, { kind: "provider-ref", moduleSpecifier: "node:process", exportName: "Process" });
+  const processType = processModule.exports.find(entry => entry.id === "node:process::Process");
+  assert.equal(processType?.kind, "interface");
+  const defaultExitCode = processType.members.find((member) => member.name === "exitCode");
   assert.equal(defaultExitCode?.readonly, undefined);
-  assert.equal(defaultExitCode?.static, true);
-  const defaultArgv = defaultObject.members.find((member) => member.name === "argv");
+  assert.equal(defaultExitCode?.static, undefined);
+  const defaultArgv = processType.members.find((member) => member.name === "argv");
   assert.equal(defaultArgv?.readonly, true);
   const rows = contribution.definition.operations.filter((row) =>
-    row.memberId === "node:process.default.exitCode");
+    row.memberId === "node:process::Process.exitCode");
   assert.deepEqual(rows.map((row) => [row.operationKind, row.target.path]), [
     ["property", "node_process::exit_code"],
     ["property-set", "node_process::set_exit_code"],
@@ -573,17 +577,17 @@ test("provider package closes process identity, timing, and memory contracts", (
     ],
   );
   assert.deepEqual(
-    rows.filter((row) => row.memberId === "node:process.default.hrtime").map((row) => [row.signatureId, row.target.path]),
+    rows.filter((row) => row.memberId === "node:process::Process.hrtime").map((row) => [row.signatureId, row.target.path]),
     [
-      ["node:process.default.hrtime()", "node_process::hrtime_open_number"],
-      ["node:process.default.hrtime(previous)", "node_process::hrtime_since_number"],
+      ["node:process::Process.hrtime()", "node_process::hrtime_open_number"],
+      ["node:process::Process.hrtime(previous)", "node_process::hrtime_since_number"],
     ],
   );
 
   const namedMethods = ["availableMemory", "chdir", "constrainedMemory", "memoryUsage", "uptime"];
   for (const name of namedMethods) {
     const named = rows.find((row) => row.exportId === `node:process::${name}`);
-    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process::Process.${name}`);
     assert.ok(named !== undefined, `missing named process row '${name}'`);
     assert.ok(defaultMember !== undefined, `missing default process row '${name}'`);
     assert.deepEqual(defaultMember.target, named.target);
@@ -591,7 +595,7 @@ test("provider package closes process identity, timing, and memory contracts", (
   }
   for (const name of ["argv0", "version"]) {
     const named = rows.find((row) => row.exportId === `node:process::${name}`);
-    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process::Process.${name}`);
     assert.ok(named !== undefined, `missing named process property '${name}'`);
     assert.ok(defaultMember !== undefined, `missing default process property '${name}'`);
     assert.deepEqual(defaultMember.target, named.target);
@@ -662,7 +666,7 @@ test("provider package closes process stdout and stderr output contracts", () =>
     const namedRow = contribution.definition.operations.find((row) =>
       row.exportId === `node:process::${name}` && row.memberId === undefined);
     const defaultRow = contribution.definition.operations.find((row) =>
-      row.memberId === `node:process.default.${name}`);
+      row.memberId === `node:process::Process.${name}`);
     assert.equal(namedRow?.target.path, `node_process::${name}`);
     assert.deepEqual(defaultRow?.target, namedRow?.target);
     assert.deepEqual(defaultRow?.resultCarrier, namedRow?.resultCarrier);

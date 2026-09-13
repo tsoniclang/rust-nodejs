@@ -137,32 +137,6 @@ fn getgroups_impl() -> NodeResult<Vec<u32>> {
 }
 
 #[cfg(unix)]
-fn kill_impl(pid: u32, signal: i32) -> NodeResult<bool> {
-    if pid > i32::MAX as u32 {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            "pid is outside pid_t range",
-        ));
-    }
-    // SAFETY: the checked pid fits pid_t and kill has no memory-safety preconditions.
-    let result = unsafe { libc::kill(pid as libc::pid_t, signal) };
-    if result == 0 {
-        Ok(true)
-    } else {
-        let error = std::io::Error::last_os_error();
-        Err(NodeError::new("ESRCH", error.to_string()))
-    }
-}
-
-#[cfg(not(unix))]
-fn kill_impl(_pid: u32, _signal: i32) -> NodeResult<bool> {
-    Err(NodeError::new(
-        "ERR_FEATURE_UNAVAILABLE",
-        "process.kill is currently implemented for Unix targets",
-    ))
-}
-
-#[cfg(unix)]
 fn umask_impl(mask: Option<u32>) -> u32 {
     // SAFETY: umask accepts every mode_t value and has no pointer arguments.
     let current = unsafe { libc::umask(mask.unwrap_or(0) as libc::mode_t) } as u32;

@@ -116,10 +116,6 @@ pub fn getgroups() -> NodeResult<Vec<u32>> {
     getgroups_impl()
 }
 
-pub fn kill(pid: u32, signal: Option<i32>) -> NodeResult<bool> {
-    kill_impl(pid, signal.unwrap_or(15))
-}
-
 pub fn exec_path() -> NodeResult<String> {
     std::env::current_exe()
         .map(|path| path.to_string_lossy().to_string())
