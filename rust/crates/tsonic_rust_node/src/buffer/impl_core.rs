@@ -1,7 +1,9 @@
 impl Buffer {
-    pub(crate) fn with_mut_bytes<Result>(&self, operation: impl FnOnce(&mut [u8]) -> Result) -> Result {
-        let mut storage = self.storage.borrow_mut();
-        operation(&mut storage[self.offset..self.offset + self.len])
+    pub(crate) fn with_mut_bytes<Result>(
+        &self,
+        operation: impl FnOnce(&mut [u8]) -> Result,
+    ) -> Result {
+        self.view.with_mut_bytes(operation)
     }
 
     pub fn alloc(size: usize) -> Self {
@@ -27,13 +29,13 @@ impl Buffer {
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        let len = bytes.len();
         Self {
-            storage: Rc::new(RefCell::new(bytes)),
-            offset: 0,
-            len,
-            identity: ObjectIdentity::new(),
+            view: tsonic_rust_js::Uint8Array::from_bytes(bytes),
         }
+    }
+
+    pub fn as_uint8_array(&self) -> tsonic_rust_js::Uint8Array {
+        self.view.clone()
     }
 
     pub fn from_string(value: &str, encoding: Option<&str>) -> NodeResult<Self> {
@@ -87,11 +89,11 @@ impl Buffer {
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.view.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.len() == 0
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -99,15 +101,14 @@ impl Buffer {
     }
 
     pub(crate) fn with_bytes<T>(&self, operation: impl FnOnce(&[u8]) -> T) -> T {
-        let storage = self.storage.borrow();
-        operation(&storage[self.offset..self.offset + self.len])
+        self.view.with_bytes(operation)
     }
 
     pub fn get(&self, index: usize) -> Option<u8> {
-        if index >= self.len {
+        if index >= self.len() {
             return None;
         }
-        Some(self.storage.borrow()[self.offset + index])
+        self.with_bytes(|bytes| bytes.get(index).copied())
     }
 
     pub fn read_u8(&self, index: usize) -> NodeResult<u8> {
@@ -116,13 +117,13 @@ impl Buffer {
     }
 
     pub fn set(&mut self, index: usize, value: u8) -> NodeResult<()> {
-        if index >= self.len {
+        if index >= self.len() {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer index out of range",
             ));
         }
-        self.storage.borrow_mut()[self.offset + index] = value;
+        self.with_mut_bytes(|bytes| bytes[index] = value);
         Ok(())
     }
 
@@ -156,7 +157,7 @@ impl Buffer {
         start: usize,
         end: Option<usize>,
     ) -> NodeResult<&mut Self> {
-        let end = end.unwrap_or(self.len).min(self.len);
+        let end = end.unwrap_or(self.len()).min(self.len());
         if start > end {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
@@ -179,20 +180,20 @@ impl Buffer {
         source_start: usize,
         source_end: Option<usize>,
     ) -> NodeResult<usize> {
-        if target_start > target.len || source_start > self.len {
+        if target_start > target.len() || source_start > self.len() {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer copy range is outside buffer",
             ));
         }
-        let source_end = source_end.unwrap_or(self.len).min(self.len);
+        let source_end = source_end.unwrap_or(self.len()).min(self.len());
         if source_start > source_end {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer copy source start is after source end",
             ));
         }
-        let count = (source_end - source_start).min(target.len - target_start);
+        let count = (source_end - source_start).min(target.len() - target_start);
         let bytes = self.read_exact(source_start, count)?;
         target.write_exact(target_start, &bytes)?;
         Ok(count)
@@ -205,13 +206,13 @@ impl Buffer {
         source_start: usize,
         source_end: Option<usize>,
     ) -> NodeResult<usize> {
-        if target_start > target.len() || source_start > self.len {
+        if target_start > target.len() || source_start > self.len() {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer copy range is outside buffer",
             ));
         }
-        let source_end = source_end.unwrap_or(self.len).min(self.len);
+        let source_end = source_end.unwrap_or(self.len()).min(self.len());
         if source_start > source_end {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
@@ -283,9 +284,9 @@ impl Buffer {
 
     pub fn index_of(&self, needle: &[u8], byte_offset: isize) -> Option<usize> {
         if needle.is_empty() {
-            return Some(normalize_search_start(self.len, byte_offset));
+            return Some(normalize_search_start(self.len(), byte_offset));
         }
-        let start = normalize_search_start(self.len, byte_offset);
+        let start = normalize_search_start(self.len(), byte_offset);
         self.to_vec()[start..]
             .windows(needle.len())
             .position(|window| window == needle)
@@ -311,16 +312,16 @@ impl Buffer {
 
     pub fn last_index_of(&self, needle: &[u8], byte_offset: Option<isize>) -> Option<usize> {
         if needle.is_empty() {
-            return Some(
-                byte_offset.map_or(self.len, |offset| normalize_search_start(self.len, offset)),
-            );
+            return Some(byte_offset.map_or(self.len(), |offset| {
+                normalize_search_start(self.len(), offset)
+            }));
         }
-        if needle.len() > self.len {
+        if needle.len() > self.len() {
             return None;
         }
-        let max_start = self.len - needle.len();
+        let max_start = self.len() - needle.len();
         let start = byte_offset
-            .map(|offset| normalize_search_start(self.len, offset).min(max_start))
+            .map(|offset| normalize_search_start(self.len(), offset).min(max_start))
             .unwrap_or(max_start);
         let bytes = self.to_vec();
         (0..=start)
@@ -403,7 +404,7 @@ impl Buffer {
         length: Option<usize>,
         encoding: Option<&str>,
     ) -> NodeResult<usize> {
-        if offset > self.len {
+        if offset > self.len() {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer write offset out of range",
@@ -413,7 +414,7 @@ impl Buffer {
         let count = bytes
             .len()
             .min(length.unwrap_or(bytes.len()))
-            .min(self.len - offset);
+            .min(self.len() - offset);
         self.write_exact(offset, &bytes[..count])?;
         Ok(count)
     }

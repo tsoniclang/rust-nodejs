@@ -4,6 +4,8 @@ import {
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
   rustJsPromiseTargetType,
+  rustJsTypedArrayTargetType,
+  rustNamedTargetType,
   rustOptionTargetType,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
@@ -49,7 +51,10 @@ export const makeDirectoryOptionsCarrier: RustTargetTypeRef = { kind: "target-na
 export const rmOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.RmOptions" };
 export const processEnvCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ProcessEnv" };
 export const processMemoryUsageCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MemoryUsage" };
-export const bufferCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Buffer" };
+export const bufferCarrier: RustTargetTypeRef = rustNamedTargetType(
+  "rust.node.Buffer", "tsonic_rust_node::buffer::Buffer", [], [], undefined,
+  [{ target: rustJsTypedArrayTargetType("Uint8Array"), path: "tsonic_rust_node::buffer::Buffer::as_uint8_array" }],
+);
 export const spawnSyncResultCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.SpawnSyncResult" };
 export const urlCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Url" };
 export const urlObjectCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.UrlObject" };

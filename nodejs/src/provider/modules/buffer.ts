@@ -129,6 +129,7 @@ export function bufferModule(typedArrays: boolean): RustProviderModuleDefinition
         id: bufferId,
         name: "Buffer",
         kind: "class" as const,
+        ...(typedArrays ? { heritage: [{ kind: "extends" as const, type: { kind: "source-global" as const, name: "Uint8Array" } }] } : {}),
         members: [
           {
             id: `${bufferId}.from`,

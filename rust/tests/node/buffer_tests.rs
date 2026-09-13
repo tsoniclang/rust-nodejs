@@ -540,3 +540,44 @@ fn buffer_source_abi_preserves_views_mutation_and_numeric_results() {
     assert_eq!(self_target.copy(&self_target, 1, 0, Some(3)).unwrap(), 3);
     assert_eq!(self_target.as_bytes(), vec![1, 1, 2, 3]);
 }
+#[test]
+fn buffer_upcast_preserves_view_storage_identity_and_compression_input() {
+    use tsonic_rust_runtime::ObjectIdentityCarrier;
+
+    let original = Buffer::from_bytes(vec![91, 1, 2, 3, 92]);
+    let mut selected = original.subarray(1, Some(4));
+    let bytes = selected.as_uint8_array();
+    assert_eq!(bytes.len(), 3);
+    assert!(!bytes.is_empty());
+    assert_eq!(bytes.byte_offset(), 1.0);
+    assert_eq!(
+        selected.object_identity().key(),
+        bytes.object_identity().key()
+    );
+    assert_ne!(
+        selected.object_identity().key(),
+        original.object_identity().key()
+    );
+    selected.set(0, 7).unwrap();
+    assert_eq!(bytes.get_number(0.0), Some(7.0));
+    bytes.set_number(2.0, 8.0);
+    assert_eq!(selected.get(2), Some(8));
+    assert_eq!(original.as_bytes(), vec![91, 7, 2, 8, 92]);
+    let copy = Buffer::from_uint8_array(&bytes);
+    assert_ne!(copy.object_identity().key(), bytes.object_identity().key());
+    bytes.set_number(1.0, 9.0);
+    assert_eq!(copy.as_bytes(), vec![7, 2, 8]);
+    let compressed = tsonic_rust_node::zlib::gzip_sync(&bytes).unwrap();
+    let restored = tsonic_rust_node::zlib::gunzip_sync(&compressed).unwrap();
+    assert_eq!(restored.as_bytes(), vec![7, 9, 8]);
+    let raw = tsonic_rust_node::zlib::deflate_raw_sync(&bytes).unwrap();
+    assert_eq!(
+        tsonic_rust_node::zlib::inflate_raw_sync(&raw)
+            .unwrap()
+            .as_bytes(),
+        vec![7, 9, 8]
+    );
+    let empty = tsonic_rust_js::Uint8Array::from_bytes(Vec::new());
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+}

@@ -54,10 +54,7 @@ fn view_number(buffer: &Buffer, start: f64, end: Option<f64>) -> Buffer {
     let end = end.map_or(buffer.len(), |value| relative_index(value, buffer.len()));
     let end = end.max(start);
     Buffer {
-        storage: Rc::clone(&buffer.storage),
-        offset: buffer.offset + start,
-        len: end - start,
-        identity: ObjectIdentity::new(),
+        view: buffer.view.subarray(start as f64, Some(end as f64)),
     }
 }
 
@@ -125,7 +122,10 @@ pub fn write_uint8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeR
 
 pub fn write_int8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
     let offset = numeric_offset(offset)?;
-    buffer.write_int8(signed_number::<i8>(value, i8::MIN as f64, i8::MAX as f64)?, offset)?;
+    buffer.write_int8(
+        signed_number::<i8>(value, i8::MIN as f64, i8::MAX as f64)?,
+        offset,
+    )?;
     Ok((offset + 1) as f64)
 }
 
@@ -143,13 +143,19 @@ pub fn write_uint16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> N
 
 pub fn write_int16_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
     let offset = numeric_offset(offset)?;
-    buffer.write_int16_le(signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?, offset)?;
+    buffer.write_int16_le(
+        signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?,
+        offset,
+    )?;
     Ok((offset + 2) as f64)
 }
 
 pub fn write_int16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
     let offset = numeric_offset(offset)?;
-    buffer.write_int16_be(signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?, offset)?;
+    buffer.write_int16_be(
+        signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?,
+        offset,
+    )?;
     Ok((offset + 2) as f64)
 }
 
@@ -167,13 +173,19 @@ pub fn write_uint32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> N
 
 pub fn write_int32_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
     let offset = numeric_offset(offset)?;
-    buffer.write_int32_le(signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?, offset)?;
+    buffer.write_int32_le(
+        signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?,
+        offset,
+    )?;
     Ok((offset + 4) as f64)
 }
 
 pub fn write_int32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
     let offset = numeric_offset(offset)?;
-    buffer.write_int32_be(signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?, offset)?;
+    buffer.write_int32_be(
+        signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?,
+        offset,
+    )?;
     Ok((offset + 4) as f64)
 }
 
@@ -202,7 +214,11 @@ pub fn write_double_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> N
 }
 
 fn copy_index(value: f64, name: &str) -> NodeResult<usize> {
-    let value = if value.is_finite() { value.floor() } else { 0.0 };
+    let value = if value.is_finite() {
+        value.floor()
+    } else {
+        0.0
+    };
     if value < 0.0 || value > usize::MAX as f64 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
