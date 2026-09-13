@@ -1,12 +1,55 @@
 use tsonic_rust_node::os;
 
 #[test]
+fn homedir_uses_platform_environment_and_account_lookup() {
+    if let Ok(expected) = std::env::var("TSONIC_NODE_HOME_EXPECTED") {
+        assert_eq!(os::homedir().unwrap(), expected);
+        return;
+    }
+    if std::env::var_os("TSONIC_NODE_HOME_ACCOUNT").is_some() {
+        let expected = std::env::home_dir().expect("Test account has a home directory");
+        assert_eq!(os::homedir().unwrap(), expected.to_string_lossy());
+        return;
+    }
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let unrelated = if cfg!(windows) { "HOME" } else { "USERPROFILE" };
+    let executable = std::env::current_exe().unwrap();
+    let case = "os_tests::homedir_uses_platform_environment_and_account_lookup";
+    for value in ["/tsonic-home/é", ""] {
+        let result = std::process::Command::new(&executable)
+            .args(["--exact", case])
+            .env(variable, value)
+            .env(unrelated, "/unrelated-home")
+            .env("TSONIC_NODE_HOME_EXPECTED", value)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+    }
+    let result = std::process::Command::new(executable)
+        .args(["--exact", case])
+        .env_remove(variable)
+        .env(unrelated, "/unrelated-home")
+        .env("TSONIC_NODE_HOME_ACCOUNT", "1")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stdout)
+    );
+}
+
+#[test]
 fn os_wrappers_have_stable_shapes() {
     assert!(!os::platform().is_empty());
     assert!(!os::arch().is_empty());
     assert!(matches!(os::eol(), "\n" | "\r\n"));
     assert!(!os::tmpdir().unwrap().is_empty());
-    assert!(os::homedir().is_none_or(|value| !value.is_empty()));
+    assert!(!os::homedir().unwrap().is_empty());
     assert!(!os::hostname().is_empty());
     assert!(!os::r#type().is_empty());
     assert!(!os::release().is_empty());

@@ -1,9 +1,7 @@
 import {
   fnExport,
-  nullType,
   providerNativeFallibility,
   rustBorrowedStrToStringValueConversion,
-  rustOptionTargetType,
   stringCarrier,
   stringType,
 } from "../model.js";
@@ -24,7 +22,7 @@ export function osModule(): RustProviderModuleDefinition {
       fnExport(m, "eol", [], stringType),
       fnExport(m, "hostname", [], stringType),
       fnExport(m, "tmpdir", [], stringType),
-      fnExport(m, "homedir", [], { kind: "union", types: [stringType, nullType] }),
+      fnExport(m, "homedir", [], stringType),
     ],
   };
 }
@@ -49,7 +47,7 @@ export function osRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: stringCarrier,
       ...providerNativeFallibility,
     },
-    { exportId: "node:os::homedir", operationKind: "method", target: { form: "call", path: "node_os::homedir" }, resultCarrier: rustOptionTargetType(stringCarrier) },
+    { exportId: "node:os::homedir", operationKind: "method", target: { form: "call", path: "node_os::homedir" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
   ];
 }
 
