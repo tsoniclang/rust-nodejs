@@ -1,6 +1,32 @@
 use tsonic_rust_node::crypto::{DigestResult, Hash, HashOptions};
 
 #[test]
+fn webcrypto_random_words_preserve_exact_view_and_quota() {
+    let crypto = tsonic_rust_node::crypto::webcrypto::crypto();
+    let words = tsonic_rust_js::Uint32Array::from_vec(vec![17.0, 0.0, 0.0, 19.0]).unwrap();
+    let view = words.subarray(1.0, Some(3.0));
+    let result = crypto.get_random_values_uint32(&view).unwrap();
+    assert_eq!(result, view);
+    assert_eq!(words.get_number(0.0), Some(17.0));
+    assert_eq!(words.get_number(3.0), Some(19.0));
+    result.set_number(0.0, 23.0);
+    assert_eq!(words.get_number(1.0), Some(23.0));
+    let empty = words.subarray(4.0, None);
+    assert_eq!(crypto.get_random_values_uint32(&empty).unwrap(), empty);
+    let limit = tsonic_rust_js::Uint32Array::new(16_384.0).unwrap();
+    assert_eq!(crypto.get_random_values_uint32(&limit).unwrap(), limit);
+    let oversized = tsonic_rust_js::Uint32Array::new(16_385.0).unwrap();
+    assert_eq!(
+        crypto
+            .get_random_values_uint32(&oversized)
+            .unwrap_err()
+            .code(),
+        "QuotaExceededError"
+    );
+    assert!(oversized.with_bytes(|bytes| bytes.iter().all(|byte| *byte == 0)));
+}
+
+#[test]
 fn crypto_random_bytes_returns_requested_length() {
     assert_eq!(tsonic_rust_node::crypto::random_bytes(8).unwrap().len(), 8);
     let mut buffer = tsonic_rust_node::buffer::Buffer::alloc(4);

@@ -62,6 +62,7 @@ export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: 
 export const timeoutCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Timeout" };
 export const textDecoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextDecoder" };
 export const textEncoderCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TextEncoder" };
+export const cryptoCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Crypto" };
 export const eventEmitterCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.EventEmitter" };
 export const readableCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Readable" };
 export const writableCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Writable" };

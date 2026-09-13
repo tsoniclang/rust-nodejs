@@ -329,7 +329,9 @@ pub mod webcrypto {
         digest_bytes, parse_algorithm, random_bytes, CryptoKey, JsonWebKey, KeyExportResult,
     };
     use crate::buffer::Buffer;
-    use crate::error::NodeResult;
+    use crate::error::{NodeError, NodeResult};
+    use rand::{rngs::OsRng, RngCore};
+    use tsonic_rust_js::Uint32Array;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct Crypto;
@@ -342,6 +344,21 @@ pub mod webcrypto {
     }
 
     impl Crypto {
+        pub fn get_random_values_uint32(&self, array: &Uint32Array) -> NodeResult<Uint32Array> {
+            array.with_mut_bytes(|bytes| {
+                if bytes.len() > 65_536 {
+                    return Err(NodeError::new(
+                        "QuotaExceededError",
+                        "getRandomValues accepts at most 65,536 bytes",
+                    ));
+                }
+                OsRng
+                    .try_fill_bytes(bytes)
+                    .map_err(|error| NodeError::new("ERR_CRYPTO_RANDOM_FAILED", error.to_string()))
+            })?;
+            Ok(array.clone())
+        }
+
         pub fn subtle(&self) -> SubtleCrypto {
             SubtleCrypto
         }

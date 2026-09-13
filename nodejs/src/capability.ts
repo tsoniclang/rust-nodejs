@@ -19,12 +19,14 @@ export function createRustNodejsCapability(): RustNodejsCapabilityPlugin {
     },
     sourceProfileContributions(context: CapabilityContext) {
       return {
-        declarations: [{
+        declarations: [...(selectProfile(context).sourceProfileContributions?.(context).declarations ?? []), {
           fileName: "node-globals.d.ts",
           text: [
             'declare var process: typeof import("node:process").default;',
             ...(context.selectedSurfaceIds?.includes("js") === true
-              ? ['declare var TextEncoder: typeof import("node:util").TextEncoder;']
+              ? [
+                  'declare var TextEncoder: typeof import("node:util").TextEncoder;',
+                ]
               : []),
             'declare var TextDecoder: typeof import("node:util").TextDecoder;',
           ].join("\n"),

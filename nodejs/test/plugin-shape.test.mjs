@@ -21,6 +21,9 @@ test("plugin exposes source, target-policy, and runtime contributions", () => {
   assert.equal(typeof plugin.runtimeContributions, "function");
   assert.deepEqual(plugin.sourceProfileContributions({ selectedSurfaceIds: ["js"] }), {
     declarations: [{
+      fileName: "provider-globals.d.ts",
+      text: 'declare var crypto: typeof import("node:crypto")["webcrypto"];',
+    }, {
       fileName: "node-globals.d.ts",
       text: [
         'declare var process: typeof import("node:process").default;',
