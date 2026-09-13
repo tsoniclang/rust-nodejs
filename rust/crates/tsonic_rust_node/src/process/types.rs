@@ -19,10 +19,10 @@ pub struct MemoryUsage {
     pub array_buffers: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CpuUsage {
-    pub user: u64,
-    pub system: u64,
+    pub user: f64,
+    pub system: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

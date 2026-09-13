@@ -152,7 +152,7 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
             });
 
             let mut entries = Vec::new();
-            for (entry_index, entry) in values.entries() {
+            for (entry_index, (_, entry)) in values.entries().enumerate() {
                 if let Some(entry) = entry {
                     entries.push((entry_index, clone_slot(&entry, depth + 1, state)?));
                 }

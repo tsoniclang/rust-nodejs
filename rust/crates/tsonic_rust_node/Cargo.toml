@@ -25,6 +25,9 @@ tsonic_rust_js = "=0.1.0"
 tsonic_rust_runtime = "=0.1.0"
 webpki-roots = "1"
 
+[target.'cfg(unix)'.dependencies]
+nix = { version = "=0.31.3", default-features = false, features = ["resource"] }
+
 [[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"

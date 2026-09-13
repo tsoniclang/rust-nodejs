@@ -118,15 +118,20 @@ fn process_runtime_queries_have_stable_shapes() {
     assert!(process::hrtime_bigint() > 0);
     let memory = process::memory_usage();
     assert!(memory.rss <= memory.rss + memory.heap_total);
-    let cpu = process::cpu_usage(None);
-    assert!(process::cpu_usage(Some(cpu.clone())).user <= process::cpu_usage(None).user);
-    let resource = process::resource_usage();
-    assert!(resource.user_cpu_time >= cpu.user);
+    let cpu = process::cpu_usage(None).unwrap();
+    assert!(
+        process::cpu_usage(Some(cpu.clone())).unwrap().user
+            <= process::cpu_usage(None).unwrap().user
+    );
+    let resource = process::resource_usage().unwrap();
+    assert!(resource.user_cpu_time as f64 >= cpu.user);
     assert_eq!(resource.fs_read, 0);
     assert_eq!(resource.ipc_sent, 0);
     assert!(process::memory_usage_rss() <= memory.rss + process::memory_usage_rss());
     assert!(process::constrained_memory() > 0);
-    assert!(process::thread_cpu_usage(None).user <= process::cpu_usage(None).user);
+    assert!(
+        process::thread_cpu_usage(None).unwrap().user <= process::cpu_usage(None).unwrap().user
+    );
 }
 
 #[test]

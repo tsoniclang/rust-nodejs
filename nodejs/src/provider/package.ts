@@ -66,6 +66,7 @@ import { httpModule, httpRows } from "./modules/http.js";
 import { osModule, osRows } from "./modules/os.js";
 import { pathModule, pathRows } from "./modules/path.js";
 import { processModule, processRows } from "./modules/process.js";
+import { processCpuCarrier } from "./modules/process-metrics.js";
 import { timersModule, timersRows } from "./modules/timers.js";
 import { eventsModule, eventsRows } from "./modules/events.js";
 import { streamModule, streamRows } from "./modules/stream.js";
@@ -152,6 +153,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:process::CpuUsage", targetCarrier: processCpuCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
       { exportId: "node:fs::StatOptions", targetCarrier: statOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::BufferDirectoryOptions", targetCarrier: directoryOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
@@ -311,6 +313,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hmac": "tsonic_rust_node::crypto::Hmac",
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
       "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
+      "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
       "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
@@ -361,6 +364,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hash": cloneOnlyCarrierTraits,
       "rust.node.Hmac": cloneOnlyCarrierTraits,
       "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
+      "rust.node.CpuUsage": cloneDefaultCarrierTraits,
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,

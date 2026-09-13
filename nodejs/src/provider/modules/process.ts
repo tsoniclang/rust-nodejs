@@ -1,3 +1,4 @@
+import { processArchitectureType, processPlatformType, processMetricExports, processMetricMembers, processMetricRows } from "./process-metrics.js";
 import {
   boolCarrier,
   booleanType,
@@ -60,6 +61,7 @@ export function processModule(): RustProviderModuleDefinition {
       namedImports: [{ exportedName: "Readable" }],
     }],
     exports: [
+      ...processMetricExports(),
       fnExport(m, "availableMemory", [], numberType),
       fnExport(m, "chdir", [{ name: "directory", type: stringType }], voidType),
       fnExport(m, "constrainedMemory", [], numberType),
@@ -136,8 +138,9 @@ export function processModule(): RustProviderModuleDefinition {
       valueExport("stdout", providerRef(m, "ProcessWriteStream")),
       valueExport("stderr", providerRef(m, "ProcessWriteStream")),
       valueExport("stdin", providerRef("node:stream", "Readable")),
-      valueExport("platform", stringType),
-      valueExport("arch", stringType),
+      valueExport("platform", processPlatformType),
+      valueExport("arch", processArchitectureType),
+      valueExport("execArgv", stringArrayType),
       valueExport("argv", stringArrayType),
       valueExport("argv0", stringType),
       valueExport("pid", numberType),
@@ -152,6 +155,7 @@ export function processModule(): RustProviderModuleDefinition {
         exportKind: "default",
         kind: "class",
         members: [
+          ...processMetricMembers(),
           methodMember(defaultId, "availableMemory", [], numberType, { static: true }),
           methodMember(defaultId, "chdir", [{ name: "directory", type: stringType }], voidType, { static: true }),
           methodMember(defaultId, "constrainedMemory", [], numberType, { static: true }),
@@ -176,8 +180,9 @@ export function processModule(): RustProviderModuleDefinition {
           propertyMember(defaultId, "stdout", providerRef(m, "ProcessWriteStream"), { static: true }),
           propertyMember(defaultId, "stderr", providerRef(m, "ProcessWriteStream"), { static: true }),
           propertyMember(defaultId, "stdin", providerRef("node:stream", "Readable"), { static: true }),
-          propertyMember(defaultId, "platform", stringType, { static: true }),
-          propertyMember(defaultId, "arch", stringType, { static: true }),
+          propertyMember(defaultId, "platform", processPlatformType, { static: true }),
+          propertyMember(defaultId, "arch", processArchitectureType, { static: true }),
+          propertyMember(defaultId, "execArgv", stringArrayType, { static: true }),
           propertyMember(defaultId, "argv", stringArrayType, { static: true }),
           propertyMember(defaultId, "argv0", stringType, { static: true }),
           propertyMember(defaultId, "pid", numberType, { static: true }),
@@ -201,6 +206,9 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
   const memoryUsageId = `${m}::MemoryUsage`;
   const writeStreamId = `${m}::ProcessWriteStream`;
   return [
+    ...processMetricRows(),
+    { exportId: `${m}::execArgv`, operationKind: "property", target: { form: "call", path: "node_process::exec_argv" }, resultCarrier: stringArrayCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.execArgv`, operationKind: "property", target: { form: "call", path: "node_process::exec_argv" }, resultCarrier: stringArrayCarrier },
     { exportId: `${m}::availableMemory`, operationKind: "method", target: { form: "call", path: "node_process::available_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
     { exportId: `${m}::chdir`, operationKind: "method", target: { form: "call", path: "node_process::chdir", argModes: ["ref"] }, resultCarrier: unitCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: `${m}::constrainedMemory`, operationKind: "method", target: { form: "call", path: "node_process::constrained_memory" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },

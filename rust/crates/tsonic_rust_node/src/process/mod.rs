@@ -4,3 +4,5 @@ include!("resources.rs");
 include!("source_abi.rs");
 include!("state.rs");
 include!("events.rs");
+mod cpu;
+pub use cpu::{cpu_usage, cpu_usage_current, cpu_usage_since, thread_cpu_usage};

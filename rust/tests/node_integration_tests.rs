@@ -32,6 +32,8 @@ mod network_process_tests;
 mod os_tests;
 #[path = "node/path_tests.rs"]
 mod path_tests;
+#[path = "node/process_cpu_tests.rs"]
+mod process_cpu_tests;
 #[path = "node/process_tests.rs"]
 mod process_tests;
 #[path = "node/readline_worker_tests.rs"]

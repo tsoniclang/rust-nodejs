@@ -133,6 +133,8 @@ pub fn platform() -> String {
         "darwin"
     } else if cfg!(target_os = "linux") {
         "linux"
+    } else if cfg!(any(target_os = "solaris", target_os = "illumos")) {
+        "sunos"
     } else {
         std::env::consts::OS
     }
@@ -144,6 +146,9 @@ pub fn arch() -> String {
         "x86_64" => "x64",
         "aarch64" => "arm64",
         "x86" | "i686" => "ia32",
+        "loongarch64" => "loong64",
+        "powerpc64" => "ppc64",
+        "mips" if cfg!(target_endian = "little") => "mipsel",
         other => other,
     }
     .to_string()
