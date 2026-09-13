@@ -305,11 +305,22 @@ pub fn open_sync(path: &str, flags: &str) -> NodeResult<i32> {
         }
     }
     let file = options.open(path).map_err(map_io_error)?;
-    let fd = NEXT_FD.fetch_add(1, Ordering::SeqCst);
-    crate::sync::lock(file_table()).insert(fd, file);
-    Ok(fd)
+    Ok(register_open_file(file))
 }
 
+#[cfg(unix)]
+pub fn close_sync(fd: i32) -> NodeResult<()> {
+    use std::os::fd::IntoRawFd;
+    let file = crate::sync::lock(file_table()).remove(&fd);
+    let descriptor = file.map_or(fd, IntoRawFd::into_raw_fd);
+    if unsafe { libc::close(descriptor) } == 0 {
+        Ok(())
+    } else {
+        Err(map_io_error(std::io::Error::last_os_error()))
+    }
+}
+
+#[cfg(not(unix))]
 pub fn close_sync(fd: i32) -> NodeResult<()> {
     crate::sync::lock(file_table())
         .remove(&fd)

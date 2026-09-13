@@ -3,6 +3,20 @@ use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
 #[test]
+fn buffer_from_uint8_array_copies_only_the_view() {
+    let array = tsonic_rust_js::Uint8Array::from_vec(vec![11.0, 65.0, 66.0, 13.0]).unwrap();
+    let view = array.subarray(1.0, Some(3.0));
+    let mut buffer = Buffer::from_uint8_array(&view);
+    assert_eq!(buffer.as_bytes(), b"AB");
+    view.set_number(0.0, 90.0);
+    assert_eq!(buffer.as_bytes(), b"AB");
+    buffer.set(1, 89).unwrap();
+    array.with_bytes(|bytes| assert_eq!(bytes, &[11, 90, 66, 13]));
+    let empty = array.subarray(2.0, Some(2.0));
+    assert!(Buffer::from_uint8_array(&empty).is_empty());
+}
+
+#[test]
 fn buffer_encodings_and_views() {
     let buffer = Buffer::from_string("6869", Some("hex")).unwrap();
     assert_eq!(buffer.to_string(Some("utf8")).unwrap(), "hi");

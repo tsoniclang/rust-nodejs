@@ -404,5 +404,6 @@ fn empty_watch_stats() -> Stats {
     }
 }
 
+#[cfg(not(unix))]
 static NEXT_FD: AtomicI32 = AtomicI32::new(10);
 static FILE_TABLE: OnceLock<Mutex<HashMap<i32, File>>> = OnceLock::new();

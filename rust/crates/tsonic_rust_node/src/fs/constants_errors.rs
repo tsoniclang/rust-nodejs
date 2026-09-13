@@ -165,6 +165,9 @@ fn platform_io_error_code(error: &std::io::Error) -> Option<&'static str> {
     match error.raw_os_error()? {
         libc::EPERM => Some("EPERM"),
         libc::ENOENT => Some("ENOENT"),
+        libc::EBADF => Some("EBADF"),
+        libc::ESPIPE => Some("ESPIPE"),
+        libc::EINVAL => Some("EINVAL"),
         libc::EACCES => Some("EACCES"),
         libc::EBUSY => Some("EBUSY"),
         libc::EEXIST => Some("EEXIST"),

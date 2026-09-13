@@ -5,25 +5,10 @@ pub fn read_sync(
     length: usize,
     position: Option<u64>,
 ) -> NodeResult<usize> {
-    if offset > buffer.len() || offset.saturating_add(length) > buffer.len() {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            "buffer offset out of range",
-        ));
-    }
-    let mut table = crate::sync::lock(file_table());
-    let file = table
-        .get_mut(&fd)
-        .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
-    if let Some(position) = position {
-        file.seek(SeekFrom::Start(position)).map_err(map_io_error)?;
-    }
-    let mut bytes = vec![0_u8; length];
-    let read = file.read(&mut bytes).map_err(map_io_error)?;
-    for (index, byte) in bytes.into_iter().take(read).enumerate() {
-        buffer.set(offset + index, byte)?;
-    }
-    Ok(read)
+    buffer.with_mut_bytes(|bytes| {
+        let range = descriptor_buffer_range(offset, length, bytes.len())?;
+        read_descriptor_bytes(fd, &mut bytes[range], position)
+    })
 }
 
 pub fn read_sync_with_options(
@@ -76,22 +61,10 @@ pub fn write_sync_buffer(
     length: usize,
     position: Option<u64>,
 ) -> NodeResult<usize> {
-    if offset > buffer.len() {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            "buffer offset out of range",
-        ));
-    }
-    let mut table = crate::sync::lock(file_table());
-    let file = table
-        .get_mut(&fd)
-        .ok_or_else(|| NodeError::new("EBADF", "bad file descriptor"))?;
-    if let Some(position) = position {
-        file.seek(SeekFrom::Start(position)).map_err(map_io_error)?;
-    }
-    let bytes = buffer.as_bytes();
-    let end = offset.saturating_add(length).min(bytes.len());
-    file.write(&bytes[offset..end]).map_err(map_io_error)
+    buffer.with_bytes(|bytes| {
+        let range = descriptor_buffer_range(offset, length, bytes.len())?;
+        write_descriptor_bytes(fd, &bytes[range], position)
+    })
 }
 
 pub fn write_sync_buffer_with_options(

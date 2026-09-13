@@ -1,4 +1,9 @@
 impl Buffer {
+    pub(crate) fn with_mut_bytes<Result>(&self, operation: impl FnOnce(&mut [u8]) -> Result) -> Result {
+        let mut storage = self.storage.borrow_mut();
+        operation(&mut storage[self.offset..self.offset + self.len])
+    }
+
     pub fn alloc(size: usize) -> Self {
         Self::from_bytes(vec![0; size])
     }
@@ -41,6 +46,10 @@ impl Buffer {
 
     pub fn from_array_like(values: &[u8]) -> Self {
         Self::from_bytes(values.to_vec())
+    }
+
+    pub fn from_uint8_array(value: &tsonic_rust_js::Uint8Array) -> Self {
+        value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
     }
 
     pub fn from_number_array(values: &JsArray<f64>) -> Self {

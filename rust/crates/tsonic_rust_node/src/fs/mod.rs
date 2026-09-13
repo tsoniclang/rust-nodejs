@@ -5,6 +5,8 @@ include!("dir.rs");
 include!("sync_file.rs");
 include!("sync_dir.rs");
 include!("sync_fd.rs");
+include!("descriptor_io.rs");
+include!("descriptor_abi.rs");
 include!("stream_api.rs");
 include!("callbacks.rs");
 include!("watch_glob.rs");

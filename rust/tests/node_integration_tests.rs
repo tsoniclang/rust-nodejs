@@ -12,6 +12,8 @@ mod dgram_tests;
 mod events_async_tests;
 #[path = "node/fetch_tests.rs"]
 mod fetch_tests;
+#[path = "node/fs_descriptor_tests.rs"]
+mod fs_descriptor_tests;
 #[path = "node/fs_promises_tests.rs"]
 mod fs_promises_tests;
 #[path = "node/fs_tests.rs"]

@@ -36,7 +36,9 @@ import type {
   RustProviderOperationDefinition,
   RustTargetTypeRef,
 } from "../model.js";
-export function fsModule(): RustProviderModuleDefinition {
+import { fileDescriptorExports, fileDescriptorRows } from "./filesystem-descriptors.js";
+
+export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:fs";
   const statsId = "node:fs::Stats";
   const makeDirectoryOptionsId = `${m}::MakeDirectoryOptions`;
@@ -58,6 +60,7 @@ export function fsModule(): RustProviderModuleDefinition {
       },
     ],
     exports: [
+      ...fileDescriptorExports(typedArrays),
       fnExport(m, "existsSync", [{ name: "path", type: stringType }], booleanType),
       {
         id: `${m}::readFileSync`,
@@ -337,7 +340,7 @@ export function fsModule(): RustProviderModuleDefinition {
   };
 }
 
-export function fsRows(): readonly RustProviderOperationDefinition[] {
+export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
   const statsId = "node:fs::Stats";
   const makeDirectoryOptionsId = "node:fs::MakeDirectoryOptions";
   const rmOptionsId = "node:fs::RmOptions";
@@ -357,6 +360,7 @@ export function fsRows(): readonly RustProviderOperationDefinition[] {
     ...providerNativeFallibility,
   });
   return [
+    ...fileDescriptorRows(typedArrays),
     { exportId: "node:fs::existsSync", operationKind: "method", target: { form: "call", path: "node_fs::exists_sync", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     {
       ...fallible("readFileSync", "node_fs::read_file_sync_buffer", bufferCarrier, [stringCarrier]),
