@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use tsonic_rust_js::{JsArray, JsString, JsValue, Uint8Array};
+use tsonic_rust_js::{JsArray, JsStringNumber, Uint8Array};
 use tsonic_rust_node::child_process::{spawn_sync_result_with_options, SpawnSyncOptions};
 use tsonic_rust_node::process::ProcessEnv;
 
@@ -121,8 +121,8 @@ fn spawn_options_retain_cwd_environment_and_ignored_output() {
         &arguments(&["ignored"]),
         SpawnSyncOptions {
             stdio: Some(JsArray::from_dense(vec![
-                JsValue::String(
-                    JsString::from_utf8("ignore")
+                JsStringNumber::String(
+                    "ignore".to_owned()
                 );
                 3
             ])),
@@ -167,7 +167,9 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
             ..Default::default()
         },
         SpawnSyncOptions {
-            stdio: Some(JsArray::from_dense(vec![JsValue::Bool(true)])),
+            stdio: Some(JsArray::from_dense(vec![JsStringNumber::String(
+                "invalid".to_owned(),
+            )])),
             ..Default::default()
         },
     ] {
@@ -228,10 +230,10 @@ fn spawn_options_inherit_open_file_positions_and_native_credentials() {
                     .unwrap(),
             ),
             stdio: Some(JsArray::from_dense(vec![
-                JsValue::String(JsString::from_utf8("pipe")),
-                JsValue::String(JsString::from_utf8("pipe")),
-                JsValue::String(JsString::from_utf8("pipe")),
-                JsValue::Number(f64::from(descriptor)),
+                JsStringNumber::String("pipe".to_owned()),
+                JsStringNumber::String("pipe".to_owned()),
+                JsStringNumber::String("pipe".to_owned()),
+                JsStringNumber::Number(f64::from(descriptor)),
             ])),
             ..Default::default()
         },

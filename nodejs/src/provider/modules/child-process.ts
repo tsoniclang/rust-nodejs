@@ -1,10 +1,10 @@
 import {
-  bufferCarrier, float64Carrier, int32Carrier, jsValueCarrier, nodeErrorCarrier,
+  bufferCarrier, float64Carrier, int32Carrier, nodeErrorCarrier,
   nullType, numberType, processEnvCarrier, propertyMember, providerNativeFallibility,
   providerRef, rustJsArrayTargetType, rustOptionTargetType, spawnSyncResultCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier,
 } from "../model.js";
-import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
+import { rustJsTypedArrayTargetType, rustJsStringNumberTargetType } from "@tsonic/target-rust/provider";
 import type {
   ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef,
 } from "../model.js";
@@ -30,7 +30,7 @@ function optionFields(typedArrays: boolean): readonly {
     { name: "stdio", field: "stdio", type: { kind: "array", elementType: {
       kind: "union", types: [numberType, nullType, { kind: "undefined" },
         ...["pipe", "ignore", "inherit"].map(value => ({ kind: "literal" as const, value }))],
-    } }, carrier: rustJsArrayTargetType(jsValueCarrier) },
+    } }, carrier: rustJsArrayTargetType(rustJsStringNumberTargetType()) },
   ];
 }
 

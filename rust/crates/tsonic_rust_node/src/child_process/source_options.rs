@@ -1,5 +1,5 @@
 use std::process::Command;
-use tsonic_rust_js::{JsArray, JsValue, Uint8Array};
+use tsonic_rust_js::{JsArray, JsStringNumber, Uint8Array};
 
 use super::{
     capture, capture_command, prepare_command, NodeError, NodeResult, SpawnOptions,
@@ -15,7 +15,7 @@ pub struct SpawnSyncOptions {
     pub env: Option<ProcessEnv>,
     pub uid: Option<f64>,
     pub gid: Option<f64>,
-    pub stdio: Option<JsArray<JsValue>>,
+    pub stdio: Option<JsArray<JsStringNumber>>,
     pub input: Option<Uint8Array>,
     pub timeout: Option<f64>,
     pub kill_signal: Option<String>,
@@ -47,19 +47,19 @@ impl SpawnSyncOptions {
         if let Some(values) = &self.stdio {
             for (index, value) in values.values().into_iter().enumerate() {
                 let mode = match value {
-                    None | Some(JsValue::Undefined) | Some(JsValue::Null) => {
+                    None | Some(JsStringNumber::Undefined) | Some(JsStringNumber::Null) => {
                         if index < 3 {
                             Stdio::Pipe
                         } else {
                             Stdio::Ignore
                         }
                     }
-                    Some(JsValue::String(value)) => {
-                        if value.units().iter().copied().eq("pipe".encode_utf16()) {
+                    Some(JsStringNumber::String(value)) => {
+                        if value == "pipe" {
                             Stdio::Pipe
-                        } else if value.units().iter().copied().eq("ignore".encode_utf16()) {
+                        } else if value == "ignore" {
                             Stdio::Ignore
-                        } else if value.units().iter().copied().eq("inherit".encode_utf16()) {
+                        } else if value == "inherit" {
                             Stdio::Inherit
                         } else {
                             return Err(NodeError::new(
@@ -68,16 +68,10 @@ impl SpawnSyncOptions {
                             ));
                         }
                     }
-                    Some(JsValue::Number(value)) => {
+                    Some(JsStringNumber::Number(value)) => {
                         Stdio::Descriptor(
                             integer(value, i32::MAX as f64, "stdio descriptor")? as i32
                         )
-                    }
-                    _ => {
-                        return Err(NodeError::new(
-                            "ERR_INVALID_ARG_TYPE",
-                            "stdio requires strings or descriptors",
-                        ))
                     }
                 };
                 stdio.push(mode);
