@@ -78,7 +78,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     assert!(fs_promises::stat_with_options(
         &root.join("missing.txt").to_string_lossy(),
         fs_promises::StatOptions {
-            throw_if_no_entry: false,
+            throw_if_no_entry: Some(false),
             ..fs_promises::StatOptions::default()
         },
     )
@@ -546,7 +546,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     assert!(fs_promises::stat_with_options(
         &disposable.path,
         fs_promises::StatOptions {
-            throw_if_no_entry: false,
+            throw_if_no_entry: Some(false),
             ..fs_promises::StatOptions::default()
         },
     )

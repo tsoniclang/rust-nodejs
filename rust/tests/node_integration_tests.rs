@@ -14,6 +14,8 @@ mod events_async_tests;
 mod fetch_tests;
 #[path = "node/fs_descriptor_tests.rs"]
 mod fs_descriptor_tests;
+#[path = "node/fs_path_tests.rs"]
+mod fs_path_tests;
 #[path = "node/fs_promises_tests.rs"]
 mod fs_promises_tests;
 #[path = "node/fs_tests.rs"]

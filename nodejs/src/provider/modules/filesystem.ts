@@ -20,8 +20,6 @@ import {
   rustOptionTargetType,
   rustUint64ToFloat64ValueConversion,
   statsCarrier,
-  stringArrayCarrier,
-  stringArrayType,
   stringCarrier,
   stringType,
   unitCarrier,
@@ -37,6 +35,7 @@ import type {
   RustTargetTypeRef,
 } from "../model.js";
 import { fileDescriptorExports, fileDescriptorRows } from "./filesystem-descriptors.js";
+import { filePathExports, filePathRows } from "./filesystem-paths.js";
 
 export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:fs";
@@ -61,6 +60,7 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
     ],
     exports: [
       ...fileDescriptorExports(typedArrays),
+      ...filePathExports(),
       fnExport(m, "existsSync", [{ name: "path", type: stringType }], booleanType),
       {
         id: `${m}::readFileSync`,
@@ -107,9 +107,6 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
           },
         ],
       },
-      fnExport(m, "readdirSync", [{ name: "path", type: stringType }], stringArrayType),
-      fnExport(m, "statSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
-      fnExport(m, "lstatSync", [{ name: "path", type: stringType }], providerRef(m, "Stats")),
       {
         id: makeDirectoryOptionsId,
         name: "MakeDirectoryOptions",
@@ -155,6 +152,8 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
         signatures: [
           { id: `${m}::mkdirSync(path)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
           { id: `${m}::mkdirSync(path,options)`, name: "mkdirSync", parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef(m, "MakeDirectoryOptions") }], returnType: voidType },
+          { id: `${m}::mkdirSync(bufferPath)`, name: "mkdirSync", parameters: [{ name: "path", type: bufferType }], returnType: voidType },
+          { id: `${m}::mkdirSync(bufferPath,options)`, name: "mkdirSync", parameters: [{ name: "path", type: bufferType }, { name: "options", type: providerRef(m, "MakeDirectoryOptions") }], returnType: voidType },
         ],
       },
       {
@@ -164,6 +163,8 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
         signatures: [
           { id: `${m}::rmSync(path)`, name: "rmSync", parameters: [{ name: "path", type: stringType }], returnType: voidType },
           { id: `${m}::rmSync(path,options)`, name: "rmSync", parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef(m, "RmOptions") }], returnType: voidType },
+          { id: `${m}::rmSync(bufferPath)`, name: "rmSync", parameters: [{ name: "path", type: bufferType }], returnType: voidType },
+          { id: `${m}::rmSync(bufferPath,options)`, name: "rmSync", parameters: [{ name: "path", type: bufferType }, { name: "options", type: providerRef(m, "RmOptions") }], returnType: voidType },
         ],
       },
       fnExport(m, "mkdtempSync", [{ name: "prefix", type: stringType }], stringType),
@@ -181,6 +182,7 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
           methodMember(statsId, "isDirectory", [], booleanType),
           methodMember(statsId, "isSymbolicLink", [], booleanType),
           propertyMember(statsId, "size", numberType),
+          propertyMember(statsId, "mode", numberType),
           propertyMember(statsId, "mtimeMs", numberType),
         ],
       },
@@ -361,6 +363,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
   });
   return [
     ...fileDescriptorRows(typedArrays),
+    ...filePathRows(),
     { exportId: "node:fs::existsSync", operationKind: "method", target: { form: "call", path: "node_fs::exists_sync", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     {
       ...fallible("readFileSync", "node_fs::read_file_sync_buffer", bufferCarrier, [stringCarrier]),
@@ -378,9 +381,6 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       ...fallible("writeFileSync", "node_fs::write_file_sync_buffer", { kind: "tuple", elements: [] }, [stringCarrier, bufferCarrier]),
       signatureId: "node:fs::writeFileSync(path,buffer)",
     },
-    fallible("readdirSync", "node_fs::readdir_sync", stringArrayCarrier, [stringCarrier]),
-    fallible("statSync", "node_fs::stat_sync", statsCarrier, [stringCarrier]),
-    fallible("lstatSync", "node_fs::lstat_sync", statsCarrier, [stringCarrier]),
     {
       ...fallible("mkdirSync", "node_fs::mkdir_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
       signatureId: "node:fs::mkdirSync(path)",
@@ -408,6 +408,17 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       ...providerNativeFallibility,
     },
     { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.recursive`, operationKind: "property", target: { form: "field", name: "recursive" }, resultCarrier: optionBool, receiverCarrier: makeDirectoryOptionsCarrier },
+    ...[
+      { name: "mkdirSync", native: "mkdir_sync_buffer", options: makeDirectoryOptionsCarrier },
+      { name: "rmSync", native: "rm_sync_buffer", options: rmOptionsCarrier },
+    ].flatMap(operation => [
+      { ...fallible(operation.name, `node_fs::${operation.native}`, unitCarrier, [bufferCarrier]), signatureId: `node:fs::${operation.name}(bufferPath)` },
+      {
+        exportId: `node:fs::${operation.name}`, signatureId: `node:fs::${operation.name}(bufferPath,options)`, operationKind: "method" as const,
+        target: { form: "call" as const, path: `node_fs::${operation.native}_with_options`, argModes: ["ref" as const, "value" as const] },
+        resultCarrier: unitCarrier, parameterCarriers: [bufferCarrier, operation.options], ...providerNativeFallibility,
+      },
+    ]),
     { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.recursive`, operationKind: "property-set", target: { form: "field", name: "recursive" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: makeDirectoryOptionsCarrier },
     { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property", target: { form: "field", name: "mode" }, resultCarrier: optionNumber, receiverCarrier: makeDirectoryOptionsCarrier },
     { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property-set", target: { form: "field", name: "mode" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: makeDirectoryOptionsCarrier },

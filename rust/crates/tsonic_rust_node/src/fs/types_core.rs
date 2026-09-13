@@ -49,6 +49,10 @@ pub struct Stats {
 }
 
 impl Stats {
+    pub fn mode_number(&self) -> f64 {
+        f64::from(self.mode)
+    }
+
     pub fn is_file(&self) -> bool {
         self.is_file
     }
@@ -224,8 +228,8 @@ pub fn constants() -> FsConstants {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dirent {
-    pub name: String,
+pub struct Dirent<Name = String> {
+    pub name: Name,
     pub parent_path: String,
     pub is_file: bool,
     pub is_directory: bool,
@@ -236,7 +240,7 @@ pub struct Dirent {
     pub is_socket: bool,
 }
 
-impl Dirent {
+impl<Name> Dirent<Name> {
     pub fn is_file(&self) -> bool {
         self.is_file
     }

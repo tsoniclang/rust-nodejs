@@ -57,6 +57,7 @@ import { bufferModule, bufferRows } from "./modules/buffer.js";
 import { cryptoModule, cryptoRows } from "./modules/crypto.js";
 import { childProcessModule, childProcessRows } from "./modules/child-process.js";
 import { fsModule, fsRows } from "./modules/filesystem.js";
+import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem-paths.js";
 import {
   fsPromisesModule,
   fsPromisesRows,
@@ -152,6 +153,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
     ],
     types: [
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
+      { exportId: "node:fs::StatOptions", targetCarrier: statOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
+      { exportId: "node:fs::BufferDirectoryOptions", targetCarrier: directoryOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
+      { exportId: "node:fs::FsConstants", targetCarrier: fsConstantsCarrier },
+      { exportId: "node:fs::Dirent", targetCarrier: direntCarrier({ kind: "type-parameter", name: "Name" }), genericParameters: direntGenerics },
       {
         exportId: "node:fs::MakeDirectoryOptions",
         targetCarrier: makeDirectoryOptionsCarrier,
@@ -291,6 +296,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
     ],
     carrierPaths: {
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
+      "rust.node.StatOptions": "tsonic_rust_node::fs::StatOptions",
+      "rust.node.BufferDirectoryOptions": "tsonic_rust_node::fs::BufferDirectoryOptions",
+      "rust.node.FsConstants": "tsonic_rust_node::fs::FsConstants",
+      "rust.node.Dirent": "tsonic_rust_node::fs::Dirent",
       "rust.node.MakeDirectoryOptions": "tsonic_rust_node::fs::MakeDirectoryOptions",
       "rust.node.RmOptions": "tsonic_rust_node::fs::RmOptions",
       "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
@@ -338,6 +347,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
     },
     carrierTraits: {
       "rust.node.Stats": cloneOnlyCarrierTraits,
+      "rust.node.StatOptions": copyDefaultCarrierTraits,
+      "rust.node.BufferDirectoryOptions": cloneDefaultCarrierTraits,
+      "rust.node.FsConstants": { implementations: [{ traitPath: "core::clone::Clone", requirements: [] }, { traitPath: "core::marker::Copy", requirements: [] }] },
+      "rust.node.Dirent": { implementations: [{ traitPath: "core::clone::Clone", requirements: [{ typeArgumentIndex: 0, traitPath: "core::clone::Clone" }] }] },
       "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
       "rust.node.RmOptions": copyDefaultCarrierTraits,
       "rust.node.Buffer": closedJsValueCarrierTraits,

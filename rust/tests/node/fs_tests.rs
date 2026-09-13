@@ -85,10 +85,10 @@ fn fs_extended_sync_file_lifecycle() {
         FsReadResult::String("hello world".to_string())
     );
     assert!(fs::stat_sync_with_options(
-        &root.join("missing.txt").to_string_lossy(),
+        root.join("missing.txt"),
         fs::StatOptions {
-            bigint: false,
-            throw_if_no_entry: false,
+            bigint: Some(false),
+            throw_if_no_entry: Some(false),
         },
     )
     .unwrap()
@@ -619,9 +619,9 @@ fn fs_extended_sync_directory_lifecycle() {
     assert!(fs::stat_sync(&made).unwrap().is_directory());
     fs::rmdir_sync(&made).unwrap();
     let remove_me = root.join("remove-me");
-    fs::mkdir_sync(&remove_me.to_string_lossy()).unwrap();
+    fs::mkdir_sync(&remove_me).unwrap();
     fs::rm_sync_with_options(
-        &remove_me.to_string_lossy(),
+        &remove_me,
         fs::RmOptions {
             recursive: Some(true),
             force: Some(true),
@@ -918,11 +918,11 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
     let bigint = fs::BigIntOptions { bigint: true };
     assert!(bigint.bigint);
     let stat_options = fs::StatOptions {
-        bigint: true,
-        throw_if_no_entry: false,
+        bigint: Some(true),
+        throw_if_no_entry: Some(false),
     };
-    assert!(stat_options.bigint);
-    assert!(!stat_options.throw_if_no_entry);
+    assert_eq!(stat_options.bigint, Some(true));
+    assert_eq!(stat_options.throw_if_no_entry, Some(false));
     assert!(fs::StatFsOptions { bigint: true }.bigint);
 
     let mkdir = fs::MakeDirectoryOptions {
@@ -1209,7 +1209,7 @@ fn mkdir_sync_options_create_nested_directories_idempotently() {
 
     assert!(nested.is_dir());
     fs::rm_sync_with_options(
-        &root.to_string_lossy(),
+        &root,
         fs::RmOptions {
             recursive: Some(true),
             ..Default::default()
@@ -1227,10 +1227,7 @@ fn rm_sync_options_enforce_recursive_force_and_numeric_contracts() {
     std::fs::create_dir_all(&empty).unwrap();
     std::fs::write(root.join("nested").join("value.txt"), "value").unwrap();
 
-    assert_eq!(
-        fs::rm_sync(&empty.to_string_lossy()).unwrap_err().code,
-        "EISDIR"
-    );
+    assert_eq!(fs::rm_sync(&empty).unwrap_err().code, "EISDIR");
     assert!(empty.is_dir());
     assert!(fs::rm_sync(&root_text).is_err());
     fs::rm_sync_with_options(
@@ -1281,20 +1278,20 @@ fn rm_sync_removes_symbolic_links_without_following_targets() {
     symlink(root.join("missing"), &broken_link).unwrap();
 
     fs::rm_sync_with_options(
-        &directory_link.to_string_lossy(),
+        &directory_link,
         fs::RmOptions {
             recursive: Some(true),
             ..Default::default()
         },
     )
     .unwrap();
-    fs::rm_sync(&broken_link.to_string_lossy()).unwrap();
+    fs::rm_sync(&broken_link).unwrap();
 
     assert!(target.join("retained.txt").exists());
     assert!(std::fs::symlink_metadata(directory_link).is_err());
     assert!(std::fs::symlink_metadata(broken_link).is_err());
     fs::rm_sync_with_options(
-        &root.to_string_lossy(),
+        &root,
         fs::RmOptions {
             recursive: Some(true),
             ..Default::default()

@@ -94,22 +94,8 @@ pub fn open_sync_numeric(path: &str, flags: f64, mode: f64) -> NodeResult<f64> {
 }
 
 pub fn open_sync_buffer_numeric(path: &Buffer, flags: f64, mode: f64) -> NodeResult<f64> {
-    path.with_bytes(|bytes| {
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStrExt;
-            open_numeric_path(
-                std::path::Path::new(std::ffi::OsStr::from_bytes(bytes)),
-                flags,
-                mode,
-            )
-            .map(f64::from)
-        }
-        #[cfg(not(unix))]
-        {
-            let path = String::from_utf8_lossy(bytes);
-            open_sync_numeric(&path, flags, mode)
-        }
+    with_buffer_path(path, |path| {
+        open_numeric_path(path, flags, mode).map(f64::from)
     })
 }
 
