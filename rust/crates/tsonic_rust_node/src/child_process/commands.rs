@@ -7,35 +7,27 @@ pub fn spawn_file_sync_with_options(
     args: &[&str],
     options: &SpawnOptions,
 ) -> NodeResult<SpawnOutput> {
-    validate_options(options)?;
-    let mut command = configure_command(program, args, options);
-    apply_stdio(&mut command, &options.stdio, options.input.is_some());
-    let mut child = command
-        .spawn()
-        .map_err(|error| NodeError::new("ENOENT", error.to_string()))?;
-    if let Some(input) = &options.input {
-        let Some(stdin) = child.stdin.as_mut() else {
-            return Err(NodeError::new(
-                "ERR_CHILD_PROCESS_STDIN",
-                "child stdin unavailable",
-            ));
-        };
-        stdin
-            .write_all(input)
-            .map_err(|error| NodeError::new("EPIPE", error.to_string()))?;
+    let output = capture_spawn(program, args, options)?;
+    if let Some(error) = &output.error {
+        return Err(error.clone());
     }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| NodeError::new("ECHILD", error.to_string()))?;
-    enforce_max_buffer(&output.stdout, output.stderr.as_slice(), options.max_buffer)?;
-    Ok(SpawnOutput {
-        pid: None,
-        status: output.status.code().unwrap_or(1),
-        signal: None,
-        stdout: output.stdout,
-        stderr: output.stderr,
-        error: None,
-    })
+    Ok(output)
+}
+
+fn capture_spawn(program: &str, args: &[&str], options: &SpawnOptions) -> NodeResult<SpawnOutput> {
+    capture_command(prepare_command(program, args, options)?, options)
+}
+
+fn prepare_command(program: &str, args: &[&str], options: &SpawnOptions) -> NodeResult<Command> {
+    validate_options(options)?;
+    let mut command = configure_command(program, args, options)?;
+    apply_stdio(&mut command, &options.stdio)?;
+    Ok(command)
+}
+
+fn capture_command(mut command: Command, options: &SpawnOptions) -> NodeResult<SpawnOutput> {
+    let child = command.spawn().map_err(capture::io_error)?;
+    capture::collect(child, options)
 }
 
 pub fn spawn_sync(program: &str, args: &[&str]) -> NodeResult<SpawnOutput> {
@@ -46,19 +38,11 @@ pub fn spawn_sync_result<Arguments: SpawnSyncArguments + ?Sized>(
     program: &str,
     args: &Arguments,
 ) -> NodeResult<SpawnSyncResult> {
-    let output = args.with_spawn_sync_arguments(|arguments| spawn_file_sync(program, arguments))?;
-    Ok(match output {
-        Ok(output) => SpawnSyncResult {
-            stdout: crate::buffer::Buffer::from_bytes(output.stdout),
-            stderr: crate::buffer::Buffer::from_bytes(output.stderr),
-            status: Some(output.status),
-        },
-        Err(error) => SpawnSyncResult {
-            stdout: crate::buffer::Buffer::from_bytes(Vec::new()),
-            stderr: crate::buffer::Buffer::from_bytes(error.to_string().into_bytes()),
-            status: None,
-        },
-    })
+    source_options::spawn_sync_result_with_options(
+        program,
+        args,
+        source_options::SpawnSyncOptions::default(),
+    )
 }
 
 pub fn spawn_file(program: &str, args: &[&str]) -> NodeResult<ChildProcess> {
@@ -74,9 +58,7 @@ pub fn spawn_file_with_options(
     args: &[&str],
     options: &SpawnOptions,
 ) -> NodeResult<ChildProcess> {
-    validate_options(options)?;
-    let mut command = configure_command(program, args, options);
-    apply_stdio(&mut command, &options.stdio, false);
+    let mut command = prepare_command(program, args, options)?;
     let child = command
         .spawn()
         .map_err(|error| NodeError::new("ENOENT", error.to_string()))?;
@@ -135,7 +117,7 @@ pub fn exec_file_sync(program: &str, args: &[&str]) -> NodeResult<Vec<u8>> {
     } else {
         Err(NodeError::new(
             "ERR_CHILD_PROCESS_EXITED",
-            format!("process exited with status {}", output.status),
+            format!("process exited with status {:?}", output.status),
         ))
     }
 }
@@ -160,7 +142,7 @@ pub fn exec_sync_with_options(
     } else {
         Err(NodeError::new(
             "ERR_CHILD_PROCESS_EXITED",
-            format!("process exited with status {}", output.status),
+            format!("process exited with status {:?}", output.status),
         ))
     }
 }
@@ -172,7 +154,7 @@ pub fn fork_file(program: &str, args: &[&str], options: &SpawnOptions) -> NodeRe
 pub fn exec_exception(command: impl Into<String>, output: &SpawnOutput) -> ExecException {
     ExecException {
         cmd: command.into(),
-        code: Some(output.status),
+        code: output.status,
         killed: false,
         signal: output.signal.clone(),
         stdout: output.stdout.clone(),
@@ -194,16 +176,17 @@ pub fn spawn_shell_sync(_command: &str) -> NodeResult<SpawnOutput> {
     ))
 }
 
-fn configure_command(program: &str, args: &[&str], options: &SpawnOptions) -> Command {
+fn configure_command(program: &str, args: &[&str], options: &SpawnOptions) -> NodeResult<Command> {
     let mut command = Command::new(program);
     command.args(args);
     if let Some(cwd) = &options.cwd {
         command.current_dir(cwd);
     }
-    for (name, value) in &options.env {
-        command.env(name, value);
+    if let Some(env) = &options.env {
+        command.env_clear().envs(env);
     }
-    command
+    source_options::configure_native(&mut command, options)?;
+    Ok(command)
 }
 
 fn validate_options(options: &SpawnOptions) -> NodeResult<()> {
@@ -222,32 +205,18 @@ fn validate_options(options: &SpawnOptions) -> NodeResult<()> {
     Ok(())
 }
 
-fn apply_stdio(command: &mut Command, options: &StdioOptions, force_stdin_pipe: bool) {
-    command.stdin(to_process_stdio(options.stdin, force_stdin_pipe));
-    command.stdout(to_process_stdio(options.stdout, false));
-    command.stderr(to_process_stdio(options.stderr, false));
+fn apply_stdio(command: &mut Command, options: &StdioOptions) -> NodeResult<()> {
+    command.stdin(to_process_stdio(options.stdin)?);
+    command.stdout(to_process_stdio(options.stdout)?);
+    command.stderr(to_process_stdio(options.stderr)?);
+    Ok(())
 }
 
-fn to_process_stdio(stdio: Stdio, force_pipe: bool) -> std::process::Stdio {
-    if force_pipe {
-        return std::process::Stdio::piped();
-    }
-    match stdio {
+fn to_process_stdio(stdio: Stdio) -> NodeResult<std::process::Stdio> {
+    Ok(match stdio {
         Stdio::Pipe | Stdio::Ipc => std::process::Stdio::piped(),
         Stdio::Ignore => std::process::Stdio::null(),
         Stdio::Inherit => std::process::Stdio::inherit(),
-    }
-}
-
-fn enforce_max_buffer(stdout: &[u8], stderr: &[u8], max_buffer: Option<usize>) -> NodeResult<()> {
-    let Some(max_buffer) = max_buffer else {
-        return Ok(());
-    };
-    if stdout.len() > max_buffer || stderr.len() > max_buffer {
-        return Err(NodeError::new(
-            "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
-            "child process output exceeded maxBuffer",
-        ));
-    }
-    Ok(())
+        Stdio::Descriptor(fd) => source_options::descriptor(fd)?.into(),
+    })
 }

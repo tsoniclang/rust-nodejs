@@ -751,7 +751,7 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
     let current = current.to_string_lossy().to_string();
     let output = child_process::spawn_file_sync(&current, &["--list"]).unwrap();
     assert!(output.success());
-    assert_eq!(output.status, 0);
+    assert_eq!(output.status, Some(0));
     assert_eq!(output.error, None);
     assert_eq!(output.stderr_string().unwrap(), "");
     assert!(output
@@ -767,17 +767,21 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
     assert_eq!(closed.status, Some(0));
     assert!(closed
         .stdout
+        .unwrap()
         .to_string_enc("utf8")
         .unwrap()
         .contains("network_process_tests"));
-    assert!(closed.stderr.is_empty());
+    assert!(closed.stderr.unwrap().is_empty());
     let missing = child_process::spawn_sync_result(
         "nonexistent_command_tsonic_node_compat",
         &tsonic_rust_js::JsArray::new(),
     )
     .unwrap();
     assert_eq!(missing.status, None);
-    assert!(!missing.stderr.is_empty());
+    assert!(missing.stderr.is_none());
+    assert!(missing.stdout.is_none());
+    assert!(missing.pid.is_none());
+    assert_eq!(missing.error.unwrap().code(), "ENOENT");
     let native_arguments = vec!["--list".to_string()];
     let native = child_process::spawn_sync_result(&current, &native_arguments).unwrap();
     assert_eq!(native.status, Some(0));

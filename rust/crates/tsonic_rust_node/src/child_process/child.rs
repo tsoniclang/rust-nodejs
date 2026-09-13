@@ -37,7 +37,7 @@ impl ChildProcess {
         let Some(child) = self.child.take() else {
             return Ok(SpawnOutput {
                 pid: self.pid,
-                status: self.exit_code.unwrap_or(0),
+                status: self.exit_code,
                 signal: self.signal_code.clone(),
                 stdout: self.stdout.clone().unwrap_or_default(),
                 stderr: self.stderr.clone().unwrap_or_default(),
@@ -48,14 +48,15 @@ impl ChildProcess {
         let output = child
             .wait_with_output()
             .map_err(|error| NodeError::new("ECHILD", error.to_string()))?;
-        let status = output.status.code().unwrap_or(1);
-        self.exit_code = Some(status);
+        let status = output.status.code();
+        self.exit_code = status;
+        self.signal_code = capture::signal_name(output.status);
         self.stdout = Some(output.stdout.clone());
         self.stderr = Some(output.stderr.clone());
         Ok(SpawnOutput {
             pid,
             status,
-            signal: None,
+            signal: self.signal_code.clone(),
             stdout: output.stdout,
             stderr: output.stderr,
             error: None,

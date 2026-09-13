@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child as OsChild, Command};
 
@@ -8,7 +7,10 @@ use crate::error::{NodeError, NodeResult};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpawnOptions {
     pub cwd: Option<PathBuf>,
-    pub env: BTreeMap<String, String>,
+    pub env: Option<BTreeMap<String, String>>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    pub extra_stdio: Vec<Stdio>,
     pub argv0: Option<String>,
     pub detached: bool,
     pub input: Option<Vec<u8>>,
@@ -37,6 +39,7 @@ pub enum Stdio {
     Ignore,
     Inherit,
     Ipc,
+    Descriptor(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,16 +81,19 @@ pub struct SpawnSyncReturns {
     pub output: Vec<Option<Vec<u8>>>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    pub status: i32,
+    pub status: Option<i32>,
     pub signal: Option<String>,
-    pub error: Option<String>,
+    pub error: Option<NodeError>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpawnSyncResult {
-    pub stdout: crate::buffer::Buffer,
-    pub stderr: crate::buffer::Buffer,
+    pub stdout: Option<crate::buffer::Buffer>,
+    pub stderr: Option<crate::buffer::Buffer>,
     pub status: Option<i32>,
+    pub pid: Option<f64>,
+    pub signal: Option<String>,
+    pub error: Option<NodeError>,
 }
 
 pub trait SpawnSyncArguments {
@@ -112,19 +118,25 @@ impl SpawnSyncArguments for tsonic_rust_js::JsArray<String> {
         &self,
         operation: impl FnOnce(&[&str]) -> Result,
     ) -> NodeResult<Result> {
-        let owned_arguments = self.values()
+        let owned_arguments = self
+            .values()
             .into_iter()
             .enumerate()
             .map(|(index, value)| {
                 value.ok_or_else(|| {
                     NodeError::new(
                         "ERR_INVALID_ARG_TYPE",
-                        format!("spawnSync argument array contains an empty element at index {index}"),
+                        format!(
+                            "spawnSync argument array contains an empty element at index {index}"
+                        ),
                     )
                 })
             })
             .collect::<NodeResult<Vec<_>>>()?;
-        let borrowed_arguments = owned_arguments.iter().map(String::as_str).collect::<Vec<_>>();
+        let borrowed_arguments = owned_arguments
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
         Ok(operation(&borrowed_arguments))
     }
 }
@@ -153,7 +165,9 @@ impl SpawnOptions {
     }
 
     pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.env.insert(name.into(), value.into());
+        self.env
+            .get_or_insert_with(BTreeMap::new)
+            .insert(name.into(), value.into());
         self
     }
 
@@ -219,11 +233,11 @@ impl StdioOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnOutput {
     pub pid: Option<u32>,
-    pub status: i32,
+    pub status: Option<i32>,
     pub signal: Option<String>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    pub error: Option<String>,
+    pub error: Option<NodeError>,
 }
 
 impl SpawnOutput {
@@ -254,6 +268,6 @@ impl SpawnOutput {
     }
 
     pub fn success(&self) -> bool {
-        self.status == 0
+        self.status == Some(0)
     }
 }

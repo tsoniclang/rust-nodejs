@@ -26,7 +26,8 @@ tsonic_rust_runtime = "=0.1.0"
 webpki-roots = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "=0.31.3", default-features = false, features = ["resource"] }
+command-fds = "=0.3.3"
+nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal"] }
 
 [[test]]
 name = "no_forbidden_shortcuts"

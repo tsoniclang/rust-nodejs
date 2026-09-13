@@ -190,6 +190,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "command-fds"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b60b5124979fccd9addd89d8b97a1d6eebb4950694520c75ddd722535ea443f"
+dependencies = [
+ "nix",
+ "thiserror",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1747,6 +1757,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "brotli",
+ "command-fds",
  "filetime",
  "flate2",
  "get_if_addrs",

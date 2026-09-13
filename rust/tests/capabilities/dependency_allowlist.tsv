@@ -1,4 +1,5 @@
 crate	package	reason
+tsonic_rust_node	command-fds	owned file-descriptor mapping for shell-free child process stdio; no custom pre-exec or pathname reconstruction
 tsonic_rust_node	flate2	approved zlib/gzip/deflate runtime implementation; no shellout or embedded JS engine
 tsonic_rust_node	filetime	approved fs timestamp mutation implementation for utimes/futimes/lutimes; platform file metadata only, no shellout or dynamic execution
 tsonic_rust_node	get_if_addrs	approved os.networkInterfaces runtime implementation; platform query only, no reflection/dynamic execution

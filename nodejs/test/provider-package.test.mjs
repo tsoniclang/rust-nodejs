@@ -155,6 +155,7 @@ test("provider type relations carry exact closed target carriers", () => {
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
+    ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
     ["node:perf_hooks::Performance", "rust.node.Performance"],
     ["node:process::CpuUsage", "rust.node.CpuUsage", "struct-default"],
     ["node:fs::Stats", "rust.node.Stats"],
@@ -170,7 +171,7 @@ test("provider type relations carry exact closed target carriers", () => {
     } }]],
     ["node:fs::MakeDirectoryOptions", "rust.node.MakeDirectoryOptions", "struct-default"],
     ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
-    ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
+    ["node:process::ProcessEnv", "rust.node.ProcessEnv", "default"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
     ["node:process::ProcessWriteStream", "rust.node.Writable"],
     ["node:buffer::Buffer", {
@@ -298,6 +299,7 @@ test("provider package closes child-process and text-decoder operations", () => 
   const spawnSync = rows.find((row) => row.exportId === "node:child_process::spawnSync");
   assert.deepEqual(spawnSync, {
     exportId: "node:child_process::spawnSync",
+    signatureId: "node:child_process::spawnSync(command,args)",
     operationKind: "method",
     target: {
       form: "call",
@@ -323,15 +325,17 @@ test("provider package closes child-process and text-decoder operations", () => 
   assert.deepEqual(
     spawnReturns?.members?.map((member) => [member.name, member.type]),
     [
-      ["stdout", { kind: "type-parameter", name: "T" }],
-      ["stderr", { kind: "type-parameter", name: "T" }],
+      ...["stdout", "stderr"].map(name => [name, { kind: "union", types: [{ kind: "type-parameter", name: "T" }, { kind: "literal", value: null }] }]),
       ["status", {
         kind: "union",
         types: [{ kind: "number" }, { kind: "literal", value: null }],
       }],
+      ["pid", { kind: "number" }],
+      ["signal", { kind: "union", types: [{ kind: "provider-ref", moduleSpecifier: "node:process", exportName: "Signals" }, { kind: "literal", value: null }] }],
+      ["error", { kind: "provider-ref", moduleSpecifier: "node:child_process", exportName: "SpawnSyncError" }],
     ],
   );
-  for (const name of ["stdout", "stderr", "status"]) {
+  for (const name of ["stdout", "stderr", "status", "pid", "signal", "error"]) {
     assert.deepEqual(
       rows
         .filter((row) => row.memberId === `node:child_process::SpawnSyncReturns.${name}`)
@@ -510,7 +514,7 @@ test("provider package exposes exact process env absence and writable exit statu
     module.moduleSpecifier === "node:process");
   assert.ok(processModule !== undefined);
   const processEnv = processModule.exports.find((entry) => entry.id === "node:process::ProcessEnv");
-  assert.ok(processEnv !== undefined && processEnv.kind === "class");
+  assert.ok(processEnv !== undefined && processEnv.kind === "interface");
   assert.deepEqual(processEnv.members[0].signatures[0].returnType, {
     kind: "union",
     types: [{ kind: "string" }, { kind: "undefined" }],

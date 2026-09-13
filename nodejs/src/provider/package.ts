@@ -55,7 +55,7 @@ import {
 import { assertModule, assertRows } from "./modules/assert.js";
 import { bufferModule, bufferRows } from "./modules/buffer.js";
 import { cryptoModule, cryptoRows } from "./modules/crypto.js";
-import { childProcessModule, childProcessRows } from "./modules/child-process.js";
+import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process.js";
 import { fsModule, fsRows } from "./modules/filesystem.js";
 import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem-paths.js";
 import { bufferEncodingOptionsCarrier } from "./modules/filesystem-realpath.js";
@@ -142,7 +142,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       processModule(),
       performanceModule(),
       bufferModule(typedArrays),
-      childProcessModule(),
+      childProcessModule(typedArrays),
       urlModule(),
       cryptoModule(typedArrays),
       utilModule(typedArrays),
@@ -160,6 +160,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:child_process::SpawnSyncOptionsWithBufferEncoding", targetCarrier: spawnOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:perf_hooks::Performance", targetCarrier: performanceCarrier },
       { exportId: "node:process::CpuUsage", targetCarrier: processCpuCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::Stats", targetCarrier: statsCarrier },
@@ -266,7 +267,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       ...processRows(),
       ...performanceRows(),
       ...bufferRows(typedArrays),
-      ...childProcessRows(),
+      ...childProcessRows(typedArrays),
       ...urlRows(),
       ...cryptoRows(typedArrays),
       ...utilRows(typedArrays),
@@ -318,6 +319,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.RealpathSync": "tsonic_rust_node::fs::RealpathSync",
       "rust.node.Buffer": "tsonic_rust_node::buffer::Buffer",
       "rust.node.SpawnSyncResult": "tsonic_rust_node::child_process::SpawnSyncResult",
+      "rust.node.SpawnSyncOptions": "tsonic_rust_node::child_process::SpawnSyncOptions",
       "rust.node.Url": "tsonic_rust_node::url::Url",
       "rust.node.UrlObject": "tsonic_rust_node::url::LegacyUrlObject",
       "rust.node.UrlSearchParams": "tsonic_rust_node::url::UrlSearchParams",
@@ -371,6 +373,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.RmOptions": copyDefaultCarrierTraits,
       "rust.node.Buffer": closedJsValueCarrierTraits,
       "rust.node.SpawnSyncResult": cloneOnlyCarrierTraits,
+      "rust.node.SpawnSyncOptions": cloneDefaultCarrierTraits,
       "rust.node.Url": cloneOnlyCarrierTraits,
       "rust.node.UrlObject": cloneOnlyCarrierTraits,
       "rust.node.UrlSearchParams": cloneOnlyCarrierTraits,
