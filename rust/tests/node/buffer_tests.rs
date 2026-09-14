@@ -64,6 +64,9 @@ fn buffer_integer_and_extended_encoding_helpers() {
     let utf16 = Buffer::from_string("AZ", Some("utf16le")).unwrap();
     assert_eq!(utf16.as_bytes(), vec![65, 0, 90, 0]);
     assert_eq!(utf16.to_string(Some("utf16le")).unwrap(), "AZ");
+    assert_eq!(tsonic_rust_node::buffer::decode_bytes(&[65, 0, 255], Some("utf16le")).unwrap(), "A");
+    assert_eq!(tsonic_rust_node::buffer::decode_bytes(&[61, 216, 0, 222], Some("utf16le")).unwrap(), "😀");
+    assert_eq!(tsonic_rust_node::buffer::decode_bytes(&[0, 216], Some("utf16le")).unwrap(), "\u{fffd}");
 
     let base64url = Buffer::from_string("aGk", Some("base64url")).unwrap();
     assert_eq!(base64url.to_string(Some("utf8")).unwrap(), "hi");
