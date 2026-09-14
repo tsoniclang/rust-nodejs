@@ -18,6 +18,23 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
     let root_buffer = path_buffer(&root);
     let directory = root.join("nested");
     let directory_buffer = path_buffer(&directory);
+    assert_eq!(std::mem::size_of_val(&fs::realpath_function()), 0);
+    fs::mkdir_sync_buffer(&directory_buffer).unwrap();
+    assert!(directory.is_dir());
+    assert_eq!(
+        fs::mkdir_sync_buffer(&directory_buffer).unwrap_err().code,
+        "EEXIST"
+    );
+    assert_eq!(
+        fs::readdir_sync_buffer_path(&root_buffer).unwrap().values(),
+        vec![Some("nested".to_owned())]
+    );
+    assert_eq!(
+        fs::readdir_sync_buffer_path(&Buffer::from_bytes(vec![0]))
+            .unwrap_err()
+            .code,
+        "ERR_INVALID_ARG_VALUE"
+    );
     fs::mkdir_sync_buffer_with_options(
         &directory_buffer,
         fs::MakeDirectoryOptions {
@@ -27,6 +44,10 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
     )
     .unwrap();
     let absent = path_buffer(&root.join("absent"));
+    assert_eq!(
+        fs::readdir_sync_buffer_path(&absent).unwrap_err().code,
+        "ENOENT"
+    );
     let options = fs::StatOptions {
         throw_if_no_entry: Some(false),
         ..Default::default()

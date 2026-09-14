@@ -70,12 +70,14 @@ pub fn rm_sync_with_options(
             Ok(()) => return Ok(()),
             Err(error) if attempts < max_retries && rm_error_is_retryable(&error) => {
                 attempts += 1;
-                let delay = retry_delay.checked_mul(u64::from(attempts)).ok_or_else(|| {
-                    NodeError::new(
-                        "ERR_OUT_OF_RANGE",
-                        "retryDelay multiplied by the retry count exceeds the supported range",
-                    )
-                })?;
+                let delay = retry_delay
+                    .checked_mul(u64::from(attempts))
+                    .ok_or_else(|| {
+                        NodeError::new(
+                            "ERR_OUT_OF_RANGE",
+                            "retryDelay multiplied by the retry count exceeds the supported range",
+                        )
+                    })?;
                 if delay > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(delay));
                 }

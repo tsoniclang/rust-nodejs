@@ -58,19 +58,23 @@ impl FsWatcher {
         let received = state
             .receiver
             .as_ref()
-            .ok_or_else(|| NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "stat watchers do not expose filesystem event polling",
-            ))?
+            .ok_or_else(|| {
+                NodeError::new(
+                    "ERR_INVALID_ARG_TYPE",
+                    "stat watchers do not expose filesystem event polling",
+                )
+            })?
             .try_recv();
         match received {
             Ok(Ok(event)) => {
                 let event_type = watch_event_type(&event.kind).to_string();
                 let filenames = watch_event_filenames(&state.path, &event.paths);
-                state.pending_events.extend(filenames.into_iter().map(|filename| FsWatchEvent {
-                    event_type: event_type.clone(),
-                    filename,
-                }));
+                state
+                    .pending_events
+                    .extend(filenames.into_iter().map(|filename| FsWatchEvent {
+                        event_type: event_type.clone(),
+                        filename,
+                    }));
                 Ok(state.pending_events.pop_front())
             }
             Ok(Err(error)) => Err(NodeError::new("EIO", error.to_string())),
@@ -120,7 +124,8 @@ pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWat
     let (sender, receiver) = std::sync::mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |event| {
         let _ = sender.send(event);
-    }).map_err(|error| NodeError::new("EIO", error.to_string()))?;
+    })
+    .map_err(|error| NodeError::new("EIO", error.to_string()))?;
     watcher
         .watch(
             std::path::Path::new(path),
@@ -146,14 +151,10 @@ pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWat
     })
 }
 
-type RuntimeWatchCallback = tsonic_rust_runtime::Callable<
-    (String, String),
-    tsonic_rust_runtime::TsonicResult<()>,
->;
-type RuntimeStatWatchCallback = tsonic_rust_runtime::Callable<
-    (Stats, Stats),
-    tsonic_rust_runtime::TsonicResult<()>,
->;
+type RuntimeWatchCallback =
+    tsonic_rust_runtime::Callable<(String, String), tsonic_rust_runtime::TsonicResult<()>>;
+type RuntimeStatWatchCallback =
+    tsonic_rust_runtime::Callable<(Stats, Stats), tsonic_rust_runtime::TsonicResult<()>>;
 
 enum RuntimeWatcherCallback {
     Event(RuntimeWatchCallback),
@@ -170,8 +171,7 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
-static NEXT_RUNTIME_WATCHER_ID: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static NEXT_RUNTIME_WATCHER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub fn watch_callable<E>(
     path: &str,
@@ -188,10 +188,13 @@ where
     });
     let id = NEXT_RUNTIME_WATCHER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow_mut().insert(id, RuntimeWatcher {
-            state: std::rc::Rc::clone(&watcher.state),
-            callback: RuntimeWatcherCallback::Event(callback),
-        });
+        watchers.borrow_mut().insert(
+            id,
+            RuntimeWatcher {
+                state: std::rc::Rc::clone(&watcher.state),
+                callback: RuntimeWatcherCallback::Event(callback),
+            },
+        );
     });
     Ok(watcher)
 }
@@ -213,10 +216,17 @@ pub(crate) fn poll_runtime_watchers() -> tsonic_rust_runtime::TsonicResult<bool>
             .values()
             .map(|watcher| {
                 let state = std::rc::Rc::clone(&watcher.state);
-                (FsWatcher { state }, match &watcher.callback {
-                    RuntimeWatcherCallback::Event(callback) => RuntimeWatcherCallback::Event(callback.clone()),
-                    RuntimeWatcherCallback::Stat(callback) => RuntimeWatcherCallback::Stat(callback.clone()),
-                })
+                (
+                    FsWatcher { state },
+                    match &watcher.callback {
+                        RuntimeWatcherCallback::Event(callback) => {
+                            RuntimeWatcherCallback::Event(callback.clone())
+                        }
+                        RuntimeWatcherCallback::Stat(callback) => {
+                            RuntimeWatcherCallback::Stat(callback.clone())
+                        }
+                    },
+                )
             })
             .collect::<Vec<_>>()
     });
@@ -224,7 +234,10 @@ pub(crate) fn poll_runtime_watchers() -> tsonic_rust_runtime::TsonicResult<bool>
     for (mut watcher, callback) in active {
         match callback {
             RuntimeWatcherCallback::Event(callback) => {
-                while let Some(event) = watcher.poll().map_err(tsonic_rust_runtime::TsonicError::from)? {
+                while let Some(event) = watcher
+                    .poll()
+                    .map_err(tsonic_rust_runtime::TsonicError::from)?
+                {
                     did_work = true;
                     callback.call((event.event_type, event.filename))?;
                 }
@@ -328,10 +341,13 @@ where
     });
     let id = NEXT_RUNTIME_WATCHER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow_mut().insert(id, RuntimeWatcher {
-            state: std::rc::Rc::clone(&watcher.state),
-            callback: RuntimeWatcherCallback::Stat(callback),
-        });
+        watchers.borrow_mut().insert(
+            id,
+            RuntimeWatcher {
+                state: std::rc::Rc::clone(&watcher.state),
+                callback: RuntimeWatcherCallback::Stat(callback),
+            },
+        );
     });
     Ok(())
 }
@@ -339,8 +355,8 @@ where
 pub fn unwatch_file(path: &str) {
     RUNTIME_WATCHERS.with(|watchers| {
         watchers.borrow_mut().retain(|_, watcher| {
-            if watcher.state.borrow().path == path &&
-                matches!(&watcher.callback, RuntimeWatcherCallback::Stat(_))
+            if watcher.state.borrow().path == path
+                && matches!(&watcher.callback, RuntimeWatcherCallback::Stat(_))
             {
                 watcher.state.borrow_mut().closed = true;
                 false
@@ -357,10 +373,12 @@ impl FsWatcher {
         if state.closed {
             return Err(NodeError::new("ERR_WATCHER_CLOSED", "watcher is closed"));
         }
-        let interval = state.stat_interval.ok_or_else(|| NodeError::new(
-            "ERR_INVALID_ARG_TYPE",
-            "filesystem event watchers do not expose stat polling",
-        ))?;
+        let interval = state.stat_interval.ok_or_else(|| {
+            NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "filesystem event watchers do not expose stat polling",
+            )
+        })?;
         if state.last_stat_check.elapsed() < interval {
             return Ok(None);
         }

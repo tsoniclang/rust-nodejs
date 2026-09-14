@@ -22,7 +22,8 @@ pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> 
         Encoding::Latin1 => Ok(bytes.iter().map(|byte| *byte as char).collect()),
         Encoding::Utf16Le => {
             let units = bytes
-                .as_chunks::<2>().0
+                .as_chunks::<2>()
+                .0
                 .iter()
                 .map(|chunk| u16::from_le_bytes(*chunk))
                 .collect::<Vec<_>>();

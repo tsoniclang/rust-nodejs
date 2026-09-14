@@ -39,6 +39,18 @@ fn compiler_descriptor_views_positions_and_validation() {
         fs::write_sync_uint8_number(fd, &view, 0.0, 4.0, None).unwrap(),
         4.0
     );
+    let reader = fs::open_sync_number(path_text, "r").unwrap();
+    let copied = Buffer::alloc(4);
+    assert_eq!(
+        fs::read_sync_buffer_number(reader, &copied, 0.0, 4.0, None).unwrap(),
+        4.0
+    );
+    assert_eq!(copied.as_bytes(), b"abcd");
+    fs::close_sync_number(reader).unwrap();
+    assert_eq!(
+        fs::open_sync_number(path_text, "invalid").unwrap_err().code,
+        "ERR_INVALID_ARG_VALUE"
+    );
     let target = Uint8Array::from_vec(vec![17.0; 6]).unwrap();
     let target_view = target.subarray(1.0, Some(5.0));
     assert_eq!(
