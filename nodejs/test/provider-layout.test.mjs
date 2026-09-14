@@ -33,13 +33,19 @@ test("Rust Node provider declarations are owned by semantic modules", () => {
       "crypto.ts",
       "dns.ts",
       "events.ts",
+      "filesystem-descriptors.ts",
+      "filesystem-paths.ts",
       "filesystem-promises.ts",
+      "filesystem-realpath.ts",
       "filesystem.ts",
       "http.ts",
       "https.ts",
       "net.ts",
       "os.ts",
       "path.ts",
+      "performance.ts",
+      "process-metrics.ts",
+      "process-signals.ts",
       "process.ts",
       "readline.ts",
       "stream.ts",
@@ -56,9 +62,23 @@ test("Rust Node provider declarations are owned by semantic modules", () => {
 test("Rust Node package assembly contains no module declaration policy", () => {
   const assembly = readFileSync(join(providerRoot, "package.ts"), "utf8");
   assert.doesNotMatch(assembly, /providerModuleId|RustProviderModuleDefinition/u);
+  const fragments = new Map([
+    ["filesystem-descriptors.ts", "filesystem.ts"],
+    ["filesystem-paths.ts", "filesystem.ts"],
+    ["filesystem-realpath.ts", "filesystem.ts"],
+    ["process-metrics.ts", "process.ts"],
+    ["process-signals.ts", "process.ts"],
+  ]);
   for (const moduleFile of readdirSync(moduleRoot)) {
     const source = readFileSync(join(moduleRoot, moduleFile), "utf8");
-    assert.match(source, /providerModuleId/u, moduleFile);
+    const owner = fragments.get(moduleFile);
+    if (owner === undefined) {
+      assert.match(source, /providerModuleId/u, moduleFile);
+    } else {
+      assert.doesNotMatch(source, /providerModuleId/u, moduleFile);
+      const ownerSource = readFileSync(join(moduleRoot, owner), "utf8");
+      assert.ok(ownerSource.includes(`from "./${moduleFile.slice(0, -3)}.js"`), `${moduleFile} has no owning module import`);
+    }
     assert.ok(source.split("\n").length <= 600, `${moduleFile} exceeds 600 lines`);
   }
 });

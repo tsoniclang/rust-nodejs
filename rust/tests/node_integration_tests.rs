@@ -36,8 +36,6 @@ mod os_tests;
 mod path_tests;
 #[path = "node/performance_clock_tests.rs"]
 mod performance_clock_tests;
-#[path = "node/process_cpu_tests.rs"]
-mod process_cpu_tests;
 #[path = "node/process_environment_tests.rs"]
 mod process_environment_tests;
 #[path = "node/process_signal_tests.rs"]
