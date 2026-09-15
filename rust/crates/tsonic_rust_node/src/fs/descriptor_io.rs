@@ -32,6 +32,9 @@ fn read_descriptor_bytes(fd: i32, bytes: &mut [u8], position: Option<u64>) -> No
         .transpose()
         .map_err(|_| NodeError::new("ERR_OUT_OF_RANGE", "file position is out of range"))?;
     loop {
+        // SAFETY: bytes is a live, exclusively borrowed writable slice. The synchronous
+        // syscall writes at most its length and does not retain the pointer. Invalid
+        // descriptors are OS errors; no Rust handle is constructed from the integer.
         let count = unsafe {
             match position {
                 Some(position) => libc::pread(fd, bytes.as_mut_ptr().cast(), bytes.len(), position),
@@ -55,6 +58,9 @@ fn write_descriptor_bytes(fd: i32, bytes: &[u8], position: Option<u64>) -> NodeR
         .transpose()
         .map_err(|_| NodeError::new("ERR_OUT_OF_RANGE", "file position is out of range"))?;
     loop {
+        // SAFETY: bytes remains borrowed and initialized throughout the synchronous
+        // syscall, which reads at most its length and does not retain the pointer.
+        // Invalid descriptors are OS errors, not invented Rust handle lifetimes.
         let count = unsafe {
             match position {
                 Some(position) => libc::pwrite(fd, bytes.as_ptr().cast(), bytes.len(), position),
