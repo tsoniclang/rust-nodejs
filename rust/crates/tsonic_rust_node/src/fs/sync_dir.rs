@@ -309,11 +309,8 @@ pub fn close_sync(fd: i32) -> NodeResult<()> {
     use std::os::fd::IntoRawFd;
     let file = crate::sync::lock(file_table()).remove(&fd);
     let descriptor = file.map_or(fd, IntoRawFd::into_raw_fd);
-    if unsafe { libc::close(descriptor) } == 0 {
-        Ok(())
-    } else {
-        Err(map_io_error(std::io::Error::last_os_error()))
-    }
+    nix::unistd::close(descriptor)
+        .map_err(|error| map_io_error(std::io::Error::from_raw_os_error(error as i32)))
 }
 
 #[cfg(not(unix))]
