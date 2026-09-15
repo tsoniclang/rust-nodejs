@@ -59,3 +59,20 @@ fn generated_shape_can_mix_node_and_js_errors_with_question_mark() {
     let error = generated_read_config("/definitely/missing/tsonic/config/root").unwrap_err();
     assert!(matches!(error, rt::TsonicError::Node { .. }));
 }
+
+#[test]
+fn node_errors_preserve_creation_identity_through_native_transport() {
+    let node_error = node::NodeError::new("ENOENT", "missing file");
+    let source = node_error.source_error().clone();
+    let stack = source.stack();
+    let alias = node_error.clone();
+    let native: rt::TsonicError = node_error.into();
+    let rethrown = native.clone();
+    assert!(rethrown.is_error());
+    assert!(rethrown.is_error_kind(rt::JsErrorKind::Error));
+    assert!(rethrown.error_value().has_same_identity(&source));
+    assert!(alias.source_error().has_same_identity(&source));
+    assert_eq!(rethrown.error_value().stack(), stack);
+    assert_eq!(rethrown.error_value().message(), "missing file");
+    assert_eq!(rethrown.to_string(), "ENOENT: missing file");
+}
