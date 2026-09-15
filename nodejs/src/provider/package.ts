@@ -66,6 +66,7 @@ import {
 } from "./modules/filesystem-promises.js";
 import { httpModule, httpRows } from "./modules/http.js";
 import { osModule, osRows } from "./modules/os.js";
+import { v8Module, v8Rows } from "./modules/v8.js";
 import { pathModule, pathRows } from "./modules/path.js";
 import { processModule, processRows } from "./modules/process.js";
 import { processCarrier } from "./modules/process-signals.js";
@@ -118,6 +119,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
       { moduleSpecifier: "http", canonicalModuleSpecifier: "node:http" },
       { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
+      { moduleSpecifier: "v8", canonicalModuleSpecifier: "node:v8" },
       { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
       { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
       { moduleSpecifier: "perf_hooks", canonicalModuleSpecifier: "node:perf_hooks" },
@@ -139,6 +141,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       assertModule(),
       pathModule(),
       osModule(),
+      v8Module(),
       fsModule(typedArrays),
       fsPromisesModule(),
       processModule(),
@@ -266,6 +269,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       ...assertRows(),
       ...pathRows(),
       ...osRows(),
+      ...v8Rows(),
       ...fsRows(typedArrays),
       ...fsPromisesRows(),
       ...processRows(),

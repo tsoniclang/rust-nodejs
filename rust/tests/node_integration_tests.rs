@@ -1,5 +1,7 @@
 #[path = "node/buffer_tests.rs"]
 mod buffer_tests;
+#[path = "node/v8_tests.rs"]
+mod v8_tests;
 #[path = "node/child_process_capture_tests.rs"]
 mod child_process_capture_tests;
 #[path = "node/compat_gap_tests.rs"]

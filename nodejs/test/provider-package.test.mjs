@@ -6,6 +6,7 @@ const expectedModules = [
   "node:assert",
   "node:path",
   "node:os",
+  "node:v8",
   "node:fs",
   "node:fs/promises",
   "node:process",
@@ -37,6 +38,7 @@ const expectedModules = [
   "fs/promises",
   "http",
   "os",
+  "v8",
   "path",
   "process",
   "perf_hooks",
@@ -78,6 +80,7 @@ test("provider package declares bare Node modules as canonical aliases", () => {
     ["fs/promises", "node:fs/promises"],
     ["http", "node:http"],
     ["os", "node:os"],
+    ["v8", "node:v8"],
     ["path", "node:path"],
     ["process", "node:process"],
     ["perf_hooks", "node:perf_hooks"],
@@ -111,6 +114,25 @@ test("provider package contributes a non-empty operation row set", () => {
   assert.ok(readFileSync !== undefined, "missing node:fs::readFileSync row");
   assert.equal(readFileSync.isFallible, true);
   assert.equal(readFileSync.operationKind, "method");
+});
+
+test("native V8 flags retain an exact fallible string-to-void boundary", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const module = modules.find((entry) => entry.moduleSpecifier === "node:v8");
+  assert.ok(module);
+  assert.deepEqual(module.exports.map((entry) => entry.name), ["setFlagsFromString"]);
+  const signature = module.exports[0].signatures[0];
+  assert.deepEqual(signature.parameters, [{ name: "flags", type: { kind: "string" } }]);
+  assert.deepEqual(signature.returnType, { kind: "void" });
+  const rows = operations.filter((entry) => entry.exportId === "node:v8::setFlagsFromString");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].isFallible, true);
+  assert.equal(rows[0].errorBoundary, "provider-native");
+  assert.equal(rows[0].errorCarrier.id, "rust.node.NodeError");
+  assert.deepEqual(rows[0].target, {
+    form: "call", path: "tsonic_rust_node::v8::set_flags_from_string", argModes: ["ref"],
+  });
 });
 
 test("required Node capability families expose exact provider operations", () => {
