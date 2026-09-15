@@ -66,7 +66,7 @@ import {
 } from "./modules/filesystem-promises.js";
 import { httpModule, httpRows } from "./modules/http.js";
 import { osModule, osRows } from "./modules/os.js";
-import { v8Module, v8Rows } from "./modules/v8.js";
+import { v8HeapInfoCarrier, v8Module, v8Rows } from "./modules/v8.js";
 import { pathModule, pathRows } from "./modules/path.js";
 import { processModule, processRows } from "./modules/process.js";
 import { processCarrier } from "./modules/process-signals.js";
@@ -188,6 +188,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       },
       { exportId: "node:process::ProcessEnv", targetCarrier: processEnvCarrier, objectLiteralConstruction: { kind: "default" } },
       { exportId: "node:process::MemoryUsage", targetCarrier: processMemoryUsageCarrier },
+      { exportId: "node:v8::HeapInfo", targetCarrier: v8HeapInfoCarrier },
       { exportId: "node:process::ProcessWriteStream", targetCarrier: writableCarrier },
       { exportId: "node:buffer::Buffer", targetCarrier: bufferCarrier },
       { exportId: "node:url::URL", targetCarrier: urlCarrier },
@@ -336,6 +337,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.ProcessEnv": "tsonic_rust_node::process::ProcessEnv",
       "rust.node.Process": "tsonic_rust_node::process::Process",
       "rust.node.MemoryUsage": "tsonic_rust_node::process::MemoryUsage",
+      "rust.node.HeapInfo": "tsonic_rust_node::v8::HeapInfo",
       "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
       "rust.node.Performance": "tsonic_rust_node::perf_hooks::Performance",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
@@ -389,6 +391,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Hash": cloneOnlyCarrierTraits,
       "rust.node.Hmac": cloneOnlyCarrierTraits,
       "rust.node.MemoryUsage": cloneOnlyCarrierTraits,
+      "rust.node.HeapInfo": cloneOnlyCarrierTraits,
       "rust.node.ProcessEnv": cloneDefaultCarrierTraits,
       "rust.node.Process": copyDefaultCarrierTraits,
       "rust.node.CpuUsage": cloneDefaultCarrierTraits,

@@ -121,7 +121,7 @@ test("native V8 flags retain an exact fallible string-to-void boundary", () => {
   const { modules, operations } = contribution.definition;
   const module = modules.find((entry) => entry.moduleSpecifier === "node:v8");
   assert.ok(module);
-  assert.deepEqual(module.exports.map((entry) => entry.name), ["setFlagsFromString"]);
+  assert.deepEqual(module.exports.map((entry) => entry.name), ["setFlagsFromString", "getHeapStatistics", "HeapInfo"]);
   const signature = module.exports[0].signatures[0];
   assert.deepEqual(signature.parameters, [{ name: "flags", type: { kind: "string" } }]);
   assert.deepEqual(signature.returnType, { kind: "void" });
@@ -133,6 +133,29 @@ test("native V8 flags retain an exact fallible string-to-void boundary", () => {
   assert.deepEqual(rows[0].target, {
     form: "call", path: "tsonic_rust_node::v8::set_flags_from_string", argModes: ["ref"],
   });
+});
+
+test("native V8 heap observations retain their exact result and fallible boundary", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const module = modules.find(entry => entry.moduleSpecifier === "node:v8");
+  const heap = module.exports.find(entry => entry.name === "HeapInfo");
+  const call = module.exports.find(entry => entry.name === "getHeapStatistics");
+  assert.equal(heap.kind, "interface");
+  assert.equal(heap.members.length, 15);
+  assert.equal(new Set(heap.members.map(member => member.name)).size, 15);
+  assert.deepEqual(call.signatures[0].parameters, []);
+  assert.deepEqual(call.signatures[0].returnType, { kind: "provider-ref", moduleSpecifier: "node:v8", exportName: "HeapInfo" });
+  const selected = operations.filter(entry => entry.exportId === "node:v8::getHeapStatistics");
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].resultCarrier.id, "rust.node.HeapInfo");
+  assert.equal(selected[0].isFallible, true);
+  assert.equal(selected[0].errorBoundary, "provider-native");
+  for (const member of heap.members) {
+    assert.equal(member.readonly, undefined);
+    assert.equal(operations.filter(entry => entry.memberId === member.id && entry.operationKind === "property").length, 1);
+    assert.equal(operations.filter(entry => entry.memberId === member.id && entry.operationKind === "property-set").length, 1);
+  }
 });
 
 test("required Node capability families expose exact provider operations", () => {
