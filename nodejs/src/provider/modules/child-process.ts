@@ -4,7 +4,7 @@ import {
   providerRef, rustJsArrayTargetType, rustOptionTargetType, spawnSyncResultCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier,
 } from "../model.js";
-import { rustJsTypedArrayTargetType, rustJsStringNumberTargetType } from "@tsonic/target-rust/provider";
+import { rustBorrowedStrToStringValueConversion, rustJsTypedArrayTargetType, rustJsStringNumberTargetType } from "@tsonic/target-rust/provider";
 import type {
   ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef,
 } from "../model.js";
@@ -99,7 +99,8 @@ export function childProcessRows(typedArrays: boolean): readonly RustProviderOpe
     ]),
     ...["message", "code"].map(name => ({
       exportId: errorId, memberId: `${errorId}.${name}`, operationKind: "property" as const,
-      target: { form: "field" as const, name }, resultCarrier: stringCarrier, receiverCarrier: nodeErrorCarrier,
+      target: { form: "receiver-method" as const, name }, resultCarrier: stringCarrier,
+      resultConversion: rustBorrowedStrToStringValueConversion, receiverCarrier: nodeErrorCarrier,
     })),
   ];
 }

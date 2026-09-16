@@ -220,6 +220,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
     ["node:process::ProcessEnv", "rust.node.ProcessEnv", "default"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
+    ["node:v8::HeapInfo", "rust.node.HeapInfo"],
     ["node:process::ProcessWriteStream", "rust.node.Writable"],
     ["node:buffer::Buffer", {
       kind: "target-specific", target: "rust", name: "named-type", value: {
@@ -390,6 +391,14 @@ test("provider package closes child-process and text-decoder operations", () => 
       ["property", "property-set"],
       `incomplete SpawnSyncReturns property '${name}'`,
     );
+  }
+  for (const name of ["message", "code"]) {
+    const row = rows.find(row => row.memberId === `node:child_process::SpawnSyncError.${name}`);
+    assert.deepEqual(row?.target, { form: "receiver-method", name });
+    assert.deepEqual(row?.resultConversion, {
+      kind: "semantic-conversion", id: "owned-string-from-borrowed-str",
+    });
+    assert.deepEqual(row?.receiverCarrier, { kind: "target-named", id: "rust.node.NodeError" });
   }
 
   const decode = rows.find((row) => row.memberId === "node:util::TextDecoder.decode");
