@@ -18,6 +18,7 @@ import {
   httpServerResponseCarrier,
   rmOptionsCarrier,
   rustOptionTargetType,
+  rustStringToBorrowedStrValueConversion,
   rustUint64ToFloat64ValueConversion,
   statsCarrier,
   stringCarrier,
@@ -357,7 +358,12 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
   const fallible = (name: string, path: string, resultCarrier: RustTargetTypeRef, parameterCarriers: readonly RustTargetTypeRef[], trailingArguments?: readonly RustProviderConstantArgument[]): RustProviderOperationDefinition => ({
     exportId: `node:fs::${name}`,
     operationKind: "method",
-    target: { form: "call", path, argModes: parameterCarriers.map(() => "ref"), ...(trailingArguments === undefined ? {} : { trailingArguments }) },
+    target: {
+      form: "call", path,
+      argModes: parameterCarriers.map(carrier => carrier === stringCarrier ? "value" : "ref"),
+      argConversions: parameterCarriers.map(carrier => carrier === stringCarrier ? rustStringToBorrowedStrValueConversion : undefined),
+      ...(trailingArguments === undefined ? {} : { trailingArguments }),
+    },
     resultCarrier,
     parameterCarriers,
     ...providerNativeFallibility,
@@ -365,7 +371,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
   return [
     ...fileDescriptorRows(typedArrays),
     ...filePathRows(),
-    { exportId: "node:fs::existsSync", operationKind: "method", target: { form: "call", path: "node_fs::exists_sync", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
+    { exportId: "node:fs::existsSync", operationKind: "method", target: { form: "call", path: "node_fs::exists_sync", argModes: ["value"], argConversions: [rustStringToBorrowedStrValueConversion] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },
     {
       ...fallible("readFileSync", "node_fs::read_file_sync_buffer", bufferCarrier, [stringCarrier]),
       signatureId: "node:fs::readFileSync(path)",
@@ -390,7 +396,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       exportId: "node:fs::mkdirSync",
       signatureId: "node:fs::mkdirSync(path,options)",
       operationKind: "method",
-      target: { form: "call", path: "node_fs::mkdir_sync_with_options", argModes: ["ref", "value"] },
+      target: { form: "call", path: "node_fs::mkdir_sync_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       resultCarrier: { kind: "tuple", elements: [] },
       parameterCarriers: [stringCarrier, makeDirectoryOptionsCarrier],
       ...providerNativeFallibility,
@@ -403,7 +409,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       exportId: "node:fs::rmSync",
       signatureId: "node:fs::rmSync(path,options)",
       operationKind: "method",
-      target: { form: "call", path: "node_fs::rm_sync_with_options", argModes: ["ref", "value"] },
+      target: { form: "call", path: "node_fs::rm_sync_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       resultCarrier: { kind: "tuple", elements: [] },
       parameterCarriers: [stringCarrier, rmOptionsCarrier],
       ...providerNativeFallibility,

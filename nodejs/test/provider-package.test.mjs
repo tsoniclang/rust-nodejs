@@ -135,6 +135,32 @@ test("native V8 flags retain an exact fallible string-to-void boundary", () => {
   });
 });
 
+test("filesystem strings explicitly borrow str while byte buffers retain their native references", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const operations = contribution.definition.operations;
+  const conversion = { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" };
+  for (const signature of [
+    "statSync(path)", "statSync(path,options)", "lstatSync(path)",
+    "readdirSync(path)", "mkdirSync(path)", "mkdirSync(path,options)",
+    "rmSync(path)", "rmSync(path,options)", "readFileSync(path)",
+    "writeFileSync(path,buffer)",
+  ]) {
+    const row = operations.find(entry => entry.signatureId === `node:fs::${signature}`);
+    assert.ok(row, signature);
+    assert.equal(row.target.argModes[0], "value", signature);
+    assert.deepEqual(row.target.argConversions[0], conversion, signature);
+  }
+  for (const signature of ["statSync(bufferPath)", "readdirSync(bufferPath)", "mkdirSync(bufferPath)"]) {
+    const row = operations.find(entry => entry.signatureId === `node:fs::${signature}`);
+    assert.ok(row, signature);
+    assert.equal(row.target.argModes[0], "ref", signature);
+    assert.equal(row.target.argConversions?.[0], undefined, signature);
+  }
+  const writeBuffer = operations.find(entry => entry.signatureId === "node:fs::writeFileSync(path,buffer)");
+  assert.equal(writeBuffer.target.argModes[1], "ref");
+  assert.equal(writeBuffer.target.argConversions[1], undefined);
+});
+
 test("native V8 heap observations retain their exact result and fallible boundary", () => {
   const [contribution] = createTsonicPlugin().createTargetContributions({});
   const { modules, operations } = contribution.definition;
@@ -772,7 +798,11 @@ test("provider package exposes exact filesystem and path contracts required by p
   assert.deepEqual(symlink?.target, {
     form: "call",
     path: "node_fs::symlink_sync",
-    argModes: ["ref", "ref"],
+    argModes: ["value", "value"],
+    argConversions: [
+      { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" },
+      { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" },
+    ],
   });
   assert.equal(symlink?.isFallible, true);
 });

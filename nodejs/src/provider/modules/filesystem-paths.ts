@@ -1,7 +1,7 @@
 import {
   boolCarrier, booleanType, bufferCarrier, float64Carrier,
   methodMember, numberType, propertyMember, providerNativeFallibility,
-  providerRef, rustOptionTargetType, statsCarrier, stringArrayCarrier,
+  providerRef, rustOptionTargetType, rustStringToBorrowedStrValueConversion, statsCarrier, stringArrayCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier, valueExport, voidType,
 } from "../model.js";
 import { rustInt32ToFloat64ValueConversion, rustJsArrayTargetType } from "@tsonic/target-rust/provider";
@@ -99,7 +99,11 @@ export function filePathRows(): readonly RustProviderOperationDefinition[] {
     parameters: readonly RustTargetTypeRef[],
   ): RustProviderOperationDefinition => ({
     exportId: `${moduleId}::${name}`, signatureId: `${moduleId}::${name}(${signature})`, operationKind: "method",
-    target: { form: "call", path: `node_fs::${nativePath}`, argModes: parameters.map((_, index) => index === 0 ? "ref" : "value") },
+    target: {
+      form: "call", path: `node_fs::${nativePath}`,
+      argModes: parameters.map((carrier, index) => index === 0 && carrier !== stringCarrier ? "ref" : "value"),
+      argConversions: parameters.map(carrier => carrier === stringCarrier ? rustStringToBorrowedStrValueConversion : undefined),
+    },
     resultCarrier: result, parameterCarriers: parameters, ...providerNativeFallibility,
   });
   const property = (owner: string, name: string, field: string, receiver: RustTargetTypeRef, result: RustTargetTypeRef): RustProviderOperationDefinition => ({

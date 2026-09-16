@@ -1,5 +1,6 @@
 import {
   rustBorrowedStrToStringValueConversion,
+  rustStringToBorrowedStrValueConversion,
   rustCallableTargetType,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
@@ -22,6 +23,7 @@ import type {
 
 export {
   rustBorrowedStrToStringValueConversion,
+  rustStringToBorrowedStrValueConversion,
   rustCallableTargetType,
   rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
