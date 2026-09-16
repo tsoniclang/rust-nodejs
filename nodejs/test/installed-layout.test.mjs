@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
@@ -313,20 +314,20 @@ function validateCargoProject(projectRoot, installationRoot, { check }) {
   for (const crate of ["tsonic_rust_runtime", "tsonic_rust_js", "tsonic_rust_node"]) {
     const matches = packages.filter((entry) => entry.name === crate);
     assert.equal(matches.length, 1, `${crate} must resolve exactly once`);
-    const packageRoot = resolve(dirname(matches[0].manifest_path));
-    assert.ok(packageRoot.startsWith(`${resolve(installationRoot)}${sep}`), `${crate} escaped the npm installation`);
+    const packageRoot = realpathSync(dirname(matches[0].manifest_path));
+    assert.ok(packageRoot.startsWith(`${realpathSync(installationRoot)}${sep}`), `${crate} escaped the npm installation`);
     const npmPackageRoot = findOwningNpmPackage(packageRoot, installationRoot);
     for (const target of matches[0].targets) {
       assert.ok(existsSync(target.src_path), `packed Cargo target is missing: ${target.src_path}`);
-      assert.ok(resolve(target.src_path).startsWith(`${npmPackageRoot}${sep}`), `Cargo target escaped ${crate}'s npm artifact: ${target.src_path}`);
+      assert.ok(realpathSync(target.src_path).startsWith(`${npmPackageRoot}${sep}`), `Cargo target escaped ${crate}'s npm artifact: ${target.src_path}`);
     }
   }
   assert.ok(existsSync(join(projectRoot, "Cargo.lock")));
 }
 
 function findOwningNpmPackage(start, installationRoot) {
-  let current = resolve(start);
-  const boundary = resolve(installationRoot);
+  let current = realpathSync(start);
+  const boundary = realpathSync(installationRoot);
   while (current.startsWith(`${boundary}${sep}`)) {
     const manifestPath = join(current, "package.json");
     if (existsSync(manifestPath)) {
