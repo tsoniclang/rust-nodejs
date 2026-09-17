@@ -3,7 +3,6 @@ import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -11,6 +10,7 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { createTestWorkspace } from "../../../tsonic/test/scripts/test-workspaces.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const scratchRoot = resolve(repoRoot, ".temp");
@@ -30,8 +30,7 @@ function packArtifacts() {
   if (packedArtifacts !== undefined) {
     return packedArtifacts;
   }
-  mkdirSync(scratchRoot, { recursive: true });
-  const root = mkdtempSync(join(scratchRoot, "npm-pack-layout-"));
+  const root = createTestWorkspace(scratchRoot, "npm-pack-layout-");
   const tarballRoot = join(root, "tarballs");
   mkdirSync(tarballRoot, { recursive: true });
   const packages = new Map();
@@ -92,7 +91,7 @@ function assertPackInventory(packages) {
 
 function createApplication(label, { nestedNode = false } = {}) {
   const packed = packArtifacts();
-  const root = mkdtempSync(join(scratchRoot, `${label}-`));
+  const root = createTestWorkspace(scratchRoot, `${label}-`);
   writeFileSync(join(root, "Cargo.toml"), "[workspace]\nmembers = []\n");
   const applicationRoot = join(root, "application");
   mkdirSync(applicationRoot, { recursive: true });
