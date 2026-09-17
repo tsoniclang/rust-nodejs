@@ -1,9 +1,7 @@
 import {
   fnExport,
-  nullType,
   providerNativeFallibility,
   rustBorrowedStrToStringValueConversion,
-  rustOptionTargetType,
   stringCarrier,
   stringType,
 } from "../model.js";
@@ -18,12 +16,13 @@ export function osModule(): RustProviderModuleDefinition {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.os",
     exports: [
+      fnExport(m, "endianness", [], stringType),
       fnExport(m, "platform", [], stringType),
       fnExport(m, "arch", [], stringType),
       fnExport(m, "eol", [], stringType),
       fnExport(m, "hostname", [], stringType),
       fnExport(m, "tmpdir", [], stringType),
-      fnExport(m, "homedir", [], { kind: "union", types: [stringType, nullType] }),
+      fnExport(m, "homedir", [], stringType),
     ],
   };
 }
@@ -36,6 +35,7 @@ export function osRows(): readonly RustProviderOperationDefinition[] {
     resultCarrier: stringCarrier,
   });
   return [
+    { exportId: "node:os::endianness", operationKind: "method", target: { form: "call", path: "node_os::endianness" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion },
     call("platform", "node_os::platform"),
     call("arch", "node_os::arch"),
     { exportId: "node:os::eol", operationKind: "method", target: { form: "call", path: "node_os::eol" }, resultCarrier: stringCarrier, resultConversion: rustBorrowedStrToStringValueConversion },
@@ -47,7 +47,7 @@ export function osRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: stringCarrier,
       ...providerNativeFallibility,
     },
-    { exportId: "node:os::homedir", operationKind: "method", target: { form: "call", path: "node_os::homedir" }, resultCarrier: rustOptionTargetType(stringCarrier) },
+    { exportId: "node:os::homedir", operationKind: "method", target: { form: "call", path: "node_os::homedir" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
   ];
 }
 

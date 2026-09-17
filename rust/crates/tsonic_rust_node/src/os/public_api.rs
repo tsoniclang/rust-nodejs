@@ -81,10 +81,12 @@ pub fn tmpdir() -> NodeResult<String> {
     Ok(std::env::temp_dir().to_string_lossy().to_string())
 }
 
-pub fn homedir() -> Option<String> {
-    std::env::var("HOME")
-        .ok()
-        .or_else(|| std::env::var("USERPROFILE").ok())
+pub fn homedir() -> NodeResult<String> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    match std::env::var_os(variable) {
+        Some(value) => Ok(value.to_string_lossy().into_owned()),
+        None => account_home_directory(),
+    }
 }
 
 pub fn hostname() -> String {

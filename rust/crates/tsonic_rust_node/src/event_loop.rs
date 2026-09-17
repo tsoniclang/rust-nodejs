@@ -42,10 +42,25 @@ fn has_runtime_tasks() -> bool {
     RUNTIME_TASKS.with(|tasks| !tasks.borrow().is_empty())
 }
 
+fn has_runtime_work() -> bool {
+    crate::background::has_pending_work()
+        || has_runtime_tasks()
+        || tsonic_rust_js::timers::has_timers()
+        || crate::http::has_active_runtime_servers()
+        || crate::net::has_refed_runtime_servers()
+        || crate::tls::has_refed_runtime_servers()
+        || crate::timers::has_refed_runtime_timers()
+        || crate::fs::has_refed_runtime_watchers()
+        || crate::worker_threads::has_refed_runtime_workers()
+        || crate::worker_threads::has_refed_runtime_ports()
+}
+
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
     loop {
+        let can_dispatch_signals = has_runtime_work();
         let background_work = crate::background::poll()?;
         let task_work = poll_runtime_tasks()?;
+        let signal_work = can_dispatch_signals && crate::process::poll_signals()?;
         let js_timer_work = tsonic_rust_js::timers::poll_timers()?;
         let timer_work = crate::timers::poll_runtime_timers()?;
         let server_work = crate::http::poll_runtime_servers()?;
@@ -54,21 +69,12 @@ pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
         let watcher_work = crate::fs::poll_runtime_watchers()?;
         let worker_work = crate::worker_threads::poll_runtime_workers()?;
         let port_work = crate::worker_threads::poll_runtime_ports()?;
-        if !crate::background::has_pending_work()
-            && !has_runtime_tasks()
-            && !tsonic_rust_js::timers::has_timers()
-            && !crate::http::has_active_runtime_servers()
-            && !crate::net::has_refed_runtime_servers()
-            && !crate::tls::has_refed_runtime_servers()
-            && !crate::timers::has_refed_runtime_timers()
-            && !crate::fs::has_refed_runtime_watchers()
-            && !crate::worker_threads::has_refed_runtime_workers()
-            && !crate::worker_threads::has_refed_runtime_ports()
-        {
+        if !has_runtime_work() {
             return Ok(());
         }
         if !background_work
             && !task_work
+            && !signal_work
             && !js_timer_work
             && !timer_work
             && !server_work

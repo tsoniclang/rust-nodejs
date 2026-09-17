@@ -116,10 +116,6 @@ pub fn getgroups() -> NodeResult<Vec<u32>> {
     getgroups_impl()
 }
 
-pub fn kill(pid: u32, signal: Option<i32>) -> NodeResult<bool> {
-    kill_impl(pid, signal.unwrap_or(15))
-}
-
 pub fn exec_path() -> NodeResult<String> {
     std::env::current_exe()
         .map(|path| path.to_string_lossy().to_string())
@@ -133,6 +129,8 @@ pub fn platform() -> String {
         "darwin"
     } else if cfg!(target_os = "linux") {
         "linux"
+    } else if cfg!(any(target_os = "solaris", target_os = "illumos")) {
+        "sunos"
     } else {
         std::env::consts::OS
     }
@@ -144,6 +142,9 @@ pub fn arch() -> String {
         "x86_64" => "x64",
         "aarch64" => "arm64",
         "x86" | "i686" => "ia32",
+        "loongarch64" => "loong64",
+        "powerpc64" => "ppc64",
+        "mips" if cfg!(target_endian = "little") => "mipsel",
         other => other,
     }
     .to_string()

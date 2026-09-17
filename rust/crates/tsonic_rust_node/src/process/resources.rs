@@ -93,28 +93,11 @@ pub fn memory_usage() -> MemoryUsage {
     }
 }
 
-pub fn cpu_usage(previous: Option<CpuUsage>) -> CpuUsage {
-    let elapsed = START.get_or_init(Instant::now).elapsed();
-    let total_micros = elapsed.as_micros() as u64;
-    let current = CpuUsage {
-        user: total_micros,
-        system: 0,
-    };
-    if let Some(previous) = previous {
-        CpuUsage {
-            user: current.user.saturating_sub(previous.user),
-            system: current.system.saturating_sub(previous.system),
-        }
-    } else {
-        current
-    }
-}
-
-pub fn resource_usage() -> ResourceUsage {
-    let cpu = cpu_usage(None);
-    ResourceUsage {
-        user_cpu_time: cpu.user,
-        system_cpu_time: cpu.system,
+pub fn resource_usage() -> NodeResult<ResourceUsage> {
+    let cpu = cpu_usage(None)?;
+    Ok(ResourceUsage {
+        user_cpu_time: cpu.user as u64,
+        system_cpu_time: cpu.system as u64,
         max_rss: memory_usage().rss,
         shared_memory_size: 0,
         unshared_data_size: 0,
@@ -129,7 +112,7 @@ pub fn resource_usage() -> ResourceUsage {
         signals_count: 0,
         voluntary_context_switches: 0,
         involuntary_context_switches: 0,
-    }
+    })
 }
 
 pub fn memory_usage_rss() -> u64 {
@@ -138,10 +121,6 @@ pub fn memory_usage_rss() -> u64 {
 
 pub fn constrained_memory() -> u64 {
     available_memory()
-}
-
-pub fn thread_cpu_usage(previous: Option<CpuUsage>) -> CpuUsage {
-    cpu_usage(previous)
 }
 
 pub fn env_get(name: &str) -> Option<String> {

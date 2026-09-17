@@ -6,9 +6,11 @@ const expectedModules = [
   "node:assert",
   "node:path",
   "node:os",
+  "node:v8",
   "node:fs",
   "node:fs/promises",
   "node:process",
+  "node:perf_hooks",
   "node:buffer",
   "node:child_process",
   "node:url",
@@ -36,8 +38,10 @@ const expectedModules = [
   "fs/promises",
   "http",
   "os",
+  "v8",
   "path",
   "process",
+  "perf_hooks",
   "timers",
   "events",
   "stream",
@@ -76,8 +80,10 @@ test("provider package declares bare Node modules as canonical aliases", () => {
     ["fs/promises", "node:fs/promises"],
     ["http", "node:http"],
     ["os", "node:os"],
+    ["v8", "node:v8"],
     ["path", "node:path"],
     ["process", "node:process"],
+    ["perf_hooks", "node:perf_hooks"],
     ["timers", "node:timers"],
     ["events", "node:events"],
     ["stream", "node:stream"],
@@ -108,6 +114,74 @@ test("provider package contributes a non-empty operation row set", () => {
   assert.ok(readFileSync !== undefined, "missing node:fs::readFileSync row");
   assert.equal(readFileSync.isFallible, true);
   assert.equal(readFileSync.operationKind, "method");
+});
+
+test("native V8 flags retain an exact fallible string-to-void boundary", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const module = modules.find((entry) => entry.moduleSpecifier === "node:v8");
+  assert.ok(module);
+  assert.deepEqual(module.exports.map((entry) => entry.name), ["setFlagsFromString", "getHeapStatistics", "HeapInfo"]);
+  const signature = module.exports[0].signatures[0];
+  assert.deepEqual(signature.parameters, [{ name: "flags", type: { kind: "string" } }]);
+  assert.deepEqual(signature.returnType, { kind: "void" });
+  const rows = operations.filter((entry) => entry.exportId === "node:v8::setFlagsFromString");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].isFallible, true);
+  assert.equal(rows[0].errorBoundary, "provider-native");
+  assert.equal(rows[0].errorCarrier.id, "rust.node.NodeError");
+  assert.deepEqual(rows[0].target, {
+    form: "call", path: "tsonic_rust_node::v8::set_flags_from_string", argModes: ["ref"],
+  });
+});
+
+test("filesystem strings explicitly borrow str while byte buffers retain their native references", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const operations = contribution.definition.operations;
+  const conversion = { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" };
+  for (const signature of [
+    "statSync(path)", "statSync(path,options)", "lstatSync(path)",
+    "readdirSync(path)", "mkdirSync(path)", "mkdirSync(path,options)",
+    "rmSync(path)", "rmSync(path,options)", "readFileSync(path)",
+    "writeFileSync(path,buffer)",
+  ]) {
+    const row = operations.find(entry => entry.signatureId === `node:fs::${signature}`);
+    assert.ok(row, signature);
+    assert.equal(row.target.argModes[0], "value", signature);
+    assert.deepEqual(row.target.argConversions[0], conversion, signature);
+  }
+  for (const signature of ["statSync(bufferPath)", "readdirSync(bufferPath)", "mkdirSync(bufferPath)"]) {
+    const row = operations.find(entry => entry.signatureId === `node:fs::${signature}`);
+    assert.ok(row, signature);
+    assert.equal(row.target.argModes[0], "ref", signature);
+    assert.equal(row.target.argConversions?.[0], undefined, signature);
+  }
+  const writeBuffer = operations.find(entry => entry.signatureId === "node:fs::writeFileSync(path,buffer)");
+  assert.equal(writeBuffer.target.argModes[1], "ref");
+  assert.equal(writeBuffer.target.argConversions[1], undefined);
+});
+
+test("native V8 heap observations retain their exact result and fallible boundary", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const module = modules.find(entry => entry.moduleSpecifier === "node:v8");
+  const heap = module.exports.find(entry => entry.name === "HeapInfo");
+  const call = module.exports.find(entry => entry.name === "getHeapStatistics");
+  assert.equal(heap.kind, "interface");
+  assert.equal(heap.members.length, 15);
+  assert.equal(new Set(heap.members.map(member => member.name)).size, 15);
+  assert.deepEqual(call.signatures[0].parameters, []);
+  assert.deepEqual(call.signatures[0].returnType, { kind: "provider-ref", moduleSpecifier: "node:v8", exportName: "HeapInfo" });
+  const selected = operations.filter(entry => entry.exportId === "node:v8::getHeapStatistics");
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].resultCarrier.id, "rust.node.HeapInfo");
+  assert.equal(selected[0].isFallible, true);
+  assert.equal(selected[0].errorBoundary, "provider-native");
+  for (const member of heap.members) {
+    assert.equal(member.readonly, undefined);
+    assert.equal(operations.filter(entry => entry.memberId === member.id && entry.operationKind === "property").length, 1);
+    assert.equal(operations.filter(entry => entry.memberId === member.id && entry.operationKind === "property-set").length, 1);
+  }
 });
 
 test("required Node capability families expose exact provider operations", () => {
@@ -152,13 +226,36 @@ test("provider type relations carry exact closed target carriers", () => {
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
   assert.deepEqual(contribution.definition.types, [
+    ["node:process::Process", "rust.node.Process"],
+    ["node:child_process::SpawnSyncError", "rust.node.NodeError"],
+    ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
+    ["node:perf_hooks::Performance", "rust.node.Performance"],
+    ["node:process::CpuUsage", "rust.node.CpuUsage", "struct-default"],
     ["node:fs::Stats", "rust.node.Stats"],
+    ["node:fs::StatOptions", "rust.node.StatOptions", "struct-default"],
+    ["node:fs::BufferDirectoryOptions", "rust.node.BufferDirectoryOptions", "struct-default"],
+    ["node:fs::BufferEncodingOptions", "rust.node.BufferEncodingOptions", "struct-default"],
+    ["node:fs::FsConstants", "rust.node.FsConstants"],
+    ["node:fs::Dirent", {
+      kind: "target-named", id: "rust.node.Dirent",
+      genericArguments: [{ kind: "type", type: { kind: "type-parameter", name: "Name" } }],
+    }, undefined, [{ kind: "type", sourceName: "Name", defaultArgument: {
+      kind: "type", type: { kind: "target-named", id: "rust.std.String" },
+    } }]],
     ["node:fs::MakeDirectoryOptions", "rust.node.MakeDirectoryOptions", "struct-default"],
     ["node:fs::RmOptions", "rust.node.RmOptions", "struct-default"],
-    ["node:process::ProcessEnv", "rust.node.ProcessEnv"],
+    ["node:process::ProcessEnv", "rust.node.ProcessEnv", "default"],
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
+    ["node:v8::HeapInfo", "rust.node.HeapInfo"],
     ["node:process::ProcessWriteStream", "rust.node.Writable"],
-    ["node:buffer::Buffer", "rust.node.Buffer"],
+    ["node:buffer::Buffer", {
+      kind: "target-specific", target: "rust", name: "named-type", value: {
+        id: "rust.node.Buffer", path: "tsonic_rust_node::buffer::Buffer",
+        genericArguments: [], genericDefaults: [], traits: { implementations: [] },
+        upcasts: [{ target: { kind: "target-named", id: "rust.js.Uint8Array" },
+          path: "tsonic_rust_node::buffer::Buffer::as_uint8_array" }],
+      },
+    }],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
     ["node:url::Url", "rust.node.UrlObject"],
@@ -197,9 +294,10 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:worker_threads::WorkerOptions", "rust.node.WorkerOptions", "struct-default"],
     ["node:worker_threads::MessagePort", "rust.node.MessagePort"],
     ["node:worker_threads::MessageChannel", "rust.node.MessageChannel"],
-  ].map(([exportId, id, objectLiteralConstruction]) => ({
+  ].map(([exportId, id, objectLiteralConstruction, genericParameters]) => ({
     exportId,
-    targetCarrier: { kind: "target-named", id },
+    targetCarrier: typeof id === "string" ? { kind: "target-named", id } : id,
+    ...(genericParameters === undefined ? {} : { genericParameters }),
     ...(objectLiteralConstruction === undefined
       ? {}
       : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
@@ -275,6 +373,7 @@ test("provider package closes child-process and text-decoder operations", () => 
   const spawnSync = rows.find((row) => row.exportId === "node:child_process::spawnSync");
   assert.deepEqual(spawnSync, {
     exportId: "node:child_process::spawnSync",
+    signatureId: "node:child_process::spawnSync(command,args)",
     operationKind: "method",
     target: {
       form: "call",
@@ -300,15 +399,17 @@ test("provider package closes child-process and text-decoder operations", () => 
   assert.deepEqual(
     spawnReturns?.members?.map((member) => [member.name, member.type]),
     [
-      ["stdout", { kind: "type-parameter", name: "T" }],
-      ["stderr", { kind: "type-parameter", name: "T" }],
+      ...["stdout", "stderr"].map(name => [name, { kind: "union", types: [{ kind: "type-parameter", name: "T" }, { kind: "literal", value: null }] }]),
       ["status", {
         kind: "union",
         types: [{ kind: "number" }, { kind: "literal", value: null }],
       }],
+      ["pid", { kind: "number" }],
+      ["signal", { kind: "union", types: [{ kind: "provider-ref", moduleSpecifier: "node:process", exportName: "Signals" }, { kind: "literal", value: null }] }],
+      ["error", { kind: "provider-ref", moduleSpecifier: "node:child_process", exportName: "SpawnSyncError" }],
     ],
   );
-  for (const name of ["stdout", "stderr", "status"]) {
+  for (const name of ["stdout", "stderr", "status", "pid", "signal", "error"]) {
     assert.deepEqual(
       rows
         .filter((row) => row.memberId === `node:child_process::SpawnSyncReturns.${name}`)
@@ -316,6 +417,14 @@ test("provider package closes child-process and text-decoder operations", () => 
       ["property", "property-set"],
       `incomplete SpawnSyncReturns property '${name}'`,
     );
+  }
+  for (const name of ["message", "code"]) {
+    const row = rows.find(row => row.memberId === `node:child_process::SpawnSyncError.${name}`);
+    assert.deepEqual(row?.target, { form: "receiver-method", name });
+    assert.deepEqual(row?.resultConversion, {
+      kind: "semantic-conversion", id: "owned-string-from-borrowed-str",
+    });
+    assert.deepEqual(row?.receiverCarrier, { kind: "target-named", id: "rust.node.NodeError" });
   }
 
   const decode = rows.find((row) => row.memberId === "node:util::TextDecoder.decode");
@@ -470,7 +579,7 @@ test("provider package maps process argv through the fallible native snapshot", 
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
   const rows = contribution.definition.operations.filter((row) =>
-    row.exportId === "node:process::argv" || row.memberId === "node:process.default.argv");
+    row.exportId === "node:process::argv" || row.memberId === "node:process::Process.argv");
   assert.equal(rows.length, 2);
   for (const row of rows) {
     assert.equal(row.operationKind, "property");
@@ -487,7 +596,7 @@ test("provider package exposes exact process env absence and writable exit statu
     module.moduleSpecifier === "node:process");
   assert.ok(processModule !== undefined);
   const processEnv = processModule.exports.find((entry) => entry.id === "node:process::ProcessEnv");
-  assert.ok(processEnv !== undefined && processEnv.kind === "class");
+  assert.ok(processEnv !== undefined && processEnv.kind === "interface");
   assert.deepEqual(processEnv.members[0].signatures[0].returnType, {
     kind: "union",
     types: [{ kind: "string" }, { kind: "undefined" }],
@@ -498,14 +607,17 @@ test("provider package exposes exact process env absence and writable exit statu
     types: [{ kind: "number" }, { kind: "literal", value: null }],
   });
   const defaultObject = processModule.exports.find((entry) => entry.exportKind === "default");
-  assert.equal(defaultObject?.name, "NodeProcessModule");
-  const defaultExitCode = defaultObject.members.find((member) => member.name === "exitCode");
+  assert.equal(defaultObject?.kind, "value");
+  assert.deepEqual(defaultObject?.type, { kind: "provider-ref", moduleSpecifier: "node:process", exportName: "Process" });
+  const processType = processModule.exports.find(entry => entry.id === "node:process::Process");
+  assert.equal(processType?.kind, "interface");
+  const defaultExitCode = processType.members.find((member) => member.name === "exitCode");
   assert.equal(defaultExitCode?.readonly, undefined);
-  assert.equal(defaultExitCode?.static, true);
-  const defaultArgv = defaultObject.members.find((member) => member.name === "argv");
+  assert.equal(defaultExitCode?.static, undefined);
+  const defaultArgv = processType.members.find((member) => member.name === "argv");
   assert.equal(defaultArgv?.readonly, true);
   const rows = contribution.definition.operations.filter((row) =>
-    row.memberId === "node:process.default.exitCode");
+    row.memberId === "node:process::Process.exitCode");
   assert.deepEqual(rows.map((row) => [row.operationKind, row.target.path]), [
     ["property", "node_process::exit_code"],
     ["property-set", "node_process::set_exit_code"],
@@ -545,17 +657,17 @@ test("provider package closes process identity, timing, and memory contracts", (
     ],
   );
   assert.deepEqual(
-    rows.filter((row) => row.memberId === "node:process.default.hrtime").map((row) => [row.signatureId, row.target.path]),
+    rows.filter((row) => row.memberId === "node:process::Process.hrtime").map((row) => [row.signatureId, row.target.path]),
     [
-      ["node:process.default.hrtime()", "node_process::hrtime_open_number"],
-      ["node:process.default.hrtime(previous)", "node_process::hrtime_since_number"],
+      ["node:process::Process.hrtime()", "node_process::hrtime_open_number"],
+      ["node:process::Process.hrtime(previous)", "node_process::hrtime_since_number"],
     ],
   );
 
   const namedMethods = ["availableMemory", "chdir", "constrainedMemory", "memoryUsage", "uptime"];
   for (const name of namedMethods) {
     const named = rows.find((row) => row.exportId === `node:process::${name}`);
-    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process::Process.${name}`);
     assert.ok(named !== undefined, `missing named process row '${name}'`);
     assert.ok(defaultMember !== undefined, `missing default process row '${name}'`);
     assert.deepEqual(defaultMember.target, named.target);
@@ -563,7 +675,7 @@ test("provider package closes process identity, timing, and memory contracts", (
   }
   for (const name of ["argv0", "version"]) {
     const named = rows.find((row) => row.exportId === `node:process::${name}`);
-    const defaultMember = rows.find((row) => row.memberId === `node:process.default.${name}`);
+    const defaultMember = rows.find((row) => row.memberId === `node:process::Process.${name}`);
     assert.ok(named !== undefined, `missing named process property '${name}'`);
     assert.ok(defaultMember !== undefined, `missing default process property '${name}'`);
     assert.deepEqual(defaultMember.target, named.target);
@@ -634,7 +746,7 @@ test("provider package closes process stdout and stderr output contracts", () =>
     const namedRow = contribution.definition.operations.find((row) =>
       row.exportId === `node:process::${name}` && row.memberId === undefined);
     const defaultRow = contribution.definition.operations.find((row) =>
-      row.memberId === `node:process.default.${name}`);
+      row.memberId === `node:process::Process.${name}`);
     assert.equal(namedRow?.target.path, `node_process::${name}`);
     assert.deepEqual(defaultRow?.target, namedRow?.target);
     assert.deepEqual(defaultRow?.resultCarrier, namedRow?.resultCarrier);
@@ -686,7 +798,11 @@ test("provider package exposes exact filesystem and path contracts required by p
   assert.deepEqual(symlink?.target, {
     form: "call",
     path: "node_fs::symlink_sync",
-    argModes: ["ref", "ref"],
+    argModes: ["value", "value"],
+    argConversions: [
+      { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" },
+      { kind: "semantic-conversion", id: "borrowed-str-from-owned-string" },
+    ],
   });
   assert.equal(symlink?.isFallible, true);
 });
@@ -785,7 +901,7 @@ test("provider package closes Buffer views, copies, swaps, and numeric operation
 test("provider package maps HTTP server mutation and lifecycle contracts exactly", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
-  const { operations, binaryEpilogues, carrierPaths } = contribution.definition;
+  const { operations, binaryHooks, carrierPaths } = contribution.definition;
 
   const statusRead = operations.find((row) =>
     row.memberId === "node:http::ServerResponse.statusCode" && row.operationKind === "property");
@@ -811,9 +927,16 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   assert.equal(createServer?.immediateCallback, undefined);
   assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
     "tsonic_rust_node::http::ServerResponseHandle");
-  assert.deepEqual(binaryEpilogues, [
+  assert.deepEqual(binaryHooks, [
+    {
+      id: "node-performance-clock",
+      phase: "before-initialization",
+      path: "tsonic_rust_node::perf_hooks::initialize_clock",
+      requiredCrate: "tsonic_rust_node",
+    },
     {
       id: "node-event-loop",
+      phase: "after-entry",
       path: "tsonic_rust_node::run_event_loop",
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
@@ -821,6 +944,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
     },
     {
       id: "node-process-exit-code",
+      phase: "after-entry",
       path: "tsonic_rust_node::process::apply_exit_code",
       requiredCrate: "tsonic_rust_node",
     },

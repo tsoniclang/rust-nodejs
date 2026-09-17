@@ -17,7 +17,7 @@ impl Buffer {
     pub fn reverse(&mut self) -> &mut Self {
         let mut bytes = self.to_vec();
         bytes.reverse();
-        self.storage.borrow_mut()[self.offset..self.offset + self.len].copy_from_slice(&bytes);
+        self.with_mut_bytes(|target| target.copy_from_slice(&bytes));
         self
     }
 
@@ -259,53 +259,49 @@ impl Buffer {
     }
 
     fn view(&self, start: isize, end: Option<isize>) -> Self {
-        let (start, end) = normalize_range(self.len, start, end);
+        let (start, end) = normalize_range(self.len(), start, end);
         Self {
-            storage: Rc::clone(&self.storage),
-            offset: self.offset + start,
-            len: end.saturating_sub(start),
-            identity: ObjectIdentity::new(),
+            view: self.view.subarray(start as f64, Some(end as f64)),
         }
     }
 
     fn to_vec(&self) -> Vec<u8> {
-        self.storage.borrow()[self.offset..self.offset + self.len].to_vec()
+        self.with_bytes(<[u8]>::to_vec)
     }
 
     fn read_exact(&self, offset: usize, len: usize) -> NodeResult<Vec<u8>> {
-        if offset + len > self.len {
+        if offset > self.len() || len > self.len() - offset {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer offset out of range",
             ));
         }
-        Ok(self.storage.borrow()[self.offset + offset..self.offset + offset + len].to_vec())
+        Ok(self.with_bytes(|bytes| bytes[offset..offset + len].to_vec()))
     }
 
     fn write_exact(&self, offset: usize, bytes: &[u8]) -> NodeResult<()> {
-        if offset + bytes.len() > self.len {
+        if offset > self.len() || bytes.len() > self.len() - offset {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "buffer offset out of range",
             ));
         }
-        self.storage.borrow_mut()[self.offset + offset..self.offset + offset + bytes.len()]
-            .copy_from_slice(bytes);
+        self.with_mut_bytes(|target| target[offset..offset + bytes.len()].copy_from_slice(bytes));
         Ok(())
     }
 
     fn swap_chunks(&mut self, width: usize) -> NodeResult<&mut Self> {
-        if !self.len.is_multiple_of(width) {
+        if !self.len().is_multiple_of(width) {
             return Err(NodeError::new(
                 "ERR_INVALID_BUFFER_SIZE",
                 "buffer length must be a multiple of element size",
             ));
         }
-        let mut storage = self.storage.borrow_mut();
-        for chunk in storage[self.offset..self.offset + self.len].chunks_exact_mut(width) {
-            chunk.reverse();
-        }
-        drop(storage);
+        self.with_mut_bytes(|bytes| {
+            for chunk in bytes.chunks_exact_mut(width) {
+                chunk.reverse();
+            }
+        });
         Ok(self)
     }
 }

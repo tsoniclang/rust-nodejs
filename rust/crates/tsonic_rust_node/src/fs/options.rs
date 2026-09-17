@@ -26,19 +26,16 @@ pub struct BigIntOptions {
     pub bigint: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StatOptions {
-    pub bigint: bool,
-    pub throw_if_no_entry: bool,
+    pub bigint: Option<bool>,
+    pub throw_if_no_entry: Option<bool>,
 }
 
-impl Default for StatOptions {
-    fn default() -> Self {
-        Self {
-            bigint: false,
-            throw_if_no_entry: true,
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BufferDirectoryOptions {
+    pub with_file_types: bool,
+    pub encoding: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

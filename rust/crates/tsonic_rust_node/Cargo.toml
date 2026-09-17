@@ -25,6 +25,11 @@ tsonic_rust_js = "=0.1.0"
 tsonic_rust_runtime = "=0.1.0"
 webpki-roots = "1"
 
+[target.'cfg(unix)'.dependencies]
+command-fds = "=0.3.3"
+signal-hook = "=0.3.18"
+nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal", "user"] }
+
 [[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"
@@ -36,6 +41,10 @@ path = "../../tests/architecture/public_api_coverage.rs"
 [[test]]
 name = "node_integration_tests"
 path = "../../tests/node_integration_tests.rs"
+
+[[test]]
+name = "process_cpu_tests"
+path = "../../tests/node/process_cpu_tests.rs"
 
 [[test]]
 name = "abi_ledger_tests"

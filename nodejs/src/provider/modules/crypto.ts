@@ -1,5 +1,6 @@
 import {
   bufferCarrier,
+  cryptoCarrier,
   fnExport,
   hashCarrier,
   hmacCarrier,
@@ -12,13 +13,15 @@ import {
   stringCarrier,
   stringType,
   voidType,
+  valueExport,
 } from "../model.js";
+import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
 import type {
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
 } from "../model.js";
-export function cryptoModule(): RustProviderModuleDefinition {
+export function cryptoModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:crypto";
   const hashId = "node:crypto::Hash";
   return {
@@ -26,6 +29,15 @@ export function cryptoModule(): RustProviderModuleDefinition {
     providerModuleId: "tsonic.rust.node.crypto",
     imports: [{ moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] }],
     exports: [
+      ...(typedArrays ? [
+        {
+          id: `${m}::Crypto`, name: "Crypto", kind: "class" as const,
+          members: [methodMember(`${m}::Crypto`, "getRandomValues", [
+            { name: "array", type: { kind: "source-global", name: "Uint32Array" } },
+          ], { kind: "source-global", name: "Uint32Array" })],
+        },
+        valueExport(m, "webcrypto", providerRef(m, "Crypto")),
+      ] : []),
       fnExport(m, "randomUUID", [], stringType),
       fnExport(m, "createHash", [{ name: "algorithm", type: stringType }], providerRef(m, "Hash")),
       {
@@ -68,9 +80,13 @@ export function cryptoModule(): RustProviderModuleDefinition {
   };
 }
 
-export function cryptoRows(): readonly RustProviderOperationDefinition[] {
+export function cryptoRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
   const hashId = "node:crypto::Hash";
   return [
+    ...(typedArrays ? [
+      { exportId: "node:crypto::webcrypto", operationKind: "property", target: { form: "call", path: "node_crypto::webcrypto::crypto" }, resultCarrier: cryptoCarrier },
+      { exportId: "node:crypto::Crypto", memberId: "node:crypto::Crypto.getRandomValues", signatureId: "node:crypto::Crypto.getRandomValues(array)", operationKind: "method", target: { form: "receiver-method", name: "get_random_values_uint32", argModes: ["ref"] }, resultCarrier: rustJsTypedArrayTargetType("Uint32Array"), parameterCarriers: [rustJsTypedArrayTargetType("Uint32Array")], ...providerNativeFallibility },
+    ] satisfies RustProviderOperationDefinition[] : []),
     { exportId: "node:crypto::randomUUID", operationKind: "method", target: { form: "call", path: "node_crypto::random_uuid" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: "node:crypto::createHash", operationKind: "method", target: { form: "call", path: "node_crypto::create_hash", argModes: ["ref"] }, resultCarrier: hashCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     {

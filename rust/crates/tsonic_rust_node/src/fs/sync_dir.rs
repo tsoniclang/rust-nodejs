@@ -1,8 +1,11 @@
-pub fn mkdir_sync(path: &str) -> NodeResult<()> {
+pub fn mkdir_sync(path: impl AsRef<std::path::Path>) -> NodeResult<()> {
     fs::create_dir(path).map_err(map_io_error)
 }
 
-pub fn mkdir_sync_with_options(path: &str, options: MakeDirectoryOptions) -> NodeResult<()> {
+pub fn mkdir_sync_with_options(
+    path: impl AsRef<std::path::Path>,
+    options: MakeDirectoryOptions,
+) -> NodeResult<()> {
     let mode = options
         .mode
         .map(|value| require_non_negative_integer(value, "mode", 0o7777))
@@ -19,12 +22,12 @@ pub fn mkdir_sync_with_options(path: &str, options: MakeDirectoryOptions) -> Nod
     builder.create(path).map_err(map_io_error)
 }
 
-pub fn rm_sync(path: &str) -> NodeResult<()> {
+pub fn rm_sync(path: impl AsRef<std::path::Path>) -> NodeResult<()> {
     remove_path(path, false, false)
 }
 
-fn remove_path(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
-    let path_ref = std::path::Path::new(path);
+fn remove_path(path: impl AsRef<std::path::Path>, recursive: bool, force: bool) -> NodeResult<()> {
+    let path_ref = path.as_ref();
     let metadata = match fs::symlink_metadata(path_ref) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && force => return Ok(()),
@@ -43,7 +46,11 @@ fn remove_path(path: &str, recursive: bool, force: bool) -> NodeResult<()> {
     }
 }
 
-pub fn rm_sync_with_options(path: &str, options: RmOptions) -> NodeResult<()> {
+pub fn rm_sync_with_options(
+    path: impl AsRef<std::path::Path>,
+    options: RmOptions,
+) -> NodeResult<()> {
+    let path = path.as_ref();
     let recursive = options.recursive.unwrap_or(false);
     let force = options.force.unwrap_or(false);
     let configured_max_retries = require_non_negative_integer(
@@ -63,12 +70,14 @@ pub fn rm_sync_with_options(path: &str, options: RmOptions) -> NodeResult<()> {
             Ok(()) => return Ok(()),
             Err(error) if attempts < max_retries && rm_error_is_retryable(&error) => {
                 attempts += 1;
-                let delay = retry_delay.checked_mul(u64::from(attempts)).ok_or_else(|| {
-                    NodeError::new(
-                        "ERR_OUT_OF_RANGE",
-                        "retryDelay multiplied by the retry count exceeds the supported range",
-                    )
-                })?;
+                let delay = retry_delay
+                    .checked_mul(u64::from(attempts))
+                    .ok_or_else(|| {
+                        NodeError::new(
+                            "ERR_OUT_OF_RANGE",
+                            "retryDelay multiplied by the retry count exceeds the supported range",
+                        )
+                    })?;
                 if delay > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
@@ -220,7 +229,7 @@ pub fn realpath_sync_native(path: &str) -> NodeResult<String> {
     realpath_sync(path)
 }
 
-pub fn rmdir_sync(path: &str) -> NodeResult<()> {
+pub fn rmdir_sync(path: impl AsRef<std::path::Path>) -> NodeResult<()> {
     fs::remove_dir(path).map_err(map_io_error)
 }
 
@@ -252,22 +261,9 @@ pub fn mkdtemp_disposable_sync(prefix: &str) -> NodeResult<DisposableTempDir> {
 }
 
 pub fn opendir_sync(path: &str) -> NodeResult<Vec<Dirent>> {
-    let mut entries = Vec::new();
-    for entry in fs::read_dir(path).map_err(map_io_error)? {
-        let entry = entry.map_err(map_io_error)?;
-        let metadata = entry.file_type().map_err(map_io_error)?;
-        entries.push(Dirent {
-            name: entry.file_name().to_string_lossy().to_string(),
-            parent_path: path.to_string(),
-            is_file: metadata.is_file(),
-            is_directory: metadata.is_dir(),
-            is_symbolic_link: metadata.is_symlink(),
-            is_block_device: false,
-            is_character_device: false,
-            is_fifo: false,
-            is_socket: false,
-        });
-    }
+    let mut entries = read_directory_entries(std::path::Path::new(path), |name| {
+        name.to_string_lossy().into_owned()
+    })?;
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(entries)
 }
@@ -305,11 +301,19 @@ pub fn open_sync(path: &str, flags: &str) -> NodeResult<i32> {
         }
     }
     let file = options.open(path).map_err(map_io_error)?;
-    let fd = NEXT_FD.fetch_add(1, Ordering::SeqCst);
-    crate::sync::lock(file_table()).insert(fd, file);
-    Ok(fd)
+    Ok(register_open_file(file))
 }
 
+#[cfg(unix)]
+pub fn close_sync(fd: i32) -> NodeResult<()> {
+    use std::os::fd::IntoRawFd;
+    let file = crate::sync::lock(file_table()).remove(&fd);
+    let descriptor = file.map_or(fd, IntoRawFd::into_raw_fd);
+    nix::unistd::close(descriptor)
+        .map_err(|error| map_io_error(std::io::Error::from_raw_os_error(error as i32)))
+}
+
+#[cfg(not(unix))]
 pub fn close_sync(fd: i32) -> NodeResult<()> {
     crate::sync::lock(file_table())
         .remove(&fd)

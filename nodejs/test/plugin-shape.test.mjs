@@ -19,6 +19,28 @@ test("plugin exposes source, target-policy, and runtime contributions", () => {
   assert.equal(typeof plugin.sourceCompilerContributions, "function");
   assert.equal(typeof plugin.createTargetContributions, "function");
   assert.equal(typeof plugin.runtimeContributions, "function");
+  assert.deepEqual(plugin.sourceProfileContributions({ selectedSurfaceIds: ["js"] }), {
+    declarations: [{
+      fileName: "provider-globals.d.ts",
+      text: [
+        'declare var performance: typeof import("node:perf_hooks")["performance"];',
+        'declare var crypto: typeof import("node:crypto")["webcrypto"];',
+      ].join("\n"),
+    }, {
+      fileName: "node-globals.d.ts",
+      text: [
+        'declare var process: typeof import("node:process").default;',
+        'declare namespace NodeJS {',
+        '  type ProcessEnv = import("node:process").ProcessEnv;',
+        '  type Signals = import("node:process").Signals;',
+        '}',
+        'declare var TextEncoder: typeof import("node:util").TextEncoder;',
+        'declare var TextDecoder: typeof import("node:util").TextDecoder;',
+      ].join("\n"),
+    }],
+  });
+  assert.equal(plugin.sourceProfileContributions({ selectedSurfaceIds: [] })
+    .declarations[0].text.includes("TextEncoder"), false);
   const source = plugin.sourceCompilerContributions({});
   assert.equal(source.extensions.length, 1);
   assert.equal(source.extensions[0].identity.id, "tsonic.rust.provider-package.@tsonic/rust-nodejs");

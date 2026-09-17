@@ -377,14 +377,17 @@ pub fn create_brotli_decompress(_options: Option<BrotliOptions>) -> BrotliDecomp
     Zlib::new(ZlibMode::BrotliDecompress, None)
 }
 
-pub fn gzip_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn gzip_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     gzip_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn gzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
+pub fn gzip_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
     let mut encoder = GzWriteEncoder::new(Vec::new(), compression_from_level(options.level));
-    encoder
-        .write_all(&input.as_bytes())
+    input
+        .with_bytes(|bytes| encoder.write_all(bytes))
         .map_err(map_zlib_error)?;
     limit_output(
         encoder.finish().map_err(map_zlib_error)?,
@@ -392,26 +395,33 @@ pub fn gzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResu
     )
 }
 
-pub fn gunzip_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn gunzip_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     gunzip_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn gunzip_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
-    let bytes = input.as_bytes();
-    let mut decoder = GzReadDecoder::new(bytes.as_slice());
-    let mut output = Vec::new();
-    decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    limit_output(output, options.max_output_length)
+pub fn gunzip_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
+    input.with_bytes(|bytes| {
+        let mut decoder = GzReadDecoder::new(bytes);
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
+        limit_output(output, options.max_output_length)
+    })
 }
 
-pub fn deflate_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn deflate_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     deflate_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn deflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
+pub fn deflate_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
     let mut encoder = ZlibWriteEncoder::new(Vec::new(), compression_from_level(options.level));
-    encoder
-        .write_all(&input.as_bytes())
+    input
+        .with_bytes(|bytes| encoder.write_all(bytes))
         .map_err(map_zlib_error)?;
     limit_output(
         encoder.finish().map_err(map_zlib_error)?,
@@ -419,26 +429,33 @@ pub fn deflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeR
     )
 }
 
-pub fn inflate_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn inflate_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     inflate_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn inflate_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
-    let bytes = input.as_bytes();
-    let mut decoder = ZlibReadDecoder::new(bytes.as_slice());
-    let mut output = Vec::new();
-    decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    limit_output(output, options.max_output_length)
+pub fn inflate_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
+    input.with_bytes(|bytes| {
+        let mut decoder = ZlibReadDecoder::new(bytes);
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
+        limit_output(output, options.max_output_length)
+    })
 }
 
-pub fn deflate_raw_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn deflate_raw_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     deflate_raw_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn deflate_raw_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
+pub fn deflate_raw_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
     let mut encoder = DeflateWriteEncoder::new(Vec::new(), compression_from_level(options.level));
-    encoder
-        .write_all(&input.as_bytes())
+    input
+        .with_bytes(|bytes| encoder.write_all(bytes))
         .map_err(map_zlib_error)?;
     limit_output(
         encoder.finish().map_err(map_zlib_error)?,
@@ -446,47 +463,53 @@ pub fn deflate_raw_sync_with_options(input: &Buffer, options: &ZlibOptions) -> N
     )
 }
 
-pub fn inflate_raw_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn inflate_raw_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     inflate_raw_sync_with_options(input, &ZlibOptions::default())
 }
 
-pub fn inflate_raw_sync_with_options(input: &Buffer, options: &ZlibOptions) -> NodeResult<Buffer> {
-    let bytes = input.as_bytes();
-    let mut decoder = DeflateReadDecoder::new(bytes.as_slice());
-    let mut output = Vec::new();
-    decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    limit_output(output, options.max_output_length)
+pub fn inflate_raw_sync_with_options(
+    input: &tsonic_rust_js::Uint8Array,
+    options: &ZlibOptions,
+) -> NodeResult<Buffer> {
+    input.with_bytes(|bytes| {
+        let mut decoder = DeflateReadDecoder::new(bytes);
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
+        limit_output(output, options.max_output_length)
+    })
 }
 
-pub fn unzip_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn unzip_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     gunzip_sync(input).or_else(|_| inflate_sync(input))
 }
 
 pub fn gzip_string_sync(input: &str, encoding: &str) -> NodeResult<Buffer> {
-    gzip_sync(&Buffer::from_string(input, Some(encoding))?)
+    let bytes = Buffer::from_string(input, Some(encoding))?;
+    gzip_sync(&bytes)
 }
 
 pub fn gunzip_string_sync(input: &Buffer, encoding: &str) -> NodeResult<String> {
     gunzip_sync(input)?.to_string(Some(encoding))
 }
 
-pub fn brotli_compress_sync(input: &Buffer) -> NodeResult<Buffer> {
+pub fn brotli_compress_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
     let mut output = Vec::new();
     {
         let mut writer = brotli::CompressorWriter::new(&mut output, 4096, 5, 22);
-        writer
-            .write_all(&input.as_bytes())
+        input
+            .with_bytes(|bytes| writer.write_all(bytes))
             .map_err(map_zlib_error)?;
     }
     Ok(Buffer::from_bytes(output))
 }
 
-pub fn brotli_decompress_sync(input: &Buffer) -> NodeResult<Buffer> {
-    let bytes = input.as_bytes();
-    let mut decoder = brotli::Decompressor::new(bytes.as_slice(), 4096);
-    let mut output = Vec::new();
-    decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
-    Ok(Buffer::from_bytes(output))
+pub fn brotli_decompress_sync(input: &tsonic_rust_js::Uint8Array) -> NodeResult<Buffer> {
+    input.with_bytes(|bytes| {
+        let mut decoder = brotli::Decompressor::new(bytes, 4096);
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output).map_err(map_zlib_error)?;
+        Ok(Buffer::from_bytes(output))
+    })
 }
 
 fn compression_from_level(level: i32) -> Compression {
@@ -718,27 +741,45 @@ impl SourceZlibOptions {
     }
 }
 
-pub fn gzip_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn gzip_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     gzip_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn gunzip_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn gunzip_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     gunzip_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn deflate_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn deflate_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     deflate_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn inflate_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn inflate_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     inflate_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn deflate_raw_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn deflate_raw_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     deflate_raw_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn inflate_raw_sync_source(input: &Buffer, options: SourceZlibOptions) -> NodeResult<Buffer> {
+pub fn inflate_raw_sync_source(
+    input: &tsonic_rust_js::Uint8Array,
+    options: SourceZlibOptions,
+) -> NodeResult<Buffer> {
     inflate_raw_sync_with_options(input, &options.into_runtime()?)
 }
 
@@ -853,7 +894,7 @@ where
 fn compress_callable<E>(
     input: &Buffer,
     callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-    compress: fn(&Buffer) -> NodeResult<Buffer>,
+    compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
@@ -880,7 +921,7 @@ fn compress_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
     callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-    compress: fn(&Buffer, &ZlibOptions) -> NodeResult<Buffer>,
+    compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,

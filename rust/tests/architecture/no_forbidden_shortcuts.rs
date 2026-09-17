@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 const FORBIDDEN_PATTERNS: &[&str] = &[
     "quickjs",
     "rquickjs",
-    "v8",
+    "extern crate v8",
+    "use v8::",
     "boa_engine",
     "std::process::Command::new(\"node\")",
     "std::process::Command::new(\"npm\")",
@@ -52,6 +53,8 @@ fn no_forbidden_shortcuts_in_fixture_text() {
     "#;
     let hits = find_forbidden_patterns(source);
     assert!(!hits.is_empty());
+    assert!(!find_forbidden_patterns("use v8::Isolate;").is_empty());
+    assert!(!find_forbidden_patterns("extern crate v8 as engine;").is_empty());
 }
 
 #[test]
@@ -62,6 +65,8 @@ fn allowlisted_name_occurrences_are_not_flagged_by_scanner() {
         let module = "tsonic_rust_node";
         let node_error = NodeError::new("E001", "node sample");
         let class = "NodeError";
+        pub mod v8;
+        let unsupported = "node:v8 requires a V8 engine";
         assert!(!kind.is_empty() && !module.is_empty() && !class.is_empty());
         assert!(!node_error.code().is_empty());
     "#;

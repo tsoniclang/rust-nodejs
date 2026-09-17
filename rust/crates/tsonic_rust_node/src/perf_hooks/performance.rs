@@ -1,20 +1,42 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-static START: OnceLock<Instant> = OnceLock::new();
+struct PerformanceClock {
+    started: Instant,
+    origin: f64,
+}
+
+static CLOCK: OnceLock<PerformanceClock> = OnceLock::new();
 static MARKS: OnceLock<Mutex<Vec<PerformanceMark>>> = OnceLock::new();
 static MEASURES: OnceLock<Mutex<Vec<PerformanceMeasure>>> = OnceLock::new();
 static RESOURCES: OnceLock<Mutex<Vec<PerformanceResourceTiming>>> = OnceLock::new();
 static RESOURCE_TIMING_BUFFER_SIZE: OnceLock<Mutex<usize>> = OnceLock::new();
 
+pub fn initialize_clock() {
+    CLOCK.get_or_init(|| {
+        let started = Instant::now();
+        let origin = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(elapsed) => elapsed.as_secs_f64() * 1000.0,
+            Err(error) => -error.duration().as_secs_f64() * 1000.0,
+        };
+        PerformanceClock { started, origin }
+    });
+}
+
+fn clock() -> &'static PerformanceClock {
+    CLOCK
+        .get()
+        .expect("initialize_clock must run before Node performance queries")
+}
+
 pub fn performance_now() -> f64 {
-    START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
+    clock().started.elapsed().as_secs_f64() * 1000.0
 }
 
 pub fn time_origin() -> f64 {
-    0.0
+    clock().origin
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

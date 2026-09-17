@@ -88,28 +88,40 @@ fn append_bytes(path: &str, bytes: &[u8]) -> NodeResult<()> {
         .map_err(map_io_error)
 }
 
-pub fn stat_sync(path: &str) -> NodeResult<Stats> {
+pub fn stat_sync(path: impl AsRef<std::path::Path>) -> NodeResult<Stats> {
     let metadata = fs::metadata(path).map_err(map_io_error)?;
     Ok(stats_from_metadata(&metadata))
 }
 
-pub fn stat_sync_with_options(path: &str, options: StatOptions) -> NodeResult<Option<Stats>> {
+pub fn stat_sync_with_options(
+    path: impl AsRef<std::path::Path>,
+    options: StatOptions,
+) -> NodeResult<Option<Stats>> {
+    validate_number_stat_options(options)?;
     match stat_sync(path) {
         Ok(stats) => Ok(Some(stats)),
-        Err(error) if !options.throw_if_no_entry && error.code == "ENOENT" => Ok(None),
+        Err(error) if options.throw_if_no_entry == Some(false) && error.code == "ENOENT" => {
+            Ok(None)
+        }
         Err(error) => Err(error),
     }
 }
 
-pub fn lstat_sync(path: &str) -> NodeResult<Stats> {
+pub fn lstat_sync(path: impl AsRef<std::path::Path>) -> NodeResult<Stats> {
     let metadata = fs::symlink_metadata(path).map_err(map_io_error)?;
     Ok(stats_from_metadata(&metadata))
 }
 
-pub fn lstat_sync_with_options(path: &str, options: StatOptions) -> NodeResult<Option<Stats>> {
+pub fn lstat_sync_with_options(
+    path: impl AsRef<std::path::Path>,
+    options: StatOptions,
+) -> NodeResult<Option<Stats>> {
+    validate_number_stat_options(options)?;
     match lstat_sync(path) {
         Ok(stats) => Ok(Some(stats)),
-        Err(error) if !options.throw_if_no_entry && error.code == "ENOENT" => Ok(None),
+        Err(error) if options.throw_if_no_entry == Some(false) && error.code == "ENOENT" => {
+            Ok(None)
+        }
         Err(error) => Err(error),
     }
 }
@@ -154,7 +166,11 @@ pub fn statfs_sync_with_options(path: &str, _options: StatFsOptions) -> NodeResu
     statfs_sync(path)
 }
 
-pub fn utimes_sync(path: &str, atime_seconds: f64, mtime_seconds: f64) -> NodeResult<()> {
+pub fn utimes_sync(
+    path: impl AsRef<std::path::Path>,
+    atime_seconds: f64,
+    mtime_seconds: f64,
+) -> NodeResult<()> {
     let atime = file_time_from_seconds(atime_seconds)?;
     let mtime = file_time_from_seconds(mtime_seconds)?;
     filetime::set_file_times(path, atime, mtime).map_err(map_io_error)

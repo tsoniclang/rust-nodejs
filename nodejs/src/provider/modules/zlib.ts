@@ -22,6 +22,7 @@ import type {
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
 } from "../model.js";
+import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
 const moduleSpecifier = "node:zlib";
 const optionsId = `${moduleSpecifier}::ZlibOptions`;
@@ -63,7 +64,8 @@ const factories = [
   ["createInflateRaw", "create_inflate_raw", "create_inflate_raw_source"],
 ] as const;
 
-export function zlibModule(): RustProviderModuleDefinition {
+export function zlibModule(typedArrays: boolean): RustProviderModuleDefinition {
+  const byteInputType: ProviderTypeExpr = typedArrays ? { kind: "source-global", name: "Uint8Array" } : bufferType;
   return {
     moduleSpecifier,
     providerModuleId: "tsonic.rust.node.zlib",
@@ -137,14 +139,14 @@ export function zlibModule(): RustProviderModuleDefinition {
           {
             id: `${moduleSpecifier}::${name}(input)`,
             name,
-            parameters: [{ name: "input", type: bufferType }],
+            parameters: [{ name: "input", type: byteInputType }],
             returnType: bufferType,
           },
           {
             id: `${moduleSpecifier}::${name}(input,options)`,
             name,
             parameters: [
-              { name: "input", type: bufferType },
+              { name: "input", type: byteInputType },
               { name: "options", type: optionsType },
             ],
             returnType: bufferType,
@@ -196,13 +198,14 @@ export function zlibModule(): RustProviderModuleDefinition {
           },
         ],
       })),
-      fnExport(moduleSpecifier, "brotliCompressSync", [{ name: "input", type: bufferType }], bufferType),
-      fnExport(moduleSpecifier, "brotliDecompressSync", [{ name: "input", type: bufferType }], bufferType),
+      fnExport(moduleSpecifier, "brotliCompressSync", [{ name: "input", type: byteInputType }], bufferType),
+      fnExport(moduleSpecifier, "brotliDecompressSync", [{ name: "input", type: byteInputType }], bufferType),
     ],
   };
 }
 
-export function zlibRows(): readonly RustProviderOperationDefinition[] {
+export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
+  const inputCarrier = typedArrays ? rustJsTypedArrayTargetType("Uint8Array") : bufferCarrier;
   const rows: RustProviderOperationDefinition[] = [];
   for (const [name, basePath, optionsPath] of syncOperations) {
     rows.push(
@@ -212,7 +215,7 @@ export function zlibRows(): readonly RustProviderOperationDefinition[] {
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${basePath}`, argModes: ["ref"] },
         resultCarrier: bufferCarrier,
-        parameterCarriers: [bufferCarrier],
+        parameterCarriers: [inputCarrier],
         ...providerNativeFallibility,
       },
       {
@@ -221,7 +224,7 @@ export function zlibRows(): readonly RustProviderOperationDefinition[] {
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["ref", "value"] },
         resultCarrier: bufferCarrier,
-        parameterCarriers: [bufferCarrier, zlibOptionsCarrier],
+        parameterCarriers: [inputCarrier, zlibOptionsCarrier],
         ...providerNativeFallibility,
       },
     );
@@ -275,7 +278,7 @@ export function zlibRows(): readonly RustProviderOperationDefinition[] {
       operationKind: "method",
       target: { form: "call", path: "node_zlib::brotli_compress_sync", argModes: ["ref"] },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [bufferCarrier],
+      parameterCarriers: [inputCarrier],
       ...providerNativeFallibility,
     },
     {
@@ -283,7 +286,7 @@ export function zlibRows(): readonly RustProviderOperationDefinition[] {
       operationKind: "method",
       target: { form: "call", path: "node_zlib::brotli_decompress_sync", argModes: ["ref"] },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [bufferCarrier],
+      parameterCarriers: [inputCarrier],
       ...providerNativeFallibility,
     },
     {

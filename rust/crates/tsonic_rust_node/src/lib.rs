@@ -43,6 +43,7 @@ pub mod tls;
 pub mod tty;
 pub mod url;
 pub mod util;
+pub mod v8;
 pub mod worker_threads;
 pub mod zlib;
 

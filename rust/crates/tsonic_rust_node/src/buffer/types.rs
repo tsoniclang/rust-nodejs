@@ -1,11 +1,8 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use tsonic_rust_js::object::JsObject;
 use tsonic_rust_js::value::JsValue;
+pub use tsonic_rust_js::web::{Blob, BlobPart, File};
 use tsonic_rust_js::{JsArray, JsString};
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
-pub use tsonic_rust_js::web::{Blob, BlobPart, File};
 
 use crate::error::{NodeError, NodeResult};
 
@@ -41,10 +38,15 @@ pub type BlobPartCarrier = BlobPart;
 
 #[derive(Debug, Clone)]
 pub struct Buffer {
-    storage: Rc<RefCell<Vec<u8>>>,
-    offset: usize,
-    len: usize,
-    identity: ObjectIdentity,
+    view: tsonic_rust_js::Uint8Array,
+}
+
+impl std::ops::Deref for Buffer {
+    type Target = tsonic_rust_js::Uint8Array;
+
+    fn deref(&self) -> &Self::Target {
+        &self.view
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,13 +94,13 @@ impl Eq for Buffer {}
 
 impl ObjectIdentityCarrier for Buffer {
     fn object_identity(&self) -> &ObjectIdentity {
-        &self.identity
+        self.view.object_identity()
     }
 }
 
 impl tsonic_rust_js::value::JsClosedValueCarrier for Buffer {
     fn identity_key(&self) -> usize {
-        self.identity.key()
+        self.object_identity().key()
     }
 
     fn inspect_value(&self) -> String {
@@ -108,8 +110,8 @@ impl tsonic_rust_js::value::JsClosedValueCarrier for Buffer {
             .take(INSPECT_MAX_BYTES)
             .map(|byte| format!("{byte:02x}"))
             .collect::<Vec<_>>();
-        let suffix = if self.len > INSPECT_MAX_BYTES {
-            format!(" ... {} more bytes", self.len - INSPECT_MAX_BYTES)
+        let suffix = if self.len() > INSPECT_MAX_BYTES {
+            format!(" ... {} more bytes", self.len() - INSPECT_MAX_BYTES)
         } else {
             String::new()
         };

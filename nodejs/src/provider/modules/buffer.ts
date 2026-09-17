@@ -18,6 +18,7 @@ import {
   stringType,
   zeroFloat64Argument,
 } from "../model.js";
+import { rustInt32ToFloat64ValueConversion, rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
 import type {
   RustProviderModuleDefinition,
@@ -117,7 +118,7 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
   });
 }
 
-export function bufferModule(): RustProviderModuleDefinition {
+export function bufferModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:buffer";
   const bufferId = "node:buffer::Buffer";
   return {
@@ -128,6 +129,7 @@ export function bufferModule(): RustProviderModuleDefinition {
         id: bufferId,
         name: "Buffer",
         kind: "class" as const,
+        ...(typedArrays ? { heritage: [{ kind: "extends" as const, type: { kind: "source-global" as const, name: "Uint8Array" } }] } : {}),
         members: [
           {
             id: `${bufferId}.from`,
@@ -135,6 +137,11 @@ export function bufferModule(): RustProviderModuleDefinition {
             kind: "method" as const,
             static: true,
             signatures: [
+              ...(typedArrays ? [{
+                id: `${bufferId}.from(Uint8Array)`,
+                parameters: [{ name: "value", type: { kind: "source-global" as const, name: "Uint8Array" } }],
+                returnType: providerRef(m, "Buffer"),
+              }] : []),
               {
                 id: `${bufferId}.from(string)`,
                 parameters: [{ name: "value", type: stringType }],
@@ -181,6 +188,10 @@ export function bufferModule(): RustProviderModuleDefinition {
           ...bufferNumericMemberDeclarations(bufferId),
           methodMember(bufferId, "equals", [{ name: "other", type: providerRef(m, "Buffer") }], booleanType),
           methodMember(bufferId, "compare", [{ name: "other", type: providerRef(m, "Buffer") }], numberType),
+          {
+            ...methodMember(bufferId, "compare", [{ name: "left", type: providerRef(m, "Buffer") }, { name: "right", type: providerRef(m, "Buffer") }], numberType, { static: true }),
+            id: `${bufferId}.compare.static`,
+          },
           propertyMember(bufferId, "length", numberType),
         ],
       },
@@ -192,9 +203,21 @@ export function bufferModule(): RustProviderModuleDefinition {
   };
 }
 
-export function bufferRows(): readonly RustProviderOperationDefinition[] {
+export function bufferRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
   const bufferId = "node:buffer::Buffer";
   return [
+    ...(typedArrays ? [{
+      exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(Uint8Array)`,
+      operationKind: "method" as const,
+      target: { form: "call" as const, path: "node_buffer::Buffer::from_uint8_array", argModes: ["ref" as const] },
+      resultCarrier: bufferCarrier, parameterCarriers: [rustJsTypedArrayTargetType("Uint8Array")],
+    }] : []),
+    {
+      exportId: bufferId, memberId: `${bufferId}.compare.static`, signatureId: `${bufferId}.compare(left,right)`,
+      operationKind: "method", target: { form: "call", path: "node_buffer::compare", argModes: ["ref", "ref"] },
+      resultCarrier: float64Carrier, resultConversion: rustInt32ToFloat64ValueConversion,
+      parameterCarriers: [bufferCarrier, bufferCarrier],
+    },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(float64Carrier)] },
