@@ -294,7 +294,11 @@ function createEmptyTargetSourceProgram() {
 
 function validateCargoProject(projectRoot, installationRoot, { check }) {
   const manifestPath = join(projectRoot, "Cargo.toml");
-  execFileSync("cargo", ["generate-lockfile", "--offline", "--manifest-path", manifestPath], {
+  execFileSync("cargo", ["generate-lockfile", "--manifest-path", manifestPath], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  execFileSync("cargo", ["fetch", "--locked", "--manifest-path", manifestPath], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
