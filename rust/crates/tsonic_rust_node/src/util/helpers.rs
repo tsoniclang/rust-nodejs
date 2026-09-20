@@ -57,19 +57,17 @@ fn format_number(value: &JsValue) -> String {
         }
         JsValue::Null => 0.0,
         JsValue::String(_) => tsonic_rust_js::globals::to_number(value),
-        JsValue::Utf16String(text) => {
-            match text.to_utf8() {
-                Ok(text) => {
-                    let trimmed = text.trim();
-                    if trimmed.is_empty() {
-                        0.0
-                    } else {
-                        trimmed.parse::<f64>().unwrap_or(f64::NAN)
-                    }
+        JsValue::Utf16String(text) => match text.to_utf8() {
+            Ok(text) => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    0.0
+                } else {
+                    trimmed.parse::<f64>().unwrap_or(f64::NAN)
                 }
-                Err(_) => f64::NAN,
             }
-        }
+            Err(_) => f64::NAN,
+        },
         _ => f64::NAN,
     };
     JsValue::Number(number).inspect()

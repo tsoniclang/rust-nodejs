@@ -392,7 +392,9 @@ pub async fn write_file_string_async(path: &str, value: &str, encoding: &str) ->
 
 pub async fn readdir_async(path: &str) -> NodeResult<JsArray<String>> {
     let path = path.to_owned();
-    crate::background::run(move || fs::readdir_native(&path)).await.map(JsArray::from_dense)
+    crate::background::run(move || fs::readdir_native(&path))
+        .await
+        .map(JsArray::from_dense)
 }
 
 pub async fn stat_async(path: &str) -> NodeResult<Stats> {
@@ -405,10 +407,7 @@ pub async fn mkdir_async(path: &str) -> NodeResult<()> {
     crate::background::run(move || mkdir(&path)).await
 }
 
-pub async fn mkdir_with_options_async(
-    path: &str,
-    options: MakeDirectoryOptions,
-) -> NodeResult<()> {
+pub async fn mkdir_with_options_async(path: &str, options: MakeDirectoryOptions) -> NodeResult<()> {
     let path = path.to_owned();
     crate::background::run(move || mkdir_with_options(&path, options)).await
 }

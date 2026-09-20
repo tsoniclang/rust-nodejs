@@ -55,11 +55,7 @@ impl Buffer {
     }
 
     pub fn from_number_array(values: &JsArray<f64>) -> Self {
-        let bytes = values
-            .values()
-            .into_iter()
-            .map(to_uint8)
-            .collect();
+        let bytes = values.values().into_iter().map(to_uint8).collect();
         Self::from_bytes(bytes)
     }
 
@@ -207,7 +203,8 @@ impl Buffer {
         let source_offset = self.view.byte_offset() as usize + source_start;
         target.view.buffer().copy_bytes_from(
             target.view.byte_offset() as usize + target_start,
-            &self.view.buffer(), source_offset..source_offset + count,
+            &self.view.buffer(),
+            source_offset..source_offset + count,
         );
         Ok(count)
     }
@@ -233,8 +230,10 @@ impl Buffer {
             ));
         }
         let count = (source_end - source_start).min(target.len() - target_start);
-        self.with_bytes(|bytes| target[target_start..target_start + count]
-            .copy_from_slice(&bytes[source_start..source_start + count]));
+        self.with_bytes(|bytes| {
+            target[target_start..target_start + count]
+                .copy_from_slice(&bytes[source_start..source_start + count])
+        });
         Ok(count)
     }
 
@@ -255,19 +254,31 @@ impl Buffer {
     }
 
     pub fn to_json(&self) -> JsValue {
-        let values = self.with_bytes(|bytes| bytes.iter()
-            .map(|byte| JsValue::Number(f64::from(*byte))).collect::<Vec<_>>());
+        let values = self.with_bytes(|bytes| {
+            bytes
+                .iter()
+                .map(|byte| JsValue::Number(f64::from(*byte)))
+                .collect::<Vec<_>>()
+        });
         JsValue::object(JsObject::from_pairs([
             ("type", JsValue::String(("Buffer").to_owned())),
             ("data", JsValue::from(values)),
         ]))
     }
 
-    fn with_pair<Result>(&self, other: &Buffer, operation: impl FnOnce(&[u8], &[u8]) -> Result) -> Result {
+    fn with_pair<Result>(
+        &self,
+        other: &Buffer,
+        operation: impl FnOnce(&[u8], &[u8]) -> Result,
+    ) -> Result {
         let left_start = self.view.byte_offset() as usize;
         let right_start = other.view.byte_offset() as usize;
-        self.view.buffer().with_byte_ranges(left_start..left_start + self.len(),
-            &other.view.buffer(), right_start..right_start + other.len(), operation)
+        self.view.buffer().with_byte_ranges(
+            left_start..left_start + self.len(),
+            &other.view.buffer(),
+            right_start..right_start + other.len(),
+            operation,
+        )
     }
 
     pub fn equals(&self, other: &Buffer) -> bool {
@@ -304,7 +315,9 @@ impl Buffer {
             return Some(normalize_search_start(self.len(), byte_offset));
         }
         let start = normalize_search_start(self.len(), byte_offset);
-        self.with_bytes(|bytes| memchr::memmem::find(&bytes[start..], needle).map(|index| index + start))
+        self.with_bytes(|bytes| {
+            memchr::memmem::find(&bytes[start..], needle).map(|index| index + start)
+        })
     }
 
     pub fn index_of_value(
@@ -375,16 +388,15 @@ impl Buffer {
         total_length: usize,
     ) -> NodeResult<Buffer> {
         let buffers = buffers.values();
-        Ok(Self::concat_dense_with_total_length(
-            &buffers,
-            total_length,
-        ))
+        Ok(Self::concat_dense_with_total_length(&buffers, total_length))
     }
 
     fn concat_dense_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
         let mut out = Vec::with_capacity(total_length);
         for buffer in buffers {
-            buffer.with_bytes(|bytes| out.extend_from_slice(&bytes[..bytes.len().min(total_length - out.len())]));
+            buffer.with_bytes(|bytes| {
+                out.extend_from_slice(&bytes[..bytes.len().min(total_length - out.len())])
+            });
             if out.len() >= total_length {
                 out.truncate(total_length);
                 return Buffer::from_bytes(out);

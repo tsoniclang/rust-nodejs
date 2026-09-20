@@ -72,7 +72,11 @@ impl Hash {
     }
 
     pub fn update_bytes(&mut self, bytes: &[u8]) -> NodeResult<&mut Self> {
-        self.writable_state()?.digest.as_mut().expect("writable digest").update(bytes);
+        self.writable_state()?
+            .digest
+            .as_mut()
+            .expect("writable digest")
+            .update(bytes);
         Ok(self)
     }
 
@@ -96,7 +100,9 @@ impl Hash {
     }
 
     pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<&mut Self> {
-        if encoding.is_none_or(|encoding| encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")) {
+        if encoding.is_none_or(|encoding| {
+            encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")
+        }) {
             return self.update_bytes(value.as_bytes());
         }
         let bytes = crate::buffer::encode_string(value, encoding)?;
@@ -118,7 +124,11 @@ impl Hash {
     }
 
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
-        let digest = self.writable_state()?.digest.take().expect("writable digest");
+        let digest = self
+            .writable_state()?
+            .digest
+            .take()
+            .expect("writable digest");
         let bytes = digest.finish();
         match encoding {
             None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
@@ -189,7 +199,9 @@ impl Hmac {
     }
 
     pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<()> {
-        if encoding.is_none_or(|encoding| encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")) {
+        if encoding.is_none_or(|encoding| {
+            encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")
+        }) {
             self.update_bytes(value.as_bytes());
         } else {
             self.update_bytes(&crate::buffer::encode_string(value, encoding)?);

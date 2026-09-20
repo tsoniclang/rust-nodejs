@@ -55,10 +55,15 @@ pub fn write_file_sync(
     encoding: Option<&str>,
 ) -> NodeResult<()> {
     match data {
-        FsWriteData::String(value) if matches!(encoding, None | Some("utf8" | "utf-8")) =>
-            fs::write(path, value.as_bytes()).map_err(map_io_error),
-        FsWriteData::String(value) => fs::write(path, crate::buffer::encode_string(value, encoding)?).map_err(map_io_error),
-        FsWriteData::Buffer(value) => value.with_bytes(|bytes| fs::write(path, bytes).map_err(map_io_error)),
+        FsWriteData::String(value) if matches!(encoding, None | Some("utf8" | "utf-8")) => {
+            fs::write(path, value.as_bytes()).map_err(map_io_error)
+        }
+        FsWriteData::String(value) => {
+            fs::write(path, crate::buffer::encode_string(value, encoding)?).map_err(map_io_error)
+        }
+        FsWriteData::Buffer(value) => {
+            value.with_bytes(|bytes| fs::write(path, bytes).map_err(map_io_error))
+        }
         FsWriteData::Bytes(value) => fs::write(path, value).map_err(map_io_error),
     }
 }

@@ -3,8 +3,7 @@ use std::io::Write as _;
 const RUNTIME_MAX_BODY_SIZE: usize = 64 * 1024 * 1024;
 const RUNTIME_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static NEXT_RUNTIME_SERVER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub(crate) type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
 pub(crate) type RuntimeRequestHandler =
@@ -60,10 +59,10 @@ impl ServerHandle {
     where
         E: std::fmt::Display + 'static,
     {
-        let port = u16::try_from(port)
-            .map_err(|_| NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535"))?;
-        let listener = std::net::TcpListener::bind((host, port))
-            .map_err(runtime_http_io_error)?;
+        let port = u16::try_from(port).map_err(|_| {
+            NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535")
+        })?;
+        let listener = std::net::TcpListener::bind((host, port)).map_err(runtime_http_io_error)?;
         let listener = crate::readiness::Listener::new(listener)?;
         RUNTIME_SERVERS.with(|servers| {
             let mut servers = servers.borrow_mut();
@@ -167,7 +166,9 @@ impl ServerResponseHandle {
                 "response headers have already been sent",
             ));
         }
-        state.headers.insert(name.to_ascii_lowercase(), value.to_string());
+        state
+            .headers
+            .insert(name.to_ascii_lowercase(), value.to_string());
         Ok(())
     }
 
@@ -279,8 +280,7 @@ fn begin_runtime_response(
         ));
     }
     state.chunked = !omit_body
-        && (has_explicit_transfer_encoding
-            || (known_body_length.is_none() && !has_content_length));
+        && (has_explicit_transfer_encoding || (known_body_length.is_none() && !has_content_length));
 
     let mut headers = format!(
         "HTTP/1.1 {status_code} {}\r\n",
@@ -313,10 +313,7 @@ fn begin_runtime_response(
     Ok(())
 }
 
-fn write_runtime_body_chunk(
-    state: &mut RuntimeResponseState,
-    bytes: &[u8],
-) -> NodeResult<()> {
+fn write_runtime_body_chunk(state: &mut RuntimeResponseState, bytes: &[u8]) -> NodeResult<()> {
     if bytes.is_empty() || runtime_response_omits_body(state)? {
         return Ok(());
     }
@@ -333,10 +330,7 @@ fn write_runtime_body_chunk(
     }
 }
 
-fn write_runtime_body_bytes(
-    state: &mut RuntimeResponseState,
-    bytes: &[u8],
-) -> NodeResult<()> {
+fn write_runtime_body_bytes(state: &mut RuntimeResponseState, bytes: &[u8]) -> NodeResult<()> {
     if bytes.is_empty() || runtime_response_omits_body(state)? {
         return Ok(());
     }
@@ -356,10 +350,12 @@ fn runtime_response_status_code(state: &RuntimeResponseState) -> NodeResult<u16>
     u16::try_from(state.status_code)
         .ok()
         .filter(|code| (100..=999).contains(code))
-        .ok_or_else(|| NodeError::new(
-            "ERR_HTTP_INVALID_STATUS_CODE",
-            "status code must be 100 through 999",
-        ))
+        .ok_or_else(|| {
+            NodeError::new(
+                "ERR_HTTP_INVALID_STATUS_CODE",
+                "status code must be 100 through 999",
+            )
+        })
 }
 
 fn runtime_response_closed() -> NodeError {
@@ -412,13 +408,20 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
             }
             match server.listener.accept() {
                 Ok((stream, _)) => {
-                    stream.set_nonblocking(false).map_err(runtime_http_io_error)?;
-                    stream.set_read_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
-                    stream.set_write_timeout(Some(RUNTIME_IO_TIMEOUT)).map_err(runtime_http_io_error)?;
+                    stream
+                        .set_nonblocking(false)
+                        .map_err(runtime_http_io_error)?;
+                    stream
+                        .set_read_timeout(Some(RUNTIME_IO_TIMEOUT))
+                        .map_err(runtime_http_io_error)?;
+                    stream
+                        .set_write_timeout(Some(RUNTIME_IO_TIMEOUT))
+                        .map_err(runtime_http_io_error)?;
                     accepted.push(AcceptedConnection {
-                    stream: Box::new(stream),
-                    handler: server.handler.clone(),
-                })},
+                        stream: Box::new(stream),
+                        handler: server.handler.clone(),
+                    })
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(runtime_http_io_error(error)),
             }
@@ -477,9 +480,7 @@ fn handle_runtime_connection(
     };
     let response = ServerResponseHandle::new(accepted.stream, omit_body);
     accepted.handler.call((request, response.clone()))?;
-    Ok(Some(PendingResponse {
-        response,
-    }))
+    Ok(Some(PendingResponse { response }))
 }
 
 pub(crate) fn accept_runtime_transport(
@@ -500,14 +501,20 @@ fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<In
     let header_end = loop {
         let count = stream.read(&mut buffer).map_err(runtime_http_io_error)?;
         if count == 0 {
-            return Err(NodeError::new("HPE_INVALID_EOF_STATE", "request ended before headers"));
+            return Err(NodeError::new(
+                "HPE_INVALID_EOF_STATE",
+                "request ended before headers",
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
         if let Some(index) = find_header_end(&bytes) {
             break index;
         }
         if bytes.len() > MAX_HEADER_SIZE {
-            return Err(NodeError::new("HPE_HEADER_OVERFLOW", "request headers exceed limit"));
+            return Err(NodeError::new(
+                "HPE_HEADER_OVERFLOW",
+                "request headers exceed limit",
+            ));
         }
     };
 
@@ -532,7 +539,10 @@ fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<In
         .ok_or_else(|| NodeError::new("HPE_INVALID_VERSION", "missing HTTP version"))?
         .to_string();
     if request_parts.next().is_some() {
-        return Err(NodeError::new("HPE_INVALID_REQUEST", "invalid request line"));
+        return Err(NodeError::new(
+            "HPE_INVALID_REQUEST",
+            "invalid request line",
+        ));
     }
 
     let mut headers = Vec::new();
@@ -554,7 +564,10 @@ fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<In
                 .parse::<usize>()
                 .map_err(|error| NodeError::new("HPE_INVALID_CONTENT_LENGTH", error.to_string()))?;
             if content_length > RUNTIME_MAX_BODY_SIZE {
-                return Err(NodeError::new("HPE_BODY_OVERFLOW", "request body exceeds limit"));
+                return Err(NodeError::new(
+                    "HPE_BODY_OVERFLOW",
+                    "request body exceeds limit",
+                ));
             }
         }
         headers.push((name.to_string(), value.to_string()));
@@ -564,7 +577,10 @@ fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<In
     while bytes.len().saturating_sub(body_start) < content_length {
         let count = stream.read(&mut buffer).map_err(runtime_http_io_error)?;
         if count == 0 {
-            return Err(NodeError::new("HPE_INVALID_EOF_STATE", "request body ended early"));
+            return Err(NodeError::new(
+                "HPE_INVALID_EOF_STATE",
+                "request body ended early",
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
     }
@@ -575,10 +591,19 @@ fn read_runtime_request(stream: &mut Box<dyn RuntimeTransport>) -> NodeResult<In
     );
     request.http_version = version.clone();
     let mut version_parts = version.split('.');
-    request.http_version_major = version_parts.next().and_then(|v| v.parse().ok()).unwrap_or(1);
-    request.http_version_minor = version_parts.next().and_then(|v| v.parse().ok()).unwrap_or(1);
+    request.http_version_major = version_parts
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    request.http_version_minor = version_parts
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
     if let Ok(peer) = stream.peer_addr() {
-        request.socket = Some(net::SocketAddress::new(&peer.ip().to_string(), peer.port())?);
+        request.socket = Some(net::SocketAddress::new(
+            &peer.ip().to_string(),
+            peer.port(),
+        )?);
     }
     for (name, value) in headers {
         request.set_header(&name, &value);

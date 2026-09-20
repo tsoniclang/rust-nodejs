@@ -399,11 +399,22 @@ fn stats_for_watch_path(path: &str) -> Stats {
 }
 
 pub(crate) fn next_runtime_watcher_delay() -> Option<std::time::Duration> {
-    RUNTIME_WATCHERS.with(|watchers| watchers.borrow().values().filter_map(|watcher| {
-        let state = watcher.state.borrow();
-        if state.closed { None }
-        else { state.stat_interval.map(|interval| interval.saturating_sub(state.last_stat_check.elapsed())) }
-    }).min())
+    RUNTIME_WATCHERS.with(|watchers| {
+        watchers
+            .borrow()
+            .values()
+            .filter_map(|watcher| {
+                let state = watcher.state.borrow();
+                if state.closed {
+                    None
+                } else {
+                    state
+                        .stat_interval
+                        .map(|interval| interval.saturating_sub(state.last_stat_check.elapsed()))
+                }
+            })
+            .min()
+    })
 }
 
 fn empty_watch_stats() -> Stats {

@@ -5,7 +5,10 @@ fn parse_algorithm(algorithm: &str) -> NodeResult<DigestAlgorithm> {
         "sha256" | "sha-256" => Ok(DigestAlgorithm::Sha256),
         "sha384" | "sha-384" => Ok(DigestAlgorithm::Sha384),
         "sha512" | "sha-512" => Ok(DigestAlgorithm::Sha512),
-        other => Err(NodeError::new("ERR_CRYPTO_UNSUPPORTED_ALGORITHM", format!("unsupported hash algorithm `{other}`"))),
+        other => Err(NodeError::new(
+            "ERR_CRYPTO_UNSUPPORTED_ALGORITHM",
+            format!("unsupported hash algorithm `{other}`"),
+        )),
     }
 }
 
@@ -63,11 +66,21 @@ impl IncrementalHmac {
     fn new(algorithm: DigestAlgorithm, key: &[u8]) -> NodeResult<Self> {
         let invalid_key = |_| NodeError::new("ERR_CRYPTO_INVALID_KEY", "invalid HMAC key");
         match algorithm {
-            DigestAlgorithm::Md5 => <hmac::Hmac<Md5> as hmac::Mac>::new_from_slice(key).map(Self::Md5).map_err(invalid_key),
-            DigestAlgorithm::Sha1 => <hmac::Hmac<sha1::Sha1> as hmac::Mac>::new_from_slice(key).map(Self::Sha1).map_err(invalid_key),
-            DigestAlgorithm::Sha256 => <hmac::Hmac<Sha256> as hmac::Mac>::new_from_slice(key).map(Self::Sha256).map_err(invalid_key),
-            DigestAlgorithm::Sha384 => <hmac::Hmac<Sha384> as hmac::Mac>::new_from_slice(key).map(Self::Sha384).map_err(invalid_key),
-            DigestAlgorithm::Sha512 => <hmac::Hmac<Sha512> as hmac::Mac>::new_from_slice(key).map(Self::Sha512).map_err(invalid_key),
+            DigestAlgorithm::Md5 => <hmac::Hmac<Md5> as hmac::Mac>::new_from_slice(key)
+                .map(Self::Md5)
+                .map_err(invalid_key),
+            DigestAlgorithm::Sha1 => <hmac::Hmac<sha1::Sha1> as hmac::Mac>::new_from_slice(key)
+                .map(Self::Sha1)
+                .map_err(invalid_key),
+            DigestAlgorithm::Sha256 => <hmac::Hmac<Sha256> as hmac::Mac>::new_from_slice(key)
+                .map(Self::Sha256)
+                .map_err(invalid_key),
+            DigestAlgorithm::Sha384 => <hmac::Hmac<Sha384> as hmac::Mac>::new_from_slice(key)
+                .map(Self::Sha384)
+                .map_err(invalid_key),
+            DigestAlgorithm::Sha512 => <hmac::Hmac<Sha512> as hmac::Mac>::new_from_slice(key)
+                .map(Self::Sha512)
+                .map_err(invalid_key),
         }
     }
 
