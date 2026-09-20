@@ -13,7 +13,7 @@ type RuntimeListenCallback =
     tsonic_rust_runtime::Callable<(), tsonic_rust_runtime::TsonicResult<()>>;
 
 struct RuntimeServer {
-    listener: std::net::TcpListener,
+    listener: crate::readiness::Listener,
     handler: RuntimeRequestHandler,
     listening_callback: Option<RuntimeListenCallback>,
 }
@@ -64,7 +64,7 @@ impl ServerHandle {
             .map_err(|_| NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535"))?;
         let listener = std::net::TcpListener::bind((host, port))
             .map_err(runtime_http_io_error)?;
-        listener.set_nonblocking(true).map_err(runtime_http_io_error)?;
+        let listener = crate::readiness::Listener::new(listener)?;
         RUNTIME_SERVERS.with(|servers| {
             let mut servers = servers.borrow_mut();
             if servers.contains_key(&self.id) {

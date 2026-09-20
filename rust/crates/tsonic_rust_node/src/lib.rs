@@ -16,6 +16,7 @@ pub mod diagnostics_channel;
 pub mod dns;
 pub mod error;
 mod event_loop;
+mod readiness;
 pub mod events;
 pub mod fetch;
 pub mod fs;

@@ -4,7 +4,7 @@ type RuntimeConnectionCallback = tsonic_rust_runtime::Callable<
 >;
 
 struct ServerState {
-    listener: Option<TcpListener>,
+    listener: Option<crate::readiness::Listener>,
     connection_callback: Option<RuntimeConnectionCallback>,
     refed: bool,
     max_connections: Option<usize>,
@@ -45,7 +45,7 @@ impl Server {
 
     pub fn bind(&mut self, host: &str, port: u16) -> NodeResult<&mut Self> {
         let listener = TcpListener::bind((host, port)).map_err(map_net_error)?;
-        listener.set_nonblocking(true).map_err(map_net_error)?;
+        let listener = crate::readiness::Listener::new(listener)?;
         let mut state = self.state.borrow_mut();
         state.listener = Some(listener);
         state.listening = true;

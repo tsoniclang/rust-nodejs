@@ -11,7 +11,7 @@ use crate::error::{callback_node_error, NodeError, NodeResult};
 type Listener = Box<dyn FnMut(&[JsValue])>;
 type ListenerMap = HashMap<String, Vec<ListenerEntry>>;
 type CallableListener = Rc<dyn Fn(&[JsValue]) -> NodeResult<()>>;
-type CallableListenerMap = HashMap<EventKey, Vec<CallableListenerEntry>>;
+type CallableListenerMap = HashMap<EventKey, Rc<Vec<CallableListenerEntry>>>;
 static DEFAULT_MAX_LISTENERS: AtomicUsize = AtomicUsize::new(10);
 static CAPTURE_REJECTIONS: AtomicBool = AtomicBool::new(false);
 
@@ -31,17 +31,16 @@ struct CallableListenerEntry {
 }
 
 pub(crate) struct CallableEmission {
-    listeners: Vec<CallableListenerEntry>,
-    arguments: Vec<JsValue>,
+    listeners: Option<Rc<Vec<CallableListenerEntry>>>,
 }
 
 impl CallableEmission {
-    pub(crate) fn invoke(self) -> NodeResult<bool> {
-        if self.listeners.is_empty() {
+    pub(crate) fn invoke(self, arguments: &[JsValue]) -> NodeResult<bool> {
+        let Some(listeners) = self.listeners else {
             return Ok(false);
-        }
-        for listener in &self.listeners {
-            (listener.callback)(&self.arguments)?;
+        };
+        for listener in listeners.iter() {
+            (listener.callback)(arguments)?;
         }
         Ok(true)
     }
@@ -59,7 +58,7 @@ impl Clone for CallableListenerEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum EventKey {
-    String(JsString),
+    String(String),
     Symbol(JsSymbol),
 }
 
@@ -76,7 +75,7 @@ impl EventKey {
     }
 
     fn is_error(&self) -> bool {
-        matches!(self, Self::String(value) if value.units() == [101, 114, 114, 111, 114])
+        matches!(self, Self::String(value) if value == "error")
     }
 
     fn to_value(&self) -> JsValue {
@@ -615,7 +614,7 @@ impl EventEmitter {
     }
 
     fn emit_callable_values(&mut self, event: &JsValue, arguments: &[JsValue]) -> NodeResult<bool> {
-        self.prepare_callable_emission(event, arguments)?.invoke()
+        self.prepare_callable_emission(event, arguments)?.invoke(arguments)
     }
 
     pub(crate) fn prepare_callable_emission(
@@ -627,21 +626,19 @@ impl EventEmitter {
         let listeners = self
             .callable_listeners
             .get(&event)
-            .cloned()
-            .unwrap_or_default();
-        if listeners.is_empty() && event.is_error() {
+            .cloned();
+        if listeners.is_none() && event.is_error() {
             return Err(unhandled_error(arguments));
         }
         self.remove_once_callable_listeners(&event);
         Ok(CallableEmission {
             listeners,
-            arguments: arguments.to_vec(),
         })
     }
 
     pub fn callable_listener_count(&self, event: &JsValue) -> NodeResult<usize> {
         let event = EventKey::from_value(event)?;
-        Ok(self.callable_listeners.get(&event).map_or(0, Vec::len))
+        Ok(self.callable_listeners.get(&event).map_or(0, |listeners| listeners.len()))
     }
 
     pub fn remove_all_callable_listeners(&mut self) -> &mut Self {
@@ -678,6 +675,7 @@ impl EventEmitter {
     ) {
         let is_new_event = !self.callable_listeners.contains_key(&event);
         let listeners = self.callable_listeners.entry(event.clone()).or_default();
+        let listeners = Rc::make_mut(listeners);
         let entry = CallableListenerEntry {
             identity,
             once,
@@ -695,7 +693,7 @@ impl EventEmitter {
 
     fn remove_callable_listener(&mut self, event: &EventKey, identity: usize) {
         if let Some(listeners) = self.callable_listeners.get_mut(event) {
-            listeners.retain(|entry| entry.identity != identity);
+            Rc::make_mut(listeners).retain(|entry| entry.identity != identity);
             if listeners.is_empty() {
                 self.callable_listeners.remove(event);
                 self.callable_event_order
@@ -706,7 +704,10 @@ impl EventEmitter {
 
     fn remove_once_callable_listeners(&mut self, event: &EventKey) {
         if let Some(listeners) = self.callable_listeners.get_mut(event) {
-            listeners.retain(|entry| !entry.once);
+            if !listeners.iter().any(|entry| entry.once) {
+                return;
+            }
+            Rc::make_mut(listeners).retain(|entry| !entry.once);
             if listeners.is_empty() {
                 self.callable_listeners.remove(event);
                 self.callable_event_order

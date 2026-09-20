@@ -57,6 +57,7 @@ struct WorkerState {
     thread_id: i32,
     refed: bool,
     complete: bool,
+    transport_ended: bool,
     exit_code: Option<i32>,
     errors: Vec<String>,
     messages: Vec<ClonedValue>,
@@ -145,6 +146,7 @@ impl Worker {
                 thread_id,
                 refed: true,
                 complete: false,
+                transport_ended: false,
                 exit_code: None,
                 errors: Vec::new(),
                 messages: Vec::new(),
@@ -276,24 +278,20 @@ impl Worker {
     fn poll(&self) -> NodeResult<bool> {
         let signals = self.state.borrow_mut().signals()?;
         for signal in &signals {
-            let emission = {
-                let mut emitter = self.emitter.borrow_mut();
-                match signal {
-                    WorkerSignal::Message(value) => emitter.prepare_callable_emission(
-                        &event_name("message"),
-                        std::slice::from_ref(value),
-                    )?,
-                    WorkerSignal::Error(error) => emitter.prepare_callable_emission(
-                        &event_name("error"),
-                        &[JsValue::String(JsString::from_utf8(error))],
-                    )?,
-                    WorkerSignal::Exit(code) => emitter.prepare_callable_emission(
-                        &event_name("exit"),
-                        &[JsValue::Number(f64::from(*code))],
-                    )?,
-                }
+            let converted;
+            let (event, arguments): (&str, &[JsValue]) = match signal {
+                WorkerSignal::Message(value) => ("message", std::slice::from_ref(value)),
+                WorkerSignal::Error(error) => {
+                    converted = JsValue::String((error).to_owned());
+                    ("error", std::slice::from_ref(&converted))
+                },
+                WorkerSignal::Exit(code) => {
+                    converted = JsValue::Number(f64::from(*code));
+                    ("exit", std::slice::from_ref(&converted))
+                },
             };
-            emission.invoke()?;
+            let emission = self.emitter.borrow_mut().prepare_callable_emission(&event_name(event), arguments)?;
+            emission.invoke(arguments)?;
         }
         Ok(!signals.is_empty())
     }
@@ -323,7 +321,10 @@ impl WorkerState {
                     self.errors.push(error);
                     break;
                 }
-                Ok(TransportEvent::End) | Err(TryRecvError::Disconnected) => break,
+                Ok(TransportEvent::End) | Err(TryRecvError::Disconnected) => {
+                    self.transport_ended = true;
+                    break;
+                }
                 Err(TryRecvError::Empty) => break,
             }
         }
@@ -409,6 +410,15 @@ pub(crate) fn has_refed_runtime_workers() -> bool {
     })
 }
 
+pub(crate) fn next_runtime_reap_delay() -> Option<Duration> {
+    WORKERS.with(|workers| workers.borrow().iter().any(|(state, _)| {
+        state.upgrade().is_some_and(|state| {
+            let state = state.borrow();
+            state.transport_ended && !state.complete
+        })
+    }).then_some(Duration::from_millis(1)))
+}
+
 fn accept_worker(listener: &TcpListener, child: &mut Child) -> NodeResult<std::net::TcpStream> {
     let deadline = Instant::now() + CONNECT_TIMEOUT;
     loop {
@@ -462,17 +472,7 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
                 })?;
                 match value {
                     JsValue::Undefined => {}
-                    JsValue::String(value) => {
-                        command.env(
-                            key,
-                            value.to_utf8().map_err(|_| {
-                                NodeError::new(
-                                    "ERR_WORKER_OPTIONS",
-                                    "WorkerOptions.env value is not a native string",
-                                )
-                            })?,
-                        );
-                    }
+                    JsValue::String(value) => { command.env(key, value); }
                     _ => {
                         return Err(NodeError::new(
                             "ERR_WORKER_OPTIONS",
@@ -515,7 +515,7 @@ fn status_code(status: ExitStatus) -> i32 {
 }
 
 fn event_name(value: &str) -> JsValue {
-    JsValue::String(JsString::from_utf8(value))
+    JsValue::String((value).to_owned())
 }
 
 static NEXT_THREAD_ID: AtomicI32 = AtomicI32::new(1);

@@ -390,7 +390,7 @@ type RuntimeConnectionCallback =
 struct TlsServerState {
     options: SourceServerOptions,
     config: Arc<rustls::ServerConfig>,
-    listener: Option<TcpListener>,
+    listener: Option<crate::readiness::Listener>,
     callback: RuntimeConnectionCallback,
     listening: bool,
     refed: bool,
@@ -431,7 +431,7 @@ impl TlsServer {
 
     pub fn listen(&mut self, port: f64, host: &str) -> NodeResult<&mut Self> {
         let listener = TcpListener::bind((host, source_port(port)?)).map_err(map_io_error)?;
-        listener.set_nonblocking(true).map_err(map_io_error)?;
+        let listener = crate::readiness::Listener::new(listener)?;
         {
             let mut state = self.state.borrow_mut();
             state.listener = Some(listener);

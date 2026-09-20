@@ -54,12 +54,13 @@ pub fn write_file_sync(
     data: FsWriteData<'_>,
     encoding: Option<&str>,
 ) -> NodeResult<()> {
-    let bytes = match data {
-        FsWriteData::String(value) => crate::buffer::encode_string(value, encoding)?,
-        FsWriteData::Buffer(value) => value.as_bytes(),
-        FsWriteData::Bytes(value) => value.to_vec(),
-    };
-    fs::write(path, bytes).map_err(map_io_error)
+    match data {
+        FsWriteData::String(value) if matches!(encoding, None | Some("utf8" | "utf-8")) =>
+            fs::write(path, value.as_bytes()).map_err(map_io_error),
+        FsWriteData::String(value) => fs::write(path, crate::buffer::encode_string(value, encoding)?).map_err(map_io_error),
+        FsWriteData::Buffer(value) => value.with_bytes(|bytes| fs::write(path, bytes).map_err(map_io_error)),
+        FsWriteData::Bytes(value) => fs::write(path, value).map_err(map_io_error),
+    }
 }
 
 pub fn write_file_sync_string(path: &str, value: &str, encoding: &str) -> NodeResult<()> {
@@ -76,7 +77,7 @@ pub fn append_file_sync_string(path: &str, value: &str, encoding: &str) -> NodeR
 }
 
 pub fn append_file_sync_buffer(path: &str, value: &Buffer) -> NodeResult<()> {
-    append_bytes(path, &value.as_bytes())
+    value.with_bytes(|bytes| append_bytes(path, bytes))
 }
 
 fn append_bytes(path: &str, bytes: &[u8]) -> NodeResult<()> {

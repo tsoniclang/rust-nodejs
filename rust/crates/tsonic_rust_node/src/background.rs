@@ -38,9 +38,7 @@ where
 }
 
 struct WorkRequest {
-    id: u64,
     work: BackgroundWork,
-    completion_sender: SyncSender<WorkCompletion>,
 }
 
 struct WorkCompletion {
@@ -87,6 +85,7 @@ where
     T: Send + 'static,
 {
     let runtime = runtime()?;
+    let wake = crate::readiness::waker()?;
     let id = NEXT_WORK_ID.fetch_add(1, Ordering::Relaxed);
     if id == u64::MAX {
         return Err(crate::NodeError::new(
@@ -114,8 +113,6 @@ where
     })?;
 
     let request = WorkRequest {
-        id,
-        completion_sender,
         work: Box::new(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
                 .unwrap_or_else(|_| {
@@ -125,6 +122,8 @@ where
                     ))
                 });
             let _ = result_sender.send(result);
+            let _ = completion_sender.send(WorkCompletion { id });
+            let _ = wake.wake();
         }),
     };
     match runtime.work_sender.try_send(request) {
@@ -151,6 +150,52 @@ where
             ))
         }
     }
+}
+
+pub(crate) async fn run<T>(
+    work: impl FnOnce() -> crate::NodeResult<T> + Send + 'static,
+) -> crate::NodeResult<T>
+where
+    T: Send + 'static,
+{
+    struct Completion<T> {
+        result: Option<crate::NodeResult<T>>,
+        waker: Option<std::task::Waker>,
+    }
+    let completion = Arc::new(Mutex::new(Completion { result: None, waker: None }));
+    let worker_completion = Arc::clone(&completion);
+    let request = WorkRequest {
+        work: Box::new(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
+                .unwrap_or_else(|_| Err(crate::NodeError::new(
+                    "ERR_NODE_BACKGROUND_PANIC", "background provider work panicked")));
+            let waker = {
+                let mut completion = crate::sync::lock(&worker_completion);
+                completion.result = Some(result);
+                completion.waker.take()
+            };
+            if let Some(waker) = waker { waker.wake(); }
+        }),
+    };
+    runtime()?.work_sender.try_send(request).map_err(|error| crate::NodeError::new(
+        "ERR_NODE_BACKGROUND_WORK_LIMIT",
+        match error {
+            std::sync::mpsc::TrySendError::Full(_) => "background work queue exceeds the finite limit",
+            std::sync::mpsc::TrySendError::Disconnected(_) => "background worker pool is unavailable",
+        },
+    ))?;
+    std::future::poll_fn(|context| {
+        let mut completion = crate::sync::lock(&completion);
+        match completion.result.take() {
+            Some(result) => std::task::Poll::Ready(result),
+            None => {
+                if !completion.waker.as_ref().is_some_and(|waker| waker.will_wake(context.waker())) {
+                    completion.waker = Some(context.waker().clone());
+                }
+                std::task::Poll::Pending
+            }
+        }
+    }).await
 }
 
 pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
@@ -247,9 +292,6 @@ fn worker_loop(work_receiver: Arc<Mutex<std::sync::mpsc::Receiver<WorkRequest>>>
             return;
         };
         (request.work)();
-        let _ = request
-            .completion_sender
-            .send(WorkCompletion { id: request.id });
     }
 }
 
