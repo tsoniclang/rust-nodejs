@@ -51,7 +51,7 @@ pub fn btoa(value: &str) -> NodeResult<String> {
         ));
     }
     let bytes = encode_string(value, Some("latin1"))?;
-    decode_bytes(&bytes, Some("base64"))
+    decode_bytes(bytes, Some("base64"))
 }
 
 pub fn atob(value: &str) -> NodeResult<String> {
@@ -61,11 +61,11 @@ pub fn atob(value: &str) -> NodeResult<String> {
             format!("atob input is not valid base64: {}", error.message()),
         )
     })?;
-    decode_bytes(&bytes, Some("latin1"))
+    decode_bytes(bytes, Some("latin1"))
 }
 
 pub fn transcode(buffer: &Buffer, from_encoding: &str, to_encoding: &str) -> NodeResult<Buffer> {
-    let text = decode_bytes(&buffer.as_bytes(), Some(from_encoding))?;
+    let text = buffer.with_bytes(|bytes| decode_bytes(bytes, Some(from_encoding)))?;
     Buffer::from_string(&text, Some(to_encoding))
 }
 

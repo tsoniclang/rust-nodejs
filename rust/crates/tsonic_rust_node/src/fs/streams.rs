@@ -237,7 +237,7 @@ impl ReadStream {
         while let Some(chunk) = self.read()? {
             chunk.with_bytes(|chunk_bytes| bytes.extend_from_slice(chunk_bytes));
         }
-        crate::buffer::decode_bytes(&bytes, encoding)
+        crate::buffer::decode_bytes(bytes, encoding)
     }
 
     pub fn add_listener(&mut self, event: &str) -> &mut Self {
