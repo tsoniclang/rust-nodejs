@@ -15,9 +15,13 @@ pub fn encode_string(value: &str, encoding: Option<&str>) -> NodeResult<Vec<u8>>
     }
 }
 
-pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> {
+pub fn decode_bytes<'a>(
+    bytes: impl Into<std::borrow::Cow<'a, [u8]>>,
+    encoding: Option<&str>,
+) -> NodeResult<String> {
+    let bytes = bytes.into();
     match normalize_encoding(encoding)? {
-        Encoding::Utf8 => String::from_utf8(bytes.to_vec())
+        Encoding::Utf8 => String::from_utf8(bytes.into_owned())
             .map_err(|error| NodeError::new("ERR_INVALID_ARG_VALUE", error.to_string())),
         Encoding::Latin1 => Ok(bytes.iter().map(|byte| *byte as char).collect()),
         Encoding::Utf16Le => {
@@ -29,9 +33,9 @@ pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> 
                 .collect::<Vec<_>>();
             Ok(String::from_utf16_lossy(&units))
         }
-        Encoding::Hex => Ok(encode_hex(bytes)),
-        Encoding::Base64 => Ok(encode_base64(bytes)),
-        Encoding::Base64Url => Ok(encode_base64(bytes)
+        Encoding::Hex => Ok(encode_hex(&bytes)),
+        Encoding::Base64 => Ok(encode_base64(&bytes)),
+        Encoding::Base64Url => Ok(encode_base64(&bytes)
             .replace('+', "-")
             .replace('/', "_")
             .trim_end_matches('=')
