@@ -614,7 +614,8 @@ impl EventEmitter {
     }
 
     fn emit_callable_values(&mut self, event: &JsValue, arguments: &[JsValue]) -> NodeResult<bool> {
-        self.prepare_callable_emission(event, arguments)?.invoke(arguments)
+        self.prepare_callable_emission(event, arguments)?
+            .invoke(arguments)
     }
 
     pub(crate) fn prepare_callable_emission(
@@ -623,22 +624,20 @@ impl EventEmitter {
         arguments: &[JsValue],
     ) -> NodeResult<CallableEmission> {
         let event = EventKey::from_value(event)?;
-        let listeners = self
-            .callable_listeners
-            .get(&event)
-            .cloned();
+        let listeners = self.callable_listeners.get(&event).cloned();
         if listeners.is_none() && event.is_error() {
             return Err(unhandled_error(arguments));
         }
         self.remove_once_callable_listeners(&event);
-        Ok(CallableEmission {
-            listeners,
-        })
+        Ok(CallableEmission { listeners })
     }
 
     pub fn callable_listener_count(&self, event: &JsValue) -> NodeResult<usize> {
         let event = EventKey::from_value(event)?;
-        Ok(self.callable_listeners.get(&event).map_or(0, |listeners| listeners.len()))
+        Ok(self
+            .callable_listeners
+            .get(&event)
+            .map_or(0, |listeners| listeners.len()))
     }
 
     pub fn remove_all_callable_listeners(&mut self) -> &mut Self {

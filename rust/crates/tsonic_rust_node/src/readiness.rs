@@ -20,8 +20,14 @@ fn with_readiness<T>(operation: impl FnOnce(&mut Readiness) -> NodeResult<T>) ->
         let mut state = state.borrow_mut();
         if state.is_none() {
             let poll = mio::Poll::new().map_err(io_error)?;
-            let waker = Arc::new(mio::Waker::new(poll.registry(), mio::Token(0)).map_err(io_error)?);
-            *state = Some(Readiness { poll, events: mio::Events::with_capacity(128), waker, next_token: 1 });
+            let waker =
+                Arc::new(mio::Waker::new(poll.registry(), mio::Token(0)).map_err(io_error)?);
+            *state = Some(Readiness {
+                poll,
+                events: mio::Events::with_capacity(128),
+                waker,
+                next_token: 1,
+            });
         }
         operation(state.as_mut().expect("initialized readiness owner"))
     })
@@ -30,9 +36,14 @@ fn with_readiness<T>(operation: impl FnOnce(&mut Readiness) -> NodeResult<T>) ->
 fn register(source: &mut impl mio::event::Source) -> NodeResult<mio::Registry> {
     with_readiness(|state| {
         let token = state.next_token;
-        state.next_token = token.checked_add(1)
-            .ok_or_else(|| NodeError::new("ERR_NODE_READINESS_LIMIT", "readiness identities exhausted"))?;
-        state.poll.registry().register(source, mio::Token(token), mio::Interest::READABLE).map_err(io_error)?;
+        state.next_token = token.checked_add(1).ok_or_else(|| {
+            NodeError::new("ERR_NODE_READINESS_LIMIT", "readiness identities exhausted")
+        })?;
+        state
+            .poll
+            .registry()
+            .register(source, mio::Token(token), mio::Interest::READABLE)
+            .map_err(io_error)?;
         state.poll.registry().try_clone().map_err(io_error)
     })
 }
@@ -60,17 +71,25 @@ impl Listener {
         listener.set_nonblocking(true).map_err(io_error)?;
         let mut source = mio::net::TcpListener::from_std(listener.try_clone().map_err(io_error)?);
         let registry = register(&mut source)?;
-        Ok(Self { listener, source, registry })
+        Ok(Self {
+            listener,
+            source,
+            registry,
+        })
     }
 }
 
 impl std::ops::Deref for Listener {
     type Target = std::net::TcpListener;
-    fn deref(&self) -> &Self::Target { &self.listener }
+    fn deref(&self) -> &Self::Target {
+        &self.listener
+    }
 }
 
 impl Drop for Listener {
-    fn drop(&mut self) { let _ = self.registry.deregister(&mut self.source); }
+    fn drop(&mut self) {
+        let _ = self.registry.deregister(&mut self.source);
+    }
 }
 
 #[cfg(unix)]
@@ -88,7 +107,11 @@ impl SignalWake {
         let mut reader = mio::net::UnixStream::from_std(reader);
         let registry = register(&mut reader)?;
         let hook = signal_hook::low_level::pipe::register(signal, writer).map_err(io_error)?;
-        Ok(Self { reader: RefCell::new(reader), registry, hook })
+        Ok(Self {
+            reader: RefCell::new(reader),
+            registry,
+            hook,
+        })
     }
 
     pub(crate) fn drain(&self) -> NodeResult<()> {
@@ -141,7 +164,8 @@ mod tests {
 
     #[test]
     fn listener_readiness_reaches_the_native_acceptor() {
-        let listener = super::Listener::new(std::net::TcpListener::bind("127.0.0.1:0").unwrap()).unwrap();
+        let listener =
+            super::Listener::new(std::net::TcpListener::bind("127.0.0.1:0").unwrap()).unwrap();
         let address = listener.local_addr().unwrap();
         let worker = std::thread::spawn(move || std::net::TcpStream::connect(address).unwrap());
         super::wait(Some(Duration::from_secs(3))).unwrap();

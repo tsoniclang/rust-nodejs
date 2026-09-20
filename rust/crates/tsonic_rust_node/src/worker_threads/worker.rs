@@ -103,9 +103,7 @@ impl Worker {
             .arg(WORKER_ARGUMENT_DELIMITER);
         if let Some(argv) = &options.argv {
             for value in argv.values() {
-                command.arg(value.ok_or_else(|| {
-                    NodeError::new("ERR_WORKER_OPTIONS", "WorkerOptions.argv cannot be sparse")
-                })?);
+                command.arg(value);
             }
         }
         apply_environment(&mut command, &options.env)?;
@@ -284,13 +282,16 @@ impl Worker {
                 WorkerSignal::Error(error) => {
                     converted = JsValue::String((error).to_owned());
                     ("error", std::slice::from_ref(&converted))
-                },
+                }
                 WorkerSignal::Exit(code) => {
                     converted = JsValue::Number(f64::from(*code));
                     ("exit", std::slice::from_ref(&converted))
-                },
+                }
             };
-            let emission = self.emitter.borrow_mut().prepare_callable_emission(&event_name(event), arguments)?;
+            let emission = self
+                .emitter
+                .borrow_mut()
+                .prepare_callable_emission(&event_name(event), arguments)?;
             emission.invoke(arguments)?;
         }
         Ok(!signals.is_empty())
@@ -411,12 +412,18 @@ pub(crate) fn has_refed_runtime_workers() -> bool {
 }
 
 pub(crate) fn next_runtime_reap_delay() -> Option<Duration> {
-    WORKERS.with(|workers| workers.borrow().iter().any(|(state, _)| {
-        state.upgrade().is_some_and(|state| {
-            let state = state.borrow();
-            state.transport_ended && !state.complete
-        })
-    }).then_some(Duration::from_millis(1)))
+    WORKERS.with(|workers| {
+        workers
+            .borrow()
+            .iter()
+            .any(|(state, _)| {
+                state.upgrade().is_some_and(|state| {
+                    let state = state.borrow();
+                    state.transport_ended && !state.complete
+                })
+            })
+            .then_some(Duration::from_millis(1))
+    })
 }
 
 fn accept_worker(listener: &TcpListener, child: &mut Child) -> NodeResult<std::net::TcpStream> {
@@ -472,7 +479,9 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
                 })?;
                 match value {
                     JsValue::Undefined => {}
-                    JsValue::String(value) => { command.env(key, value); }
+                    JsValue::String(value) => {
+                        command.env(key, value);
+                    }
                     _ => {
                         return Err(NodeError::new(
                             "ERR_WORKER_OPTIONS",

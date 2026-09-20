@@ -284,12 +284,10 @@ impl PreparedClientConnection {
         let servername = options.servername.unwrap_or_else(|| host.clone());
         let port = source_port(options.port.unwrap_or(443.0))?;
         let reject_unauthorized = options.reject_unauthorized.unwrap_or(true);
-        let mut config =
-            client_config(reject_unauthorized, source_string_array(options.ca, "ca")?)?;
+        let mut config = client_config(reject_unauthorized, source_string_array(options.ca))?;
         config.alpn_protocols = options
             .alpn_protocols
-            .map(|values| dense_source_strings(values, "ALPNProtocols"))
-            .transpose()?
+            .map(|values| values.values())
             .unwrap_or_default()
             .into_iter()
             .map(String::into_bytes)
@@ -676,7 +674,7 @@ fn server_config(options: &SourceServerOptions) -> NodeResult<rustls::ServerConf
     let builder = rustls::ServerConfig::builder();
     let mut config = if options.request_cert.unwrap_or(false) {
         let mut roots = rustls::RootCertStore::empty();
-        for pem in source_string_array(options.ca.clone(), "ca")? {
+        for pem in source_string_array(options.ca.clone()) {
             for certificate in parse_certificates(&pem)? {
                 roots.add(certificate).map_err(map_tls_error)?;
             }
@@ -707,8 +705,7 @@ fn server_config(options: &SourceServerOptions) -> NodeResult<rustls::ServerConf
     config.alpn_protocols = options
         .alpn_protocols
         .clone()
-        .map(|values| dense_source_strings(values, "ALPNProtocols"))
-        .transpose()?
+        .map(|values| values.values())
         .unwrap_or_default()
         .into_iter()
         .map(String::into_bytes)
@@ -728,33 +725,8 @@ fn parse_private_key(pem: &str) -> NodeResult<PrivateKeyDer<'static>> {
         .ok_or_else(|| NodeError::new("ERR_TLS_KEY_REQUIRED", "TLS private key is empty"))
 }
 
-fn source_string_array(
-    value: Option<tsonic_rust_js::JsArray<String>>,
-    name: &str,
-) -> NodeResult<Vec<String>> {
-    value
-        .map(|values| dense_source_strings(values, name))
-        .transpose()
-        .map(Option::unwrap_or_default)
-}
-
-fn dense_source_strings(
-    value: tsonic_rust_js::JsArray<String>,
-    name: &str,
-) -> NodeResult<Vec<String>> {
-    value
-        .values()
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value.ok_or_else(|| {
-                NodeError::new(
-                    "ERR_INVALID_ARG_VALUE",
-                    format!("{name}[{index}] must be a present string"),
-                )
-            })
-        })
-        .collect()
+fn source_string_array(value: Option<tsonic_rust_js::JsArray<String>>) -> Vec<String> {
+    value.map(|values| values.values()).unwrap_or_default()
 }
 
 fn source_port(value: f64) -> NodeResult<u16> {

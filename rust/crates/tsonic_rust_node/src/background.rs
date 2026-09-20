@@ -162,40 +162,60 @@ where
         result: Option<crate::NodeResult<T>>,
         waker: Option<std::task::Waker>,
     }
-    let completion = Arc::new(Mutex::new(Completion { result: None, waker: None }));
+    let completion = Arc::new(Mutex::new(Completion {
+        result: None,
+        waker: None,
+    }));
     let worker_completion = Arc::clone(&completion);
     let request = WorkRequest {
         work: Box::new(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
-                .unwrap_or_else(|_| Err(crate::NodeError::new(
-                    "ERR_NODE_BACKGROUND_PANIC", "background provider work panicked")));
+                .unwrap_or_else(|_| {
+                    Err(crate::NodeError::new(
+                        "ERR_NODE_BACKGROUND_PANIC",
+                        "background provider work panicked",
+                    ))
+                });
             let waker = {
                 let mut completion = crate::sync::lock(&worker_completion);
                 completion.result = Some(result);
                 completion.waker.take()
             };
-            if let Some(waker) = waker { waker.wake(); }
+            if let Some(waker) = waker {
+                waker.wake();
+            }
         }),
     };
-    runtime()?.work_sender.try_send(request).map_err(|error| crate::NodeError::new(
-        "ERR_NODE_BACKGROUND_WORK_LIMIT",
-        match error {
-            std::sync::mpsc::TrySendError::Full(_) => "background work queue exceeds the finite limit",
-            std::sync::mpsc::TrySendError::Disconnected(_) => "background worker pool is unavailable",
-        },
-    ))?;
+    runtime()?.work_sender.try_send(request).map_err(|error| {
+        crate::NodeError::new(
+            "ERR_NODE_BACKGROUND_WORK_LIMIT",
+            match error {
+                std::sync::mpsc::TrySendError::Full(_) => {
+                    "background work queue exceeds the finite limit"
+                }
+                std::sync::mpsc::TrySendError::Disconnected(_) => {
+                    "background worker pool is unavailable"
+                }
+            },
+        )
+    })?;
     std::future::poll_fn(|context| {
         let mut completion = crate::sync::lock(&completion);
         match completion.result.take() {
             Some(result) => std::task::Poll::Ready(result),
             None => {
-                if !completion.waker.as_ref().is_some_and(|waker| waker.will_wake(context.waker())) {
+                if !completion
+                    .waker
+                    .as_ref()
+                    .is_some_and(|waker| waker.will_wake(context.waker()))
+                {
                     completion.waker = Some(context.waker().clone());
                 }
                 std::task::Poll::Pending
             }
         }
-    }).await
+    })
+    .await
 }
 
 pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
@@ -307,7 +327,9 @@ mod tests {
         use std::task::{Context, Poll, Wake, Waker};
         struct Notification(std::sync::mpsc::SyncSender<()>);
         impl Wake for Notification {
-            fn wake(self: std::sync::Arc<Self>) { let _ = self.0.try_send(()); }
+            fn wake(self: std::sync::Arc<Self>) {
+                let _ = self.0.try_send(());
+            }
         }
         let (release, blocked) = std::sync::mpsc::sync_channel(1);
         let (notify, notified) = std::sync::mpsc::sync_channel(1);
@@ -320,7 +342,10 @@ mod tests {
         assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
         release.send(()).unwrap();
         notified.recv_timeout(Duration::from_secs(3)).unwrap();
-        assert!(matches!(future.as_mut().poll(&mut context), Poll::Ready(Ok(42))));
+        assert!(matches!(
+            future.as_mut().poll(&mut context),
+            Poll::Ready(Ok(42))
+        ));
     }
 
     #[test]

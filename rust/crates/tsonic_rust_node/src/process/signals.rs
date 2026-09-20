@@ -272,7 +272,9 @@ mod native {
             return Ok(false);
         }
         STATE.with(|state| -> NodeResult<()> {
-            for flags in state.borrow().signals.values() { flags.wake.drain()?; }
+            for flags in state.borrow().signals.values() {
+                flags.wake.drain()?;
+            }
             Ok(())
         })?;
         let pending = STATE.with(|state| {

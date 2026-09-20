@@ -47,14 +47,14 @@ impl SpawnSyncOptions {
         if let Some(values) = &self.stdio {
             for (index, value) in values.values().into_iter().enumerate() {
                 let mode = match value {
-                    None | Some(JsStringNumber::Undefined) | Some(JsStringNumber::Null) => {
+                    JsStringNumber::Undefined | JsStringNumber::Null => {
                         if index < 3 {
                             Stdio::Pipe
                         } else {
                             Stdio::Ignore
                         }
                     }
-                    Some(JsStringNumber::String(value)) => {
+                    JsStringNumber::String(value) => {
                         if value == "pipe" {
                             Stdio::Pipe
                         } else if value == "ignore" {
@@ -68,7 +68,7 @@ impl SpawnSyncOptions {
                             ));
                         }
                     }
-                    Some(JsStringNumber::Number(value)) => {
+                    JsStringNumber::Number(value) => {
                         Stdio::Descriptor(
                             integer(value, i32::MAX as f64, "stdio descriptor")? as i32
                         )

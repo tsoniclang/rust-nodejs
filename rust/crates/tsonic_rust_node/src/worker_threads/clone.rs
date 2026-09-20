@@ -524,9 +524,13 @@ impl<'a> Reader<'a> {
             6 => Ok(ClonedSlot::Reference(self.count()?)),
             7 => {
                 let length = self.count()?;
-                self.string_units = self.string_units.checked_add(length)
+                self.string_units = self
+                    .string_units
+                    .checked_add(length)
                     .filter(|total| *total <= MAXIMUM_STRING_UNITS)
-                    .ok_or_else(|| data_clone_error("structured-clone string budget exceeds the finite limit"))?;
+                    .ok_or_else(|| {
+                        data_clone_error("structured-clone string budget exceeds the finite limit")
+                    })?;
                 let text = std::str::from_utf8(self.bytes(length)?)
                     .map_err(|_| data_clone_error("structured-clone native string is not UTF-8"))?;
                 Ok(ClonedSlot::NativeString(text.to_owned()))

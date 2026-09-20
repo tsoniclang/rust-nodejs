@@ -58,7 +58,7 @@ impl Buffer {
         let bytes = values
             .values()
             .into_iter()
-            .map(|value| value.map(to_uint8).unwrap_or(0))
+            .map(to_uint8)
             .collect();
         Self::from_bytes(bytes)
     }
@@ -359,15 +359,7 @@ impl Buffer {
 
     pub fn concat(buffers: &JsArray<Buffer>) -> NodeResult<Buffer> {
         let buffers = buffers.values();
-        if buffers.iter().any(Option::is_none) {
-            return Err(NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "Buffer.concat list must not contain array holes",
-            ));
-        }
-        Ok(Self::concat_dense(
-            &buffers.into_iter().flatten().collect::<Vec<_>>(),
-        ))
+        Ok(Self::concat_dense(&buffers))
     }
 
     pub(crate) fn concat_dense(buffers: &[Buffer]) -> Buffer {
@@ -383,14 +375,8 @@ impl Buffer {
         total_length: usize,
     ) -> NodeResult<Buffer> {
         let buffers = buffers.values();
-        if buffers.iter().any(Option::is_none) {
-            return Err(NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "Buffer.concat list must not contain array holes",
-            ));
-        }
         Ok(Self::concat_dense_with_total_length(
-            &buffers.into_iter().flatten().collect::<Vec<_>>(),
+            &buffers,
             total_length,
         ))
     }

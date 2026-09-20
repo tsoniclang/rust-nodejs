@@ -42,7 +42,10 @@ fn buffer_compare_equals_concat_and_json() {
     let padded = Buffer::concat_with_total_length(&buffers, 5).unwrap();
     assert_eq!(padded.as_bytes(), vec![1, 2, 3, 0, 0]);
     let dense = JsArray::from_dense(vec![one.clone()]);
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dense.set(2, two.clone()))).is_err());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dense.set(2, two.clone())))
+            .is_err()
+    );
     assert_eq!(Buffer::concat(&dense).unwrap().as_bytes(), [1, 2]);
     assert!(one.equals(&Buffer::from_bytes(vec![1, 2])));
     assert_eq!(one.compare(&two), -1);

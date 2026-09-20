@@ -252,10 +252,13 @@ impl MessagePort {
                 PortSignal::Error(error) => {
                     converted = JsValue::String((error).to_owned());
                     ("error", std::slice::from_ref(&converted))
-                },
+                }
                 PortSignal::Close => ("close", &[]),
             };
-            let emission = self.emitter.borrow_mut().prepare_callable_emission(&event_name(event), arguments)?;
+            let emission = self
+                .emitter
+                .borrow_mut()
+                .prepare_callable_emission(&event_name(event), arguments)?;
             emission.invoke(arguments)?;
         }
         Ok(!signals.is_empty())
