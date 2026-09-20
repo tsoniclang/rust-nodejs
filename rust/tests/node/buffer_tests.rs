@@ -7,7 +7,16 @@ fn encoding_labels_preserve_case_insensitive_aliases_and_exact_rejections() {
     use tsonic_rust_node::buffer::{decode_bytes, is_encoding};
 
     for alias in [
-        "utf8", "utf-8", "ascii", "latin1", "binary", "utf16le", "ucs2", "ucs-2", "hex", "base64",
+        "utf8",
+        "utf-8",
+        "ascii",
+        "latin1",
+        "binary",
+        "utf16le",
+        "ucs2",
+        "ucs-2",
+        "hex",
+        "base64",
         "base64url",
     ] {
         assert!(is_encoding(alias));
