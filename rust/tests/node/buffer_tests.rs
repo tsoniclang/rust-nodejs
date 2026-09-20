@@ -3,6 +3,29 @@ use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
 #[test]
+fn encoding_labels_preserve_case_insensitive_aliases_and_exact_rejections() {
+    use tsonic_rust_node::buffer::{decode_bytes, is_encoding};
+
+    for alias in [
+        "utf8", "utf-8", "ascii", "latin1", "binary", "utf16le", "ucs2", "ucs-2", "hex", "base64",
+        "base64url",
+    ] {
+        assert!(is_encoding(alias));
+        let uppercase = alias.to_ascii_uppercase();
+        assert!(is_encoding(&uppercase));
+        assert_eq!(
+            decode_bytes(b"AZ", Some(alias)).unwrap(),
+            decode_bytes(b"AZ", Some(&uppercase)).unwrap()
+        );
+    }
+    for invalid in ["", " utf8", "utf8 ", "UTF32", "ÜTF8"] {
+        assert!(!is_encoding(invalid));
+        assert!(decode_bytes(b"AZ", Some(invalid)).is_err());
+    }
+    assert_eq!(decode_bytes(b"AZ", None).unwrap(), "AZ");
+}
+
+#[test]
 fn owned_utf8_decoding_reuses_bytes_and_borrowed_decoding_preserves_input() {
     use tsonic_rust_node::buffer::decode_bytes;
     let bytes = "café😀".as_bytes().to_vec();

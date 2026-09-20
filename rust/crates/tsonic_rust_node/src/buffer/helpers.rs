@@ -9,16 +9,30 @@ enum Encoding {
 }
 
 fn normalize_encoding(encoding: Option<&str>) -> NodeResult<Encoding> {
-    match encoding.unwrap_or("utf8").to_ascii_lowercase().as_str() {
-        "utf8" | "utf-8" => Ok(Encoding::Utf8),
-        "ascii" | "latin1" | "binary" => Ok(Encoding::Latin1),
-        "utf16le" | "ucs2" | "ucs-2" => Ok(Encoding::Utf16Le),
-        "hex" => Ok(Encoding::Hex),
-        "base64" => Ok(Encoding::Base64),
-        "base64url" => Ok(Encoding::Base64Url),
+    match encoding.unwrap_or("utf8") {
+        value if value.eq_ignore_ascii_case("utf8") || value.eq_ignore_ascii_case("utf-8") => {
+            Ok(Encoding::Utf8)
+        }
+        value
+            if value.eq_ignore_ascii_case("ascii")
+                || value.eq_ignore_ascii_case("latin1")
+                || value.eq_ignore_ascii_case("binary") =>
+        {
+            Ok(Encoding::Latin1)
+        }
+        value
+            if value.eq_ignore_ascii_case("utf16le")
+                || value.eq_ignore_ascii_case("ucs2")
+                || value.eq_ignore_ascii_case("ucs-2") =>
+        {
+            Ok(Encoding::Utf16Le)
+        }
+        value if value.eq_ignore_ascii_case("hex") => Ok(Encoding::Hex),
+        value if value.eq_ignore_ascii_case("base64") => Ok(Encoding::Base64),
+        value if value.eq_ignore_ascii_case("base64url") => Ok(Encoding::Base64Url),
         other => Err(NodeError::new(
             "ERR_UNKNOWN_ENCODING",
-            format!("unknown encoding `{other}`"),
+            format!("unknown encoding `{}`", other.to_ascii_lowercase()),
         )),
     }
 }
