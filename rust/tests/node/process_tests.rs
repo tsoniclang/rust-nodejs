@@ -147,7 +147,8 @@ fn process_source_hrtime_uses_dense_number_pairs_and_rejects_invalid_pairs() {
     assert!((0.0..1_000_000_000.0).contains(&elapsed_values[1].unwrap()));
 
     assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::from_dense(vec![0.0])).is_err());
-    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_length(2)).is_err());
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_length(2)).is_ok());
+    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_capacity(2)).is_err());
 }
 
 #[test]

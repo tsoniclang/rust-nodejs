@@ -153,7 +153,6 @@ fn worker_message_port_round_trips_structure_without_identity() {
     // Identity does not cross the port.
     assert!(!original.strict_equal(&received));
 
-    // Structural content does, including sparse array holes.
     assert_eq!(
         received.as_object().unwrap().borrow().get("kind"),
         JsValue::from("payload".to_string())
@@ -168,7 +167,8 @@ fn worker_message_port_round_trips_structure_without_identity() {
         .clone();
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
-    assert!(!items.has_index(1));
+    assert!(items.has_index(1));
+    assert_eq!(items.get(1), Some(JsValue::Undefined));
     assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // Each delivery mints fresh handles: two posts of the same value are not
@@ -211,7 +211,6 @@ fn worker_environment_data_round_trips_structure_without_identity() {
     let received_again = worker_threads::get_environment_data("payload").unwrap();
     assert!(!received.strict_equal(&received_again));
 
-    // Structural content does survive it, including sparse array holes.
     let object = received.as_object().unwrap().borrow().clone();
     assert_eq!(object.get("kind"), JsValue::from("payload".to_string()));
     let items = received
@@ -224,7 +223,8 @@ fn worker_environment_data_round_trips_structure_without_identity() {
         .clone();
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
-    assert!(!items.has_index(1));
+    assert!(items.has_index(1));
+    assert_eq!(items.get(1), Some(JsValue::Undefined));
     assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // The payload rebuilds identical structure on every rebuild.

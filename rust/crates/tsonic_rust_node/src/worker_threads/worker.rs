@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use rand::rngs::OsRng;
 use rand::RngCore;
-use tsonic_rust_js::{JsArray, JsString, JsValue};
+use tsonic_rust_js::{JsArray, JsValue};
 use tsonic_rust_runtime::Callable;
 
 use crate::error::{NodeError, NodeResult};

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use tsonic_rust_js::{JsString, JsValue};
+use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::Callable;
 
 use crate::error::{NodeError, NodeResult};

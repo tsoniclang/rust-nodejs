@@ -127,7 +127,7 @@ mod native {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, OnceLock};
     use std::thread::ThreadId;
-    use tsonic_rust_js::{JsString, JsValue};
+    use tsonic_rust_js::JsValue;
 
     static OWNER: OnceLock<ThreadId> = OnceLock::new();
     thread_local! {

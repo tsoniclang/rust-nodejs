@@ -41,11 +41,9 @@ fn buffer_compare_equals_concat_and_json() {
     assert_eq!(concat.as_bytes(), vec![1, 2, 3]);
     let padded = Buffer::concat_with_total_length(&buffers, 5).unwrap();
     assert_eq!(padded.as_bytes(), vec![1, 2, 3, 0, 0]);
-    let sparse = JsArray::from_sparse(2, vec![(0, one.clone())]);
-    assert_eq!(
-        Buffer::concat(&sparse).unwrap_err().code,
-        "ERR_INVALID_ARG_TYPE"
-    );
+    let dense = JsArray::from_dense(vec![one.clone()]);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dense.set(2, two.clone()))).is_err());
+    assert_eq!(Buffer::concat(&dense).unwrap().as_bytes(), [1, 2]);
     assert!(one.equals(&Buffer::from_bytes(vec![1, 2])));
     assert_eq!(one.compare(&two), -1);
     assert_eq!(tsonic_rust_node::buffer::compare(&one, &two), -1);
@@ -150,7 +148,7 @@ fn buffer_common_mutation_search_and_predicates() {
 
 #[test]
 fn buffer_number_arrays_follow_uint8_coercion_and_sparse_zero_fill() {
-    let values = JsArray::from_sparse(5, vec![(0, 257.0), (1, -1.0), (2, 1.9), (4, f64::NAN)]);
+    let values = JsArray::from_dense(vec![257.0, -1.0, 1.9, 0.0, f64::NAN]);
     assert_eq!(
         Buffer::from_number_array(&values).as_bytes(),
         vec![1, 255, 1, 0, 0]

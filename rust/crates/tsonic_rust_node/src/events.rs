@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use tsonic_rust_js::{JsArray, JsString, JsSymbol, JsValue};
+use tsonic_rust_js::{JsArray, JsSymbol, JsValue};
 use tsonic_rust_runtime::Callable;
 
 use crate::async_hooks::{AsyncResource, AsyncResourceOptions};
