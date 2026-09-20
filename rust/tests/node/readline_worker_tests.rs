@@ -183,14 +183,14 @@ fn worker_structured_clone_preserves_exact_string_keys_and_values() {
     let key = JsString::from_units(vec![0xd800]);
     let value = JsString::from_units(vec![0xdc00]);
     let mut object = JsObject::new();
-    object.set_exact(key.clone(), JsValue::String(value.clone()));
+    object.set_exact(key.clone(), JsValue::Utf16String(value.clone()));
 
     let cloned = worker_threads::StructuredCloneValue::from_js(&JsValue::object(object))
         .unwrap()
         .to_js();
     let entries = cloned.as_object().unwrap().borrow().entries_exact();
 
-    assert_eq!(entries, vec![(key, JsValue::String(value))]);
+    assert_eq!(entries, vec![(key, JsValue::Utf16String(value))]);
 }
 
 #[test]

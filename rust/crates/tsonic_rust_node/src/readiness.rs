@@ -117,3 +117,35 @@ impl Drop for SignalWake {
 fn io_error(error: std::io::Error) -> NodeError {
     NodeError::new("ERR_NODE_READINESS", error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn notifications_before_and_during_wait_are_not_lost() {
+        let wake = super::waker().unwrap();
+        wake.wake().unwrap();
+        let before = Instant::now();
+        super::wait(Some(Duration::from_secs(3))).unwrap();
+        assert!(before.elapsed() < Duration::from_secs(1));
+        let worker = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            wake.wake().unwrap();
+        });
+        let before = Instant::now();
+        super::wait(Some(Duration::from_secs(3))).unwrap();
+        worker.join().unwrap();
+        assert!(before.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn listener_readiness_reaches_the_native_acceptor() {
+        let listener = super::Listener::new(std::net::TcpListener::bind("127.0.0.1:0").unwrap()).unwrap();
+        let address = listener.local_addr().unwrap();
+        let worker = std::thread::spawn(move || std::net::TcpStream::connect(address).unwrap());
+        super::wait(Some(Duration::from_secs(3))).unwrap();
+        assert!(listener.accept().is_ok());
+        drop(worker.join().unwrap());
+    }
+}

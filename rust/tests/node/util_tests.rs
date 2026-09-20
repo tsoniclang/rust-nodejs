@@ -197,7 +197,7 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
 
 #[test]
 fn util_format_rejects_unrepresentable_exact_strings_at_the_native_boundary() {
-    let exact = JsValue::String(JsString::from_units(vec![0xd800]));
+    let exact = JsValue::Utf16String(JsString::from_units(vec![0xd800]));
 
     let error = util::format("%s", std::slice::from_ref(&exact)).unwrap_err();
     assert_eq!(error.code(), "ERR_INVALID_ARG_VALUE");

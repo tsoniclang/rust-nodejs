@@ -302,6 +302,28 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn asynchronous_work_does_not_block_the_polling_thread() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Wake, Waker};
+        struct Notification(std::sync::mpsc::SyncSender<()>);
+        impl Wake for Notification {
+            fn wake(self: std::sync::Arc<Self>) { let _ = self.0.try_send(()); }
+        }
+        let (release, blocked) = std::sync::mpsc::sync_channel(1);
+        let (notify, notified) = std::sync::mpsc::sync_channel(1);
+        let wake = Waker::from(std::sync::Arc::new(Notification(notify)));
+        let mut context = Context::from_waker(&wake);
+        let mut future = std::pin::pin!(super::run(move || {
+            blocked.recv_timeout(Duration::from_secs(3)).unwrap();
+            Ok(42)
+        }));
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+        release.send(()).unwrap();
+        notified.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Ready(Ok(42))));
+    }
+
+    #[test]
     fn completions_return_to_the_exact_source_thread() {
         let threads = [11_u32, 29_u32].map(|expected| {
             std::thread::spawn(move || {
