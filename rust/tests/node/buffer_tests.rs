@@ -17,8 +17,10 @@ fn owned_utf8_decoding_reuses_bytes_and_borrowed_decoding_preserves_input() {
     assert!(decode_bytes(vec![0xff], Some("utf8")).is_err());
     for encoding in ["hex", "base64", "base64url", "latin1", "utf16le"] {
         let bytes = vec![65, 0, 66, 0];
-        assert_eq!(decode_bytes(bytes.clone(), Some(encoding)).unwrap(),
-            decode_bytes(bytes.as_slice(), Some(encoding)).unwrap());
+        assert_eq!(
+            decode_bytes(bytes.clone(), Some(encoding)).unwrap(),
+            decode_bytes(bytes.as_slice(), Some(encoding)).unwrap()
+        );
     }
 }
 

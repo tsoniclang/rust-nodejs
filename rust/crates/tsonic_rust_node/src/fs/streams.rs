@@ -161,12 +161,15 @@ impl ReadStream {
         let start = optional_non_negative_integer(options.start, "start")?.unwrap_or(0);
         let end = optional_non_negative_integer(options.end, "end")?;
         if end.is_some_and(|end| end < start) {
-            return Err(NodeError::new("ERR_OUT_OF_RANGE", "end must be greater than or equal to start"));
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "end must be greater than or equal to start",
+            ));
         }
         file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
         let remaining = end.map(|end| end - start + 1);
-        let chunk_size = optional_positive_usize(options.high_water_mark, "highWaterMark")?
-            .unwrap_or(64 * 1024);
+        let chunk_size =
+            optional_positive_usize(options.high_water_mark, "highWaterMark")?.unwrap_or(64 * 1024);
         Ok(Self {
             path,
             pending: false,
@@ -341,7 +344,10 @@ impl WriteStream {
 
     pub fn write(&mut self, chunk: Buffer) -> NodeResult<bool> {
         if self.closed {
-            return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "write stream is closed"));
+            return Err(NodeError::new(
+                "ERR_STREAM_WRITE_AFTER_END",
+                "write stream is closed",
+            ));
         }
         let len = chunk.len();
         let file = self
@@ -460,39 +466,73 @@ pub type CreateWriteStreamOptions = WriteStreamOptions;
 
 fn configure_write_stream_open(open: &mut OpenOptions, flags: &str) -> NodeResult<()> {
     match flags {
-        "w" => { open.create(true).write(true).truncate(true); }
-        "wx" => { open.create_new(true).write(true); }
-        "w+" => { open.create(true).read(true).write(true).truncate(true); }
-        "wx+" => { open.create_new(true).read(true).write(true); }
-        "a" | "as" => { open.create(true).append(true); }
-        "ax" => { open.create_new(true).append(true); }
-        "a+" | "as+" => { open.create(true).read(true).append(true); }
-        "ax+" => { open.create_new(true).read(true).append(true); }
+        "w" => {
+            open.create(true).write(true).truncate(true);
+        }
+        "wx" => {
+            open.create_new(true).write(true);
+        }
+        "w+" => {
+            open.create(true).read(true).write(true).truncate(true);
+        }
+        "wx+" => {
+            open.create_new(true).read(true).write(true);
+        }
+        "a" | "as" => {
+            open.create(true).append(true);
+        }
+        "ax" => {
+            open.create_new(true).append(true);
+        }
+        "a+" | "as+" => {
+            open.create(true).read(true).append(true);
+        }
+        "ax+" => {
+            open.create_new(true).read(true).append(true);
+        }
         other => return Err(invalid_stream_option("flags", other)),
     }
     Ok(())
 }
 
 fn optional_non_negative_integer(value: Option<f64>, name: &str) -> NodeResult<Option<u64>> {
-    value.map(|value| {
-        if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
-            return Err(NodeError::new("ERR_OUT_OF_RANGE", format!("{name} must be a non-negative integer")));
-        }
-        Ok(value as u64)
-    }).transpose()
+    value
+        .map(|value| {
+            if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u64::MAX as f64
+            {
+                return Err(NodeError::new(
+                    "ERR_OUT_OF_RANGE",
+                    format!("{name} must be a non-negative integer"),
+                ));
+            }
+            Ok(value as u64)
+        })
+        .transpose()
 }
 
 fn optional_positive_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
-    value.map(|value| {
-        if !value.is_finite() || value <= 0.0 || value.fract() != 0.0 || value > usize::MAX as f64 {
-            return Err(NodeError::new("ERR_OUT_OF_RANGE", format!("{name} must be a positive integer")));
-        }
-        Ok(value as usize)
-    }).transpose()
+    value
+        .map(|value| {
+            if !value.is_finite()
+                || value <= 0.0
+                || value.fract() != 0.0
+                || value > usize::MAX as f64
+            {
+                return Err(NodeError::new(
+                    "ERR_OUT_OF_RANGE",
+                    format!("{name} must be a positive integer"),
+                ));
+            }
+            Ok(value as usize)
+        })
+        .transpose()
 }
 
 fn invalid_stream_option(name: &str, value: &str) -> NodeError {
-    NodeError::new("ERR_INVALID_ARG_VALUE", format!("unsupported {name} value '{value}'"))
+    NodeError::new(
+        "ERR_INVALID_ARG_VALUE",
+        format!("unsupported {name} value '{value}'"),
+    )
 }
 
 #[cfg(unix)]
@@ -501,7 +541,10 @@ fn apply_open_mode(open: &mut OpenOptions, mode: f64) -> NodeResult<()> {
     let mode = optional_non_negative_integer(Some(mode), "mode")?
         .ok_or_else(|| NodeError::new("ERR_OUT_OF_RANGE", "mode is required"))?;
     if mode > 0o7777 {
-        return Err(NodeError::new("ERR_OUT_OF_RANGE", "mode must fit a Unix permission mask"));
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "mode must fit a Unix permission mask",
+        ));
     }
     open.mode(mode as u32);
     Ok(())
