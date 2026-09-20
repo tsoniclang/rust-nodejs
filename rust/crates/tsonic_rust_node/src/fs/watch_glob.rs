@@ -122,8 +122,10 @@ pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWat
     use notify::Watcher;
 
     let (sender, receiver) = std::sync::mpsc::channel();
+    let wake = crate::readiness::waker()?;
     let mut watcher = notify::recommended_watcher(move |event| {
         let _ = sender.send(event);
+        let _ = wake.wake();
     })
     .map_err(|error| NodeError::new("EIO", error.to_string()))?;
     watcher
@@ -394,6 +396,25 @@ fn stats_for_watch_path(path: &str) -> Stats {
     fs::metadata(path)
         .map(|metadata| stats_from_metadata(&metadata))
         .unwrap_or_else(|_| empty_watch_stats())
+}
+
+pub(crate) fn next_runtime_watcher_delay() -> Option<std::time::Duration> {
+    RUNTIME_WATCHERS.with(|watchers| {
+        watchers
+            .borrow()
+            .values()
+            .filter_map(|watcher| {
+                let state = watcher.state.borrow();
+                if state.closed {
+                    None
+                } else {
+                    state
+                        .stat_interval
+                        .map(|interval| interval.saturating_sub(state.last_stat_check.elapsed()))
+                }
+            })
+            .min()
+    })
 }
 
 fn empty_watch_stats() -> Stats {

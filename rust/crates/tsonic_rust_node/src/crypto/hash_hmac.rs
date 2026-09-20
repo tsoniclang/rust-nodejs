@@ -28,9 +28,7 @@ pub struct Hash {
 
 #[derive(Debug, Clone)]
 struct HashState {
-    algorithm: DigestAlgorithm,
-    bytes: Vec<u8>,
-    finalized: bool,
+    digest: Option<IncrementalDigest>,
 }
 
 impl Clone for Hash {
@@ -55,9 +53,7 @@ impl Hash {
         let algorithm = parse_algorithm(algorithm)?;
         Ok(Self {
             state: Rc::new(RefCell::new(HashState {
-                algorithm,
-                bytes: Vec::new(),
-                finalized: false,
+                digest: Some(IncrementalDigest::new(algorithm)),
             })),
         })
     }
@@ -66,7 +62,7 @@ impl Hash {
         let state = self.state.try_borrow_mut().map_err(|_| {
             NodeError::new("ERR_CRYPTO_INVALID_STATE", "hash state is already borrowed")
         })?;
-        if state.finalized {
+        if state.digest.is_none() {
             return Err(NodeError::new(
                 "ERR_CRYPTO_HASH_FINALIZED",
                 "hash state has already been finalized",
@@ -76,7 +72,11 @@ impl Hash {
     }
 
     pub fn update_bytes(&mut self, bytes: &[u8]) -> NodeResult<&mut Self> {
-        self.writable_state()?.bytes.extend_from_slice(bytes);
+        self.writable_state()?
+            .digest
+            .as_mut()
+            .expect("writable digest")
+            .update(bytes);
         Ok(self)
     }
 
@@ -88,7 +88,7 @@ impl Hash {
         let state = self.state.try_borrow().map_err(|_| {
             NodeError::new("ERR_CRYPTO_INVALID_STATE", "hash state is already borrowed")
         })?;
-        if state.finalized {
+        if state.digest.is_none() {
             return Err(NodeError::new(
                 "ERR_CRYPTO_HASH_FINALIZED",
                 "hash state has already been finalized",
@@ -100,6 +100,11 @@ impl Hash {
     }
 
     pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<&mut Self> {
+        if encoding.is_none_or(|encoding| {
+            encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")
+        }) {
+            return self.update_bytes(value.as_bytes());
+        }
         let bytes = crate::buffer::encode_string(value, encoding)?;
         self.update_bytes(&bytes)
     }
@@ -114,17 +119,17 @@ impl Hash {
     }
 
     pub fn update_buffer_owned(&mut self, value: &Buffer) -> NodeResult<Self> {
-        self.update_bytes(&value.as_bytes())?;
+        value.with_bytes(|bytes| self.update_bytes(bytes).map(|_| ()))?;
         Ok(self.clone())
     }
 
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
-        let (algorithm, input) = {
-            let mut state = self.writable_state()?;
-            state.finalized = true;
-            (state.algorithm, state.bytes.clone())
-        };
-        let bytes = digest_bytes(algorithm, &input);
+        let digest = self
+            .writable_state()?
+            .digest
+            .take()
+            .expect("writable digest");
+        let bytes = digest.finish();
         match encoding {
             None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
             Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),
@@ -174,22 +179,18 @@ pub fn hash_with_options(
 
 #[derive(Debug, Clone)]
 pub struct Hmac {
-    algorithm: DigestAlgorithm,
-    key: Vec<u8>,
-    bytes: Vec<u8>,
+    digest: IncrementalHmac,
 }
 
 impl Hmac {
     pub fn create(algorithm: &str, key: &[u8]) -> NodeResult<Self> {
         Ok(Self {
-            algorithm: parse_algorithm(algorithm)?,
-            key: key.to_vec(),
-            bytes: Vec::new(),
+            digest: IncrementalHmac::new(parse_algorithm(algorithm)?, key)?,
         })
     }
 
     pub fn update_bytes(&mut self, bytes: &[u8]) {
-        self.bytes.extend_from_slice(bytes);
+        self.digest.update(bytes);
     }
 
     pub fn update(&mut self, bytes: &[u8]) -> &mut Self {
@@ -198,8 +199,13 @@ impl Hmac {
     }
 
     pub fn update_string(&mut self, value: &str, encoding: Option<&str>) -> NodeResult<()> {
-        self.bytes
-            .extend_from_slice(&crate::buffer::encode_string(value, encoding)?);
+        if encoding.is_none_or(|encoding| {
+            encoding.eq_ignore_ascii_case("utf8") || encoding.eq_ignore_ascii_case("utf-8")
+        }) {
+            self.update_bytes(value.as_bytes());
+        } else {
+            self.update_bytes(&crate::buffer::encode_string(value, encoding)?);
+        }
         Ok(())
     }
 
@@ -208,7 +214,7 @@ impl Hmac {
     }
 
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
-        hmac_digest_algorithm(self.algorithm, &self.key, &self.bytes, encoding)
+        encode_digest(self.digest.finish(), encoding)
     }
 
     pub fn digest_string(self, encoding: &str) -> NodeResult<String> {
@@ -256,26 +262,12 @@ fn hmac_digest_algorithm(
     data: &[u8],
     encoding: Option<&str>,
 ) -> NodeResult<DigestResult> {
-    let block_size = hmac_block_size(algorithm);
-    let mut key_block = vec![0_u8; block_size];
-    let normalized_key = if key.len() > block_size {
-        digest_bytes(algorithm, key)
-    } else {
-        key.to_vec()
-    };
-    key_block[..normalized_key.len()].copy_from_slice(&normalized_key);
+    let mut digest = IncrementalHmac::new(algorithm, key)?;
+    digest.update(data);
+    encode_digest(digest.finish(), encoding)
+}
 
-    let mut outer = vec![0x5c_u8; block_size];
-    let mut inner = vec![0x36_u8; block_size];
-    for index in 0..block_size {
-        outer[index] ^= key_block[index];
-        inner[index] ^= key_block[index];
-    }
-    inner.extend_from_slice(data);
-    let inner_hash = digest_bytes(algorithm, &inner);
-    outer.extend_from_slice(&inner_hash);
-    let bytes = digest_bytes(algorithm, &outer);
-
+fn encode_digest(bytes: Vec<u8>, encoding: Option<&str>) -> NodeResult<DigestResult> {
     match encoding {
         None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
         Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),

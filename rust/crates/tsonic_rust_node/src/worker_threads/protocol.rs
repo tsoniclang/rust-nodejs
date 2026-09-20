@@ -63,6 +63,7 @@ impl WorkerTransport {
         let closed = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = sync_channel(MAXIMUM_PENDING_FRAMES);
         let reader_closed = Arc::clone(&closed);
+        let wake = crate::readiness::waker()?;
         thread::Builder::new()
             .name("tsonic-node-worker-transport".to_string())
             .spawn(move || {
@@ -71,7 +72,9 @@ impl WorkerTransport {
                     match read_frame(&mut reader) {
                         Ok(frame) => {
                             let close = frame.kind == WorkerFrameKind::Close;
-                            if sender.send(TransportEvent::Frame(frame)).is_err() || close {
+                            let sent = sender.send(TransportEvent::Frame(frame));
+                            let _ = wake.wake();
+                            if sent.is_err() || close {
                                 break;
                             }
                         }
@@ -84,6 +87,7 @@ impl WorkerTransport {
                     }
                 }
                 let _ = sender.send(TransportEvent::End);
+                let _ = wake.wake();
             })
             .map_err(io_error)?;
         Ok((Self { writer, closed }, receiver))

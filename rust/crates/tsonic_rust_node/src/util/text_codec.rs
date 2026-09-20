@@ -132,7 +132,7 @@ pub mod types {
     }
 
     pub fn is_string(value: &JsValue) -> bool {
-        matches!(value, JsValue::String(_))
+        matches!(value, JsValue::String(_) | JsValue::Utf16String(_))
     }
 
     pub fn is_object(value: &JsValue) -> bool {
@@ -204,7 +204,7 @@ pub mod types {
     }
 
     pub fn is_string_object(value: &JsValue) -> bool {
-        matches!(value, JsValue::String(_))
+        matches!(value, JsValue::String(_) | JsValue::Utf16String(_))
     }
 
     pub fn is_symbol_object(_value: &JsValue) -> bool {

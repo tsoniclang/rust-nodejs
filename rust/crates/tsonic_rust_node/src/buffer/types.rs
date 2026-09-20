@@ -1,7 +1,7 @@
 use tsonic_rust_js::object::JsObject;
 use tsonic_rust_js::value::JsValue;
 pub use tsonic_rust_js::web::{Blob, BlobPart, File};
-use tsonic_rust_js::{JsArray, JsString};
+use tsonic_rust_js::JsArray;
 use tsonic_rust_runtime::{ObjectIdentity, ObjectIdentityCarrier};
 
 use crate::error::{NodeError, NodeResult};

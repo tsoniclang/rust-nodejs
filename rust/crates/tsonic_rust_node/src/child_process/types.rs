@@ -118,21 +118,7 @@ impl SpawnSyncArguments for tsonic_rust_js::JsArray<String> {
         &self,
         operation: impl FnOnce(&[&str]) -> Result,
     ) -> NodeResult<Result> {
-        let owned_arguments = self
-            .values()
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| {
-                value.ok_or_else(|| {
-                    NodeError::new(
-                        "ERR_INVALID_ARG_TYPE",
-                        format!(
-                            "spawnSync argument array contains an empty element at index {index}"
-                        ),
-                    )
-                })
-            })
-            .collect::<NodeResult<Vec<_>>>()?;
+        let owned_arguments = self.values();
         let borrowed_arguments = owned_arguments
             .iter()
             .map(String::as_str)

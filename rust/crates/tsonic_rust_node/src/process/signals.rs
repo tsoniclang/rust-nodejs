@@ -127,7 +127,7 @@ mod native {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, OnceLock};
     use std::thread::ThreadId;
-    use tsonic_rust_js::{JsString, JsValue};
+    use tsonic_rust_js::JsValue;
 
     static OWNER: OnceLock<ThreadId> = OnceLock::new();
     thread_local! {
@@ -135,6 +135,7 @@ mod native {
     }
 
     struct SignalFlags {
+        wake: crate::readiness::SignalWake,
         pending: Arc<AtomicBool>,
         default_action: Arc<AtomicBool>,
         default_enabled: bool,
@@ -175,7 +176,7 @@ mod native {
     }
 
     fn event(name: &str) -> JsValue {
-        JsValue::String(JsString::from_utf8(name))
+        JsValue::String((name).to_owned())
     }
 
     fn registration_error(error: std::io::Error) -> NodeError {
@@ -203,6 +204,7 @@ mod native {
             if let std::collections::btree_map::Entry::Vacant(entry) = state.signals.entry(signal) {
                 let default_enabled = signal != nix::libc::SIGPIPE;
                 let flags = SignalFlags {
+                    wake: crate::readiness::SignalWake::new(signal)?,
                     pending: Arc::new(AtomicBool::new(false)),
                     default_action: Arc::new(AtomicBool::new(default_enabled)),
                     default_enabled,
@@ -269,6 +271,12 @@ mod native {
         {
             return Ok(false);
         }
+        STATE.with(|state| -> NodeResult<()> {
+            for flags in state.borrow().signals.values() {
+                flags.wake.drain()?;
+            }
+            Ok(())
+        })?;
         let pending = STATE.with(|state| {
             state
                 .borrow()
@@ -297,7 +305,7 @@ mod native {
                 }
                 Ok(emission)
             })?;
-            dispatched |= emission.invoke()?;
+            dispatched |= emission.invoke(&[])?;
         }
         Ok(dispatched)
     }

@@ -785,10 +785,12 @@ fn child_process_file_spawn_is_explicit_and_shell_free() {
     let native_arguments = vec!["--list".to_string()];
     let native = child_process::spawn_sync_result(&current, &native_arguments).unwrap();
     assert_eq!(native.status, Some(0));
-    let sparse_arguments = tsonic_rust_js::JsArray::from_sparse(2, vec![(0, "--list".to_string())]);
-    let sparse_error = child_process::spawn_sync_result(&current, &sparse_arguments).unwrap_err();
-    assert_eq!(sparse_error.code(), "ERR_INVALID_ARG_TYPE");
-    assert!(sparse_error.message().contains("empty element at index 1"));
+    let arguments = tsonic_rust_js::JsArray::from_dense(vec!["--list".to_string()]);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || arguments.set(2, "gap".to_string())
+    ))
+    .is_err());
+    assert_eq!(arguments.len(), 1);
     assert!(child_process::exec_file_sync_string(&current, &["--list"])
         .unwrap()
         .contains("network_process_tests"));

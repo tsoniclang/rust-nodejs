@@ -38,9 +38,7 @@ where
 }
 
 struct WorkRequest {
-    id: u64,
     work: BackgroundWork,
-    completion_sender: SyncSender<WorkCompletion>,
 }
 
 struct WorkCompletion {
@@ -87,6 +85,7 @@ where
     T: Send + 'static,
 {
     let runtime = runtime()?;
+    let wake = crate::readiness::waker()?;
     let id = NEXT_WORK_ID.fetch_add(1, Ordering::Relaxed);
     if id == u64::MAX {
         return Err(crate::NodeError::new(
@@ -114,8 +113,6 @@ where
     })?;
 
     let request = WorkRequest {
-        id,
-        completion_sender,
         work: Box::new(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
                 .unwrap_or_else(|_| {
@@ -125,6 +122,8 @@ where
                     ))
                 });
             let _ = result_sender.send(result);
+            let _ = completion_sender.send(WorkCompletion { id });
+            let _ = wake.wake();
         }),
     };
     match runtime.work_sender.try_send(request) {
@@ -151,6 +150,72 @@ where
             ))
         }
     }
+}
+
+pub(crate) async fn run<T>(
+    work: impl FnOnce() -> crate::NodeResult<T> + Send + 'static,
+) -> crate::NodeResult<T>
+where
+    T: Send + 'static,
+{
+    struct Completion<T> {
+        result: Option<crate::NodeResult<T>>,
+        waker: Option<std::task::Waker>,
+    }
+    let completion = Arc::new(Mutex::new(Completion {
+        result: None,
+        waker: None,
+    }));
+    let worker_completion = Arc::clone(&completion);
+    let request = WorkRequest {
+        work: Box::new(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
+                .unwrap_or_else(|_| {
+                    Err(crate::NodeError::new(
+                        "ERR_NODE_BACKGROUND_PANIC",
+                        "background provider work panicked",
+                    ))
+                });
+            let waker = {
+                let mut completion = crate::sync::lock(&worker_completion);
+                completion.result = Some(result);
+                completion.waker.take()
+            };
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }),
+    };
+    runtime()?.work_sender.try_send(request).map_err(|error| {
+        crate::NodeError::new(
+            "ERR_NODE_BACKGROUND_WORK_LIMIT",
+            match error {
+                std::sync::mpsc::TrySendError::Full(_) => {
+                    "background work queue exceeds the finite limit"
+                }
+                std::sync::mpsc::TrySendError::Disconnected(_) => {
+                    "background worker pool is unavailable"
+                }
+            },
+        )
+    })?;
+    std::future::poll_fn(|context| {
+        let mut completion = crate::sync::lock(&completion);
+        match completion.result.take() {
+            Some(result) => std::task::Poll::Ready(result),
+            None => {
+                if !completion
+                    .waker
+                    .as_ref()
+                    .is_some_and(|waker| waker.will_wake(context.waker()))
+                {
+                    completion.waker = Some(context.waker().clone());
+                }
+                std::task::Poll::Pending
+            }
+        }
+    })
+    .await
 }
 
 pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
@@ -247,9 +312,6 @@ fn worker_loop(work_receiver: Arc<Mutex<std::sync::mpsc::Receiver<WorkRequest>>>
             return;
         };
         (request.work)();
-        let _ = request
-            .completion_sender
-            .send(WorkCompletion { id: request.id });
     }
 }
 
@@ -258,6 +320,33 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn asynchronous_work_does_not_block_the_polling_thread() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Wake, Waker};
+        struct Notification(std::sync::mpsc::SyncSender<()>);
+        impl Wake for Notification {
+            fn wake(self: std::sync::Arc<Self>) {
+                let _ = self.0.try_send(());
+            }
+        }
+        let (release, blocked) = std::sync::mpsc::sync_channel(1);
+        let (notify, notified) = std::sync::mpsc::sync_channel(1);
+        let wake = Waker::from(std::sync::Arc::new(Notification(notify)));
+        let mut context = Context::from_waker(&wake);
+        let mut future = std::pin::pin!(super::run(move || {
+            blocked.recv_timeout(Duration::from_secs(3)).unwrap();
+            Ok(42)
+        }));
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+        release.send(()).unwrap();
+        notified.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(matches!(
+            future.as_mut().poll(&mut context),
+            Poll::Ready(Ok(42))
+        ));
+    }
 
     #[test]
     fn completions_return_to_the_exact_source_thread() {

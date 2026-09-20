@@ -5,7 +5,6 @@ use std::rc::Rc;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, ToSql};
 use tsonic_rust_js::value::JsValue;
-use tsonic_rust_js::JsString;
 
 use crate::error::{NodeError, NodeResult};
 

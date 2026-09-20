@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 const MAX_PENDING_RUNTIME_TASKS: usize = 1 << 20;
 
 thread_local! {
@@ -87,12 +85,13 @@ pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
             let timer_delay = [
                 crate::timers::next_runtime_timer_delay(),
                 tsonic_rust_js::timers::next_timer_delay(),
+                crate::fs::next_runtime_watcher_delay(),
+                crate::worker_threads::next_runtime_reap_delay(),
             ]
             .into_iter()
             .flatten()
-            .min()
-            .unwrap_or(Duration::from_millis(10));
-            std::thread::sleep(timer_delay.min(Duration::from_millis(10)));
+            .min();
+            crate::readiness::wait(timer_delay)?;
         }
     }
 }

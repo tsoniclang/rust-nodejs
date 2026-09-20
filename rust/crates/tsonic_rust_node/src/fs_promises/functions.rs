@@ -378,48 +378,63 @@ pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeRes
 }
 
 pub async fn read_file_string_async(path: &str, encoding: &str) -> NodeResult<String> {
-    read_file_string(path, encoding)
+    let path = path.to_owned();
+    let encoding = encoding.to_owned();
+    crate::background::run(move || read_file_string(&path, &encoding)).await
 }
 
 pub async fn write_file_string_async(path: &str, value: &str, encoding: &str) -> NodeResult<()> {
-    write_file_string(path, value, encoding)
+    let path = path.to_owned();
+    let value = value.to_owned();
+    let encoding = encoding.to_owned();
+    crate::background::run(move || write_file_string(&path, &value, &encoding)).await
 }
 
 pub async fn readdir_async(path: &str) -> NodeResult<JsArray<String>> {
-    readdir(path)
+    let path = path.to_owned();
+    crate::background::run(move || fs::readdir_native(&path))
+        .await
+        .map(JsArray::from_dense)
 }
 
 pub async fn stat_async(path: &str) -> NodeResult<Stats> {
-    stat(path)
+    let path = path.to_owned();
+    crate::background::run(move || stat(&path)).await
 }
 
 pub async fn mkdir_async(path: &str) -> NodeResult<()> {
-    mkdir(path)
+    let path = path.to_owned();
+    crate::background::run(move || mkdir(&path)).await
 }
 
-pub async fn mkdir_with_options_async(
-    path: &str,
-    options: MakeDirectoryOptions,
-) -> NodeResult<()> {
-    mkdir_with_options(path, options)
+pub async fn mkdir_with_options_async(path: &str, options: MakeDirectoryOptions) -> NodeResult<()> {
+    let path = path.to_owned();
+    crate::background::run(move || mkdir_with_options(&path, options)).await
 }
 
 pub async fn rm_async(path: &str) -> NodeResult<()> {
-    rm(path)
+    let path = path.to_owned();
+    crate::background::run(move || rm(&path)).await
 }
 
 pub async fn rm_with_options_async(path: &str, options: RmOptions) -> NodeResult<()> {
-    rm_with_options(path, options)
+    let path = path.to_owned();
+    crate::background::run(move || rm_with_options(&path, options)).await
 }
 
 pub async fn unlink_async(path: &str) -> NodeResult<()> {
-    unlink(path)
+    let path = path.to_owned();
+    crate::background::run(move || unlink(&path)).await
 }
 
 pub async fn copy_file_async(from: &str, to: &str) -> NodeResult<()> {
-    copy_file(from, to)
+    let from = from.to_owned();
+    let to = to.to_owned();
+    crate::background::run(move || copy_file(&from, &to)).await
 }
 
 pub async fn rename_async(from: &str, to: &str) -> NodeResult<()> {
-    rename(from, to)
+    let from = from.to_owned();
+    let to = to.to_owned();
+    crate::background::run(move || rename(&from, &to)).await
 }

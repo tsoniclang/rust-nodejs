@@ -27,7 +27,7 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
     );
     assert_eq!(
         fs::readdir_sync_buffer_path(&root_buffer).unwrap().values(),
-        vec![Some("nested".to_owned())]
+        vec!["nested".to_owned()]
     );
     assert_eq!(
         fs::readdir_sync_buffer_path(&Buffer::from_bytes(vec![0]))
@@ -144,7 +144,7 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
             fs::realpath_sync_buffer_path_bytes(&path_buffer(&root.join("link")), encoding.clone())
                 .unwrap();
         assert_eq!(resolved_link.as_bytes(), resolved.as_bytes());
-        let entries: Vec<_> = entries.values().into_iter().map(Option::unwrap).collect();
+        let entries = entries.values();
         assert!(entries
             .iter()
             .any(|entry| entry.name.as_bytes() == [b'f', 0xff] && entry.is_file()));

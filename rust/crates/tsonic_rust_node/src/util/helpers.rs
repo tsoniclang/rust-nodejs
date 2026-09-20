@@ -32,7 +32,8 @@ fn set_parsed_arg(result: &mut ParseArgsResult, name: &str, value: String, multi
 // rendered through inspection (which matches String() for primitives).
 fn format_string(value: &JsValue) -> crate::error::NodeResult<String> {
     match value {
-        JsValue::String(text) => text.to_utf8().map_err(|_| {
+        JsValue::String(text) => Ok(text.clone()),
+        JsValue::Utf16String(text) => text.to_utf8().map_err(|_| {
             crate::error::NodeError::new(
                 "ERR_INVALID_ARG_VALUE",
                 "JavaScript string cannot be represented by the native Rust string carrier",
@@ -55,19 +56,18 @@ fn format_number(value: &JsValue) -> String {
             }
         }
         JsValue::Null => 0.0,
-        JsValue::String(text) => {
-            match text.to_utf8() {
-                Ok(text) => {
-                    let trimmed = text.trim();
-                    if trimmed.is_empty() {
-                        0.0
-                    } else {
-                        trimmed.parse::<f64>().unwrap_or(f64::NAN)
-                    }
+        JsValue::String(_) => tsonic_rust_js::globals::to_number(value),
+        JsValue::Utf16String(text) => match text.to_utf8() {
+            Ok(text) => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    0.0
+                } else {
+                    trimmed.parse::<f64>().unwrap_or(f64::NAN)
                 }
-                Err(_) => f64::NAN,
             }
-        }
+            Err(_) => f64::NAN,
+        },
         _ => f64::NAN,
     };
     JsValue::Number(number).inspect()

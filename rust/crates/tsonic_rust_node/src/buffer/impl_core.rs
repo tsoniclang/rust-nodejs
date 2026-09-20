@@ -55,11 +55,7 @@ impl Buffer {
     }
 
     pub fn from_number_array(values: &JsArray<f64>) -> Self {
-        let bytes = values
-            .values()
-            .into_iter()
-            .map(|value| value.map(to_uint8).unwrap_or(0))
-            .collect();
+        let bytes = values.values().into_iter().map(to_uint8).collect();
         Self::from_bytes(bytes)
     }
 
@@ -81,6 +77,9 @@ impl Buffer {
     }
 
     pub fn byte_length(value: &str, encoding: Option<&str>) -> NodeResult<usize> {
+        if matches!(encoding, None | Some("utf8" | "utf-8")) {
+            return Ok(value.len());
+        }
         Ok(encode_string(value, encoding)?.len())
     }
 
@@ -167,9 +166,16 @@ impl Buffer {
         if value.is_empty() {
             return Ok(self);
         }
-        for (write_index, index) in (start..end).enumerate() {
-            self.set(index, value[write_index % value.len()])?;
-        }
+        self.with_mut_bytes(|bytes| {
+            let output = &mut bytes[start..end];
+            let mut filled = value.len().min(output.len());
+            output[..filled].copy_from_slice(&value[..filled]);
+            while filled < output.len() {
+                let count = filled.min(output.len() - filled);
+                output.copy_within(..count, filled);
+                filled += count;
+            }
+        });
         Ok(self)
     }
 
@@ -194,8 +200,12 @@ impl Buffer {
             ));
         }
         let count = (source_end - source_start).min(target.len() - target_start);
-        let bytes = self.read_exact(source_start, count)?;
-        target.write_exact(target_start, &bytes)?;
+        let source_offset = self.view.byte_offset() as usize + source_start;
+        target.view.buffer().copy_bytes_from(
+            target.view.byte_offset() as usize + target_start,
+            &self.view.buffer(),
+            source_offset..source_offset + count,
+        );
         Ok(count)
     }
 
@@ -220,8 +230,10 @@ impl Buffer {
             ));
         }
         let count = (source_end - source_start).min(target.len() - target_start);
-        let bytes = self.read_exact(source_start, count)?;
-        target[target_start..target_start + count].copy_from_slice(&bytes);
+        self.with_bytes(|bytes| {
+            target[target_start..target_start + count]
+                .copy_from_slice(&bytes[source_start..source_start + count])
+        });
         Ok(count)
     }
 
@@ -234,7 +246,7 @@ impl Buffer {
     }
 
     pub fn to_string(&self, encoding: Option<&str>) -> NodeResult<String> {
-        decode_bytes(&self.to_vec(), encoding)
+        self.with_bytes(|bytes| decode_bytes(bytes, encoding))
     }
 
     pub fn to_string_enc(&self, encoding: &str) -> NodeResult<String> {
@@ -242,23 +254,39 @@ impl Buffer {
     }
 
     pub fn to_json(&self) -> JsValue {
-        let values = self
-            .to_vec()
-            .into_iter()
-            .map(|byte| JsValue::Number(f64::from(byte)))
-            .collect::<Vec<_>>();
+        let values = self.with_bytes(|bytes| {
+            bytes
+                .iter()
+                .map(|byte| JsValue::Number(f64::from(*byte)))
+                .collect::<Vec<_>>()
+        });
         JsValue::object(JsObject::from_pairs([
-            ("type", JsValue::String(JsString::from_utf8("Buffer"))),
+            ("type", JsValue::String(("Buffer").to_owned())),
             ("data", JsValue::from(values)),
         ]))
     }
 
+    fn with_pair<Result>(
+        &self,
+        other: &Buffer,
+        operation: impl FnOnce(&[u8], &[u8]) -> Result,
+    ) -> Result {
+        let left_start = self.view.byte_offset() as usize;
+        let right_start = other.view.byte_offset() as usize;
+        self.view.buffer().with_byte_ranges(
+            left_start..left_start + self.len(),
+            &other.view.buffer(),
+            right_start..right_start + other.len(),
+            operation,
+        )
+    }
+
     pub fn equals(&self, other: &Buffer) -> bool {
-        self.to_vec() == other.to_vec()
+        self.with_pair(other, |left, right| left == right)
     }
 
     pub fn compare(&self, other: &Buffer) -> i32 {
-        match self.to_vec().cmp(&other.to_vec()) {
+        match self.with_pair(other, <[u8]>::cmp) {
             std::cmp::Ordering::Less => -1,
             std::cmp::Ordering::Equal => 0,
             std::cmp::Ordering::Greater => 1,
@@ -287,10 +315,9 @@ impl Buffer {
             return Some(normalize_search_start(self.len(), byte_offset));
         }
         let start = normalize_search_start(self.len(), byte_offset);
-        self.to_vec()[start..]
-            .windows(needle.len())
-            .position(|window| window == needle)
-            .map(|index| index + start)
+        self.with_bytes(|bytes| {
+            memchr::memmem::find(&bytes[start..], needle).map(|index| index + start)
+        })
     }
 
     pub fn index_of_value(
@@ -323,10 +350,7 @@ impl Buffer {
         let start = byte_offset
             .map(|offset| normalize_search_start(self.len(), offset).min(max_start))
             .unwrap_or(max_start);
-        let bytes = self.to_vec();
-        (0..=start)
-            .rev()
-            .find(|index| &bytes[*index..*index + needle.len()] == needle)
+        self.with_bytes(|bytes| memchr::memmem::rfind(&bytes[..start + needle.len()], needle))
     }
 
     pub fn last_index_of_value(
@@ -348,21 +372,13 @@ impl Buffer {
 
     pub fn concat(buffers: &JsArray<Buffer>) -> NodeResult<Buffer> {
         let buffers = buffers.values();
-        if buffers.iter().any(Option::is_none) {
-            return Err(NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "Buffer.concat list must not contain array holes",
-            ));
-        }
-        Ok(Self::concat_dense(
-            &buffers.into_iter().flatten().collect::<Vec<_>>(),
-        ))
+        Ok(Self::concat_dense(&buffers))
     }
 
     pub(crate) fn concat_dense(buffers: &[Buffer]) -> Buffer {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(buffers.iter().map(Buffer::len).sum());
         for buffer in buffers {
-            out.extend_from_slice(&buffer.to_vec());
+            buffer.with_bytes(|bytes| out.extend_from_slice(bytes));
         }
         Buffer::from_bytes(out)
     }
@@ -372,22 +388,15 @@ impl Buffer {
         total_length: usize,
     ) -> NodeResult<Buffer> {
         let buffers = buffers.values();
-        if buffers.iter().any(Option::is_none) {
-            return Err(NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "Buffer.concat list must not contain array holes",
-            ));
-        }
-        Ok(Self::concat_dense_with_total_length(
-            &buffers.into_iter().flatten().collect::<Vec<_>>(),
-            total_length,
-        ))
+        Ok(Self::concat_dense_with_total_length(&buffers, total_length))
     }
 
     fn concat_dense_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
         let mut out = Vec::with_capacity(total_length);
         for buffer in buffers {
-            out.extend_from_slice(&buffer.to_vec());
+            buffer.with_bytes(|bytes| {
+                out.extend_from_slice(&bytes[..bytes.len().min(total_length - out.len())])
+            });
             if out.len() >= total_length {
                 out.truncate(total_length);
                 return Buffer::from_bytes(out);

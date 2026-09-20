@@ -149,7 +149,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
 
     assert_eq!(
         fs_promises::readdir(&root_text).unwrap().values(),
-        vec![Some("a.txt".to_string())]
+        vec!["a.txt".to_string()]
     );
     assert_eq!(fs_promises::opendir(&root_text).unwrap()[0].name, "a.txt");
     assert!(
@@ -653,7 +653,7 @@ fn fs_promises_async_wrappers_match_sync_behaviour() {
         block_on(fs_promises::readdir_async(&root_text))
             .unwrap()
             .values(),
-        vec![Some("async.txt".to_string())]
+        vec!["async.txt".to_string()]
     );
 
     let stats = block_on(fs_promises::stat_async(&file_text)).unwrap();

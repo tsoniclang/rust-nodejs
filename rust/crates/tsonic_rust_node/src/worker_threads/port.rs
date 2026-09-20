@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use tsonic_rust_js::{JsString, JsValue};
+use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::Callable;
 
 use crate::error::{NodeError, NodeResult};
@@ -246,23 +246,20 @@ impl MessagePort {
             signals
         };
         for signal in &signals {
-            let emission = {
-                let mut emitter = self.emitter.borrow_mut();
-                match signal {
-                    PortSignal::Message(value) => emitter.prepare_callable_emission(
-                        &event_name("message"),
-                        std::slice::from_ref(value),
-                    )?,
-                    PortSignal::Error(error) => emitter.prepare_callable_emission(
-                        &event_name("error"),
-                        &[JsValue::String(JsString::from_utf8(error))],
-                    )?,
-                    PortSignal::Close => {
-                        emitter.prepare_callable_emission(&event_name("close"), &[])?
-                    }
+            let converted;
+            let (event, arguments): (&str, &[JsValue]) = match signal {
+                PortSignal::Message(value) => ("message", std::slice::from_ref(value)),
+                PortSignal::Error(error) => {
+                    converted = JsValue::String((error).to_owned());
+                    ("error", std::slice::from_ref(&converted))
                 }
+                PortSignal::Close => ("close", &[]),
             };
-            emission.invoke()?;
+            let emission = self
+                .emitter
+                .borrow_mut()
+                .prepare_callable_emission(&event_name(event), arguments)?;
+            emission.invoke(arguments)?;
         }
         Ok(!signals.is_empty())
     }
@@ -413,5 +410,5 @@ pub(crate) fn has_refed_runtime_ports() -> bool {
 }
 
 fn event_name(value: &str) -> JsValue {
-    JsValue::String(JsString::from_utf8(value))
+    JsValue::String((value).to_owned())
 }

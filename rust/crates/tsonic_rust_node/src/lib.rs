@@ -33,6 +33,7 @@ pub mod perf_hooks;
 pub mod process;
 pub mod punycode;
 pub mod querystring;
+mod readiness;
 pub mod readline;
 pub mod sqlite;
 pub mod stream;

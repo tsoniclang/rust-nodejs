@@ -375,4 +375,4 @@ impl<'a> SnapshotReader<'a> {
 }
 
 pub(crate) use port::{has_refed_runtime_ports, poll_runtime_ports};
-pub(crate) use worker::{has_refed_runtime_workers, poll_runtime_workers};
+pub(crate) use worker::{has_refed_runtime_workers, next_runtime_reap_delay, poll_runtime_workers};

@@ -22,6 +22,7 @@ enum ClonedSlot {
     Null,
     Bool(bool),
     Number(f64),
+    NativeString(String),
     String(JsString),
     Reference(usize),
 }
@@ -103,6 +104,10 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
         JsValue::Bool(value) => Ok(ClonedSlot::Bool(*value)),
         JsValue::Number(value) => Ok(ClonedSlot::Number(*value)),
         JsValue::String(value) => {
+            reserve_native_string(value.len(), state)?;
+            Ok(ClonedSlot::NativeString(value.clone()))
+        }
+        JsValue::Utf16String(value) => {
             reserve_string(value, state)?;
             Ok(ClonedSlot::String(value.clone()))
         }
@@ -153,9 +158,7 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
 
             let mut entries = Vec::new();
             for (entry_index, (_, entry)) in values.entries().enumerate() {
-                if let Some(entry) = entry {
-                    entries.push((entry_index, clone_slot(&entry, depth + 1, state)?));
-                }
+                entries.push((entry_index, clone_slot(&entry, depth + 1, state)?));
             }
             state.containers[index] = ClonedContainer::Array { length, entries };
             Ok(ClonedSlot::Reference(index))
@@ -169,7 +172,8 @@ fn materialize_slot(value: &ClonedSlot, containers: &[JsValue]) -> JsValue {
         ClonedSlot::Null => JsValue::Null,
         ClonedSlot::Bool(value) => JsValue::Bool(*value),
         ClonedSlot::Number(value) => JsValue::Number(*value),
-        ClonedSlot::String(value) => JsValue::String(value.clone()),
+        ClonedSlot::NativeString(value) => JsValue::String(value.clone()),
+        ClonedSlot::String(value) => JsValue::Utf16String(value.clone()),
         ClonedSlot::Reference(index) => containers[*index].clone(),
     }
 }
@@ -282,6 +286,11 @@ fn encode_slot(value: &ClonedSlot, output: &mut Vec<u8>) -> NodeResult<()> {
             output.push(4);
             output.extend_from_slice(&value.to_bits().to_be_bytes());
         }
+        ClonedSlot::NativeString(value) => {
+            output.push(7);
+            write_count(output, value.len())?;
+            output.extend_from_slice(value.as_bytes());
+        }
         ClonedSlot::String(value) => {
             output.push(5);
             write_string(output, value)?;
@@ -388,9 +397,13 @@ fn reserve_entries(count: usize, state: &mut EncodingState) -> NodeResult<()> {
 }
 
 fn reserve_string(value: &JsString, state: &mut EncodingState) -> NodeResult<()> {
+    reserve_native_string(value.len(), state)
+}
+
+fn reserve_native_string(length: usize, state: &mut EncodingState) -> NodeResult<()> {
     state.string_units = state
         .string_units
-        .checked_add(value.len())
+        .checked_add(length)
         .ok_or_else(|| data_clone_error("structured-clone string budget overflowed"))?;
     if state.string_units > MAXIMUM_STRING_UNITS {
         return Err(data_clone_error(
@@ -509,6 +522,19 @@ impl<'a> Reader<'a> {
             4 => Ok(ClonedSlot::Number(f64::from_bits(self.u64()?))),
             5 => Ok(ClonedSlot::String(self.string()?)),
             6 => Ok(ClonedSlot::Reference(self.count()?)),
+            7 => {
+                let length = self.count()?;
+                self.string_units = self
+                    .string_units
+                    .checked_add(length)
+                    .filter(|total| *total <= MAXIMUM_STRING_UNITS)
+                    .ok_or_else(|| {
+                        data_clone_error("structured-clone string budget exceeds the finite limit")
+                    })?;
+                let text = std::str::from_utf8(self.bytes(length)?)
+                    .map_err(|_| data_clone_error("structured-clone native string is not UTF-8"))?;
+                Ok(ClonedSlot::NativeString(text.to_owned()))
+            }
             _ => Err(data_clone_error(
                 "structured-clone payload contains an unknown value tag",
             )),
