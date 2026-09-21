@@ -14,7 +14,7 @@ pub fn read_file_sync(path: &str, encoding: Option<&str>) -> NodeResult<FsReadRe
     let bytes = fs::read(path).map_err(map_io_error)?;
     if let Some(encoding) = encoding {
         Ok(FsReadResult::String(crate::buffer::decode_bytes(
-            &bytes,
+            bytes,
             Some(encoding),
         )?))
     } else {

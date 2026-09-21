@@ -3,6 +3,60 @@ use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
 #[test]
+fn encoding_labels_preserve_case_insensitive_aliases_and_exact_rejections() {
+    use tsonic_rust_node::buffer::{decode_bytes, is_encoding};
+
+    for alias in [
+        "utf8",
+        "utf-8",
+        "ascii",
+        "latin1",
+        "binary",
+        "utf16le",
+        "ucs2",
+        "ucs-2",
+        "hex",
+        "base64",
+        "base64url",
+    ] {
+        assert!(is_encoding(alias));
+        let uppercase = alias.to_ascii_uppercase();
+        assert!(is_encoding(&uppercase));
+        assert_eq!(
+            decode_bytes(b"AZ", Some(alias)).unwrap(),
+            decode_bytes(b"AZ", Some(&uppercase)).unwrap()
+        );
+    }
+    for invalid in ["", " utf8", "utf8 ", "UTF32", "ÜTF8"] {
+        assert!(!is_encoding(invalid));
+        assert!(decode_bytes(b"AZ", Some(invalid)).is_err());
+    }
+    assert_eq!(decode_bytes(b"AZ", None).unwrap(), "AZ");
+}
+
+#[test]
+fn owned_utf8_decoding_reuses_bytes_and_borrowed_decoding_preserves_input() {
+    use tsonic_rust_node::buffer::decode_bytes;
+    let bytes = "café😀".as_bytes().to_vec();
+    let pointer = bytes.as_ptr();
+    let text = decode_bytes(bytes, None).unwrap();
+    assert_eq!(text, "café😀");
+    assert_eq!(text.as_ptr(), pointer);
+    let borrowed = text.as_bytes();
+    let decoded = decode_bytes(borrowed, Some("utf8")).unwrap();
+    assert_eq!(decoded, text);
+    assert_ne!(decoded.as_ptr(), text.as_ptr());
+    assert!(decode_bytes(vec![0xff], Some("utf8")).is_err());
+    for encoding in ["hex", "base64", "base64url", "latin1", "utf16le"] {
+        let bytes = vec![65, 0, 66, 0];
+        assert_eq!(
+            decode_bytes(bytes.clone(), Some(encoding)).unwrap(),
+            decode_bytes(bytes.as_slice(), Some(encoding)).unwrap()
+        );
+    }
+}
+
+#[test]
 fn buffer_from_uint8_array_copies_only_the_view() {
     let array = tsonic_rust_js::Uint8Array::from_vec(vec![11.0, 65.0, 66.0, 13.0]).unwrap();
     let view = array.subarray(1.0, Some(3.0));

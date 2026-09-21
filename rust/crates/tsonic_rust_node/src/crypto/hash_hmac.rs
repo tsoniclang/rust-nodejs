@@ -132,7 +132,7 @@ impl Hash {
         let bytes = digest.finish();
         match encoding {
             None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
-            Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),
+            Some(encoding) => Ok(DigestResult::String(decode_bytes(bytes, Some(encoding))?)),
         }
     }
 
@@ -270,6 +270,6 @@ fn hmac_digest_algorithm(
 fn encode_digest(bytes: Vec<u8>, encoding: Option<&str>) -> NodeResult<DigestResult> {
     match encoding {
         None => Ok(DigestResult::Buffer(Buffer::from_bytes(bytes))),
-        Some(encoding) => Ok(DigestResult::String(decode_bytes(&bytes, Some(encoding))?)),
+        Some(encoding) => Ok(DigestResult::String(decode_bytes(bytes, Some(encoding))?)),
     }
 }

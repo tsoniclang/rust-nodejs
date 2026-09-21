@@ -15,9 +15,13 @@ pub fn encode_string(value: &str, encoding: Option<&str>) -> NodeResult<Vec<u8>>
     }
 }
 
-pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> {
+pub fn decode_bytes<'a>(
+    bytes: impl Into<std::borrow::Cow<'a, [u8]>>,
+    encoding: Option<&str>,
+) -> NodeResult<String> {
+    let bytes = bytes.into();
     match normalize_encoding(encoding)? {
-        Encoding::Utf8 => String::from_utf8(bytes.to_vec())
+        Encoding::Utf8 => String::from_utf8(bytes.into_owned())
             .map_err(|error| NodeError::new("ERR_INVALID_ARG_VALUE", error.to_string())),
         Encoding::Latin1 => Ok(bytes.iter().map(|byte| *byte as char).collect()),
         Encoding::Utf16Le => {
@@ -29,9 +33,9 @@ pub fn decode_bytes(bytes: &[u8], encoding: Option<&str>) -> NodeResult<String> 
                 .collect::<Vec<_>>();
             Ok(String::from_utf16_lossy(&units))
         }
-        Encoding::Hex => Ok(encode_hex(bytes)),
-        Encoding::Base64 => Ok(encode_base64(bytes)),
-        Encoding::Base64Url => Ok(encode_base64(bytes)
+        Encoding::Hex => Ok(encode_hex(&bytes)),
+        Encoding::Base64 => Ok(encode_base64(&bytes)),
+        Encoding::Base64Url => Ok(encode_base64(&bytes)
             .replace('+', "-")
             .replace('/', "_")
             .trim_end_matches('=')
@@ -47,7 +51,7 @@ pub fn btoa(value: &str) -> NodeResult<String> {
         ));
     }
     let bytes = encode_string(value, Some("latin1"))?;
-    decode_bytes(&bytes, Some("base64"))
+    decode_bytes(bytes, Some("base64"))
 }
 
 pub fn atob(value: &str) -> NodeResult<String> {
@@ -57,11 +61,11 @@ pub fn atob(value: &str) -> NodeResult<String> {
             format!("atob input is not valid base64: {}", error.message()),
         )
     })?;
-    decode_bytes(&bytes, Some("latin1"))
+    decode_bytes(bytes, Some("latin1"))
 }
 
 pub fn transcode(buffer: &Buffer, from_encoding: &str, to_encoding: &str) -> NodeResult<Buffer> {
-    let text = decode_bytes(&buffer.as_bytes(), Some(from_encoding))?;
+    let text = buffer.with_bytes(|bytes| decode_bytes(bytes, Some(from_encoding)))?;
     Buffer::from_string(&text, Some(to_encoding))
 }
 
