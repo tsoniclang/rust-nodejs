@@ -3,11 +3,11 @@ import {
   methodMember, numberType, propertyMember, providerNativeFallibility,
   providerRef, rustOptionTargetType, rustStringToBorrowedStrValueConversion, statsCarrier, stringArrayCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier, valueExport, voidType,
-} from "../model.js";
+} from "../../model.js";
 import { rustInt32ToFloat64ValueConversion, rustJsArrayTargetType } from "@tsonic/target-rust/provider";
 import type {
   RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef,
-} from "../model.js";
+} from "../../model.js";
 
 const moduleId = "node:fs";
 const statOptionsId = `${moduleId}::StatOptions`;

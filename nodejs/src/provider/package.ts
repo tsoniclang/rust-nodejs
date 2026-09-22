@@ -57,13 +57,13 @@ import { assertModule, assertRows } from "./modules/assert.js";
 import { bufferModule, bufferRows } from "./modules/buffer.js";
 import { cryptoModule, cryptoRows } from "./modules/crypto.js";
 import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process.js";
-import { fsModule, fsRows } from "./modules/filesystem.js";
-import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem-paths.js";
-import { bufferEncodingOptionsCarrier } from "./modules/filesystem-realpath.js";
+import { fsModule, fsRows } from "./modules/filesystem/calls.js";
+import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem/paths.js";
+import { bufferEncodingOptionsCarrier } from "./modules/filesystem/realpath.js";
 import {
   fsPromisesModule,
   fsPromisesRows,
-} from "./modules/filesystem-promises.js";
+} from "./modules/filesystem/promises.js";
 import { httpModule, httpRows } from "./modules/http.js";
 import { osModule, osRows } from "./modules/os.js";
 import { v8HeapInfoCarrier, v8Module, v8Rows } from "./modules/v8.js";
