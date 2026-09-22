@@ -2,12 +2,12 @@ import {
   bufferCarrier, float64Carrier, fnExport, nullType, numberType,
   providerNativeFallibility, providerRef, rustOptionTargetType,
   stringCarrier, stringType, unitCarrier, voidType,
-} from "../model.js";
+} from "../../model.js";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 import type {
   RustProviderModuleDefinition, RustProviderOperationDefinition,
   RustTargetTypeRef,
-} from "../model.js";
+} from "../../model.js";
 
 const moduleId = "node:fs";
 const positionType = { kind: "union", types: [numberType, nullType] } as const;

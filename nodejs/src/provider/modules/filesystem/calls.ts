@@ -27,17 +27,17 @@ import {
   voidType,
   writeStreamCarrier,
   writeStreamOptionsCarrier,
-} from "../model.js";
+} from "../../model.js";
 
 import type {
   RustProviderConstantArgument,
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
   RustTargetTypeRef,
-} from "../model.js";
-import { fileDescriptorExports, fileDescriptorRows } from "./filesystem-descriptors.js";
-import { filePathExports, filePathRows } from "./filesystem-paths.js";
-import { realpathExports, realpathRows } from "./filesystem-realpath.js";
+} from "../../model.js";
+import { fileDescriptorExports, fileDescriptorRows } from "./descriptors.js";
+import { filePathExports, filePathRows } from "./paths.js";
+import { realpathExports, realpathRows } from "./realpath.js";
 
 export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
   const m = "node:fs";

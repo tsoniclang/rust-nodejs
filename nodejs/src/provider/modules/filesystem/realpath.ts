@@ -1,8 +1,8 @@
 import {
   bufferCarrier, propertyMember, providerNativeFallibility, providerRef,
   stringCarrier, stringType, unitCarrier,
-} from "../model.js";
-import type { ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../model.js";
+} from "../../model.js";
+import type { ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../../model.js";
 
 const moduleSpecifier = "node:fs";
 const callableId = `${moduleSpecifier}::realpathSync`;

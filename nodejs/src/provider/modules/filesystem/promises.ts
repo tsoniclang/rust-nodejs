@@ -10,14 +10,14 @@ import {
   stringCarrier,
   stringType,
   voidType,
-} from "../model.js";
+} from "../../model.js";
 
 import type {
   RustProviderConstantArgument,
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
   RustTargetTypeRef,
-} from "../model.js";
+} from "../../model.js";
 export function fsPromisesModule(): RustProviderModuleDefinition {
   const m = "node:fs/promises";
   return {
