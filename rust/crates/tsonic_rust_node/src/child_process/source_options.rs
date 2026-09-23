@@ -22,8 +22,12 @@ pub struct SpawnSyncOptions {
 }
 
 fn integer(value: f64, maximum: u64, label: &str) -> NodeResult<u64> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0
-        || value >= 18_446_744_073_709_551_616.0 || value as u64 > maximum {
+    if !value.is_finite()
+        || value < 0.0
+        || value.fract() != 0.0
+        || value >= 18_446_744_073_709_551_616.0
+        || value as u64 > maximum
+    {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             format!("{label} is outside its exact integer range"),

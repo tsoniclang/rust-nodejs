@@ -45,7 +45,7 @@ export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleD
         parameters: [
           { name: "fd", type: numberType }, { name: "buffer", type: buffer.type },
           { name: "offset", type: numberType }, { name: "length", type: numberType },
-          { name: "position", type: { kind: "union", types: [position.type, nullType] } },
+          { name: "position", type: { kind: "union" as const, types: [position.type, nullType] } },
         ],
         returnType: numberType,
       }))),

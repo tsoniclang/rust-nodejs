@@ -6,7 +6,10 @@ use tsonic_rust_node::{buffer::Buffer, fs};
 #[test]
 fn native_file_positions_preserve_all_64_bits_without_float_transport() {
     use fs::NativeFilePosition;
-    assert_eq!(9_007_199_254_740_993_i64.file_position().unwrap(), Some(9_007_199_254_740_993));
+    assert_eq!(
+        9_007_199_254_740_993_i64.file_position().unwrap(),
+        Some(9_007_199_254_740_993)
+    );
     assert_eq!(u64::MAX.file_position().unwrap(), Some(u64::MAX));
     assert_eq!(i64::MAX.file_position().unwrap(), Some(i64::MAX as u64));
     assert_eq!((-1_i64).file_position().unwrap(), None);
@@ -58,8 +61,15 @@ fn compiler_descriptor_views_positions_and_validation() {
         4.0
     );
     assert_eq!(copied.as_bytes(), b"abcd");
-    assert_eq!(fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(9_007_199_254_740_993_i64)).unwrap(), 0.0);
-    assert_eq!(fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(0_i64)).unwrap(), 1.0);
+    assert_eq!(
+        fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(9_007_199_254_740_993_i64))
+            .unwrap(),
+        0.0
+    );
+    assert_eq!(
+        fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(0_i64)).unwrap(),
+        1.0
+    );
     fs::close_sync_number(reader).unwrap();
     assert_eq!(
         fs::open_sync_number(path_text, "invalid").unwrap_err().code,
@@ -122,9 +132,15 @@ fn compiler_descriptor_views_positions_and_validation() {
         "ERR_OUT_OF_RANGE"
     );
     assert_eq!(
-        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, Some(18_446_744_073_709_551_616.0))
-            .unwrap_err()
-            .code,
+        fs::read_sync_uint8_number(
+            fd,
+            &target_view,
+            0.0,
+            1.0,
+            Some(18_446_744_073_709_551_616.0)
+        )
+        .unwrap_err()
+        .code,
         "ERR_OUT_OF_RANGE"
     );
     for invalid in [f64::NAN, f64::INFINITY, -2.0, 0.5] {
