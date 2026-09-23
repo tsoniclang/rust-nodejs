@@ -158,8 +158,8 @@ impl ReadStream {
     ) -> NodeResult<Self> {
         use std::io::{Seek, SeekFrom};
 
-        let start = optional_non_negative_integer(options.start, "start")?.unwrap_or(0);
-        let end = optional_non_negative_integer(options.end, "end")?;
+        let start = options.start.unwrap_or(0);
+        let end = options.end;
         if end.is_some_and(|end| end < start) {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",
@@ -167,9 +167,23 @@ impl ReadStream {
             ));
         }
         file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
-        let remaining = end.map(|end| end - start + 1);
-        let chunk_size =
-            optional_positive_usize(options.high_water_mark, "highWaterMark")?.unwrap_or(64 * 1024);
+        let remaining = end
+            .map(|end| {
+                (end - start).checked_add(1).ok_or_else(|| {
+                    NodeError::new(
+                        "ERR_OUT_OF_RANGE",
+                        "stream range exceeds the native byte count",
+                    )
+                })
+            })
+            .transpose()?;
+        let chunk_size = options.high_water_mark.unwrap_or(64 * 1024);
+        if chunk_size == 0 {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "highWaterMark must be a positive integer",
+            ));
+        }
         Ok(Self {
             path,
             pending: false,
@@ -324,7 +338,7 @@ impl WriteStream {
     ) -> NodeResult<Self> {
         use std::io::{Seek, SeekFrom};
 
-        if let Some(start) = optional_non_negative_integer(options.start, "start")? {
+        if let Some(start) = options.start {
             file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
         }
         Ok(Self {
@@ -487,39 +501,6 @@ fn configure_write_stream_open(open: &mut OpenOptions, flags: &str) -> NodeResul
     Ok(())
 }
 
-fn optional_non_negative_integer(value: Option<f64>, name: &str) -> NodeResult<Option<u64>> {
-    value
-        .map(|value| {
-            if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value >= (u64::MAX as u128 + 1) as f64
-            {
-                return Err(NodeError::new(
-                    "ERR_OUT_OF_RANGE",
-                    format!("{name} must be a non-negative integer"),
-                ));
-            }
-            Ok(value as u64)
-        })
-        .transpose()
-}
-
-fn optional_positive_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
-    value
-        .map(|value| {
-            if !value.is_finite()
-                || value <= 0.0
-                || value.fract() != 0.0
-                || value >= (usize::MAX as u128 + 1) as f64
-            {
-                return Err(NodeError::new(
-                    "ERR_OUT_OF_RANGE",
-                    format!("{name} must be a positive integer"),
-                ));
-            }
-            Ok(value as usize)
-        })
-        .transpose()
-}
-
 fn invalid_stream_option(name: &str, value: &str) -> NodeError {
     NodeError::new(
         "ERR_INVALID_ARG_VALUE",
@@ -528,23 +509,20 @@ fn invalid_stream_option(name: &str, value: &str) -> NodeError {
 }
 
 #[cfg(unix)]
-fn apply_open_mode(open: &mut OpenOptions, mode: f64) -> NodeResult<()> {
+fn apply_open_mode(open: &mut OpenOptions, mode: u32) -> NodeResult<()> {
     use std::os::unix::fs::OpenOptionsExt;
-    let mode = optional_non_negative_integer(Some(mode), "mode")?
-        .ok_or_else(|| NodeError::new("ERR_OUT_OF_RANGE", "mode is required"))?;
     if mode > 0o7777 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "mode must fit a Unix permission mask",
         ));
     }
-    open.mode(mode as u32);
+    open.mode(mode);
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn apply_open_mode(_open: &mut OpenOptions, mode: f64) -> NodeResult<()> {
-    let _ = optional_non_negative_integer(Some(mode), "mode")?;
+fn apply_open_mode(_open: &mut OpenOptions, _mode: u32) -> NodeResult<()> {
     Ok(())
 }
 pub type WatchOptionsWithBufferEncoding = WatchOptions;

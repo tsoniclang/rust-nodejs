@@ -10,8 +10,8 @@ use tsonic_rust_runtime::Callable;
 fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     let input = Buffer::from_string("source ABI payload", Some("utf8")).unwrap();
     let options = tsonic_rust_node::zlib::SourceZlibOptions {
-        level: Some(f64::from(tsonic_rust_node::zlib::constants::Z_BEST_SPEED)),
-        max_output_length: Some(4096.0),
+        level: Some(tsonic_rust_node::zlib::constants::Z_BEST_SPEED),
+        max_output_length: Some(4096),
         ..Default::default()
     };
 

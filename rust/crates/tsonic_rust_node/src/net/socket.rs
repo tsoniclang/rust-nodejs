@@ -265,16 +265,17 @@ impl Socket {
             .map_err(map_net_error)
     }
 
-    pub fn set_timeout_number(&mut self, timeout_millis: f64) -> NodeResult<&mut Self> {
-        if !timeout_millis.is_finite() || timeout_millis.fract() != 0.0 ||
-            timeout_millis < 0.0 || timeout_millis >= (u64::MAX as u128 + 1) as f64
-        {
-            return Err(NodeError::new(
+    pub fn set_timeout_number(
+        &mut self,
+        timeout_millis: impl tsonic_rust_js::numeric::IntegerInput<u64>,
+    ) -> NodeResult<&mut Self> {
+        let timeout_millis = timeout_millis.checked_integer().ok_or_else(|| {
+            NodeError::new(
                 "ERR_OUT_OF_RANGE",
                 "socket timeout must be a non-negative integer",
-            ));
-        }
-        self.set_timeout(timeout_millis as u64)?;
+            )
+        })?;
+        self.set_timeout(timeout_millis)?;
         Ok(self)
     }
 

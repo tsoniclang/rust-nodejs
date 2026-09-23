@@ -717,7 +717,10 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
     assert!(lookup.family == 4 || lookup.family == 6);
     assert!(!lookup.address.is_empty());
     assert_eq!(lookup.address_value(), lookup.address);
-    assert_eq!(lookup.family, if net::is_ipv4(&lookup.address) { 4 } else { 6 });
+    assert_eq!(
+        lookup.family,
+        if net::is_ipv4(&lookup.address) { 4 } else { 6 }
+    );
 
     let callback_count = std::rc::Rc::new(std::cell::Cell::new(0));
     let lookup_count = std::rc::Rc::clone(&callback_count);

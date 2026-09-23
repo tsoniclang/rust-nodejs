@@ -54,7 +54,7 @@ impl Server {
 
     pub fn listen_source<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
         host: &str,
         callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
     ) -> NodeResult<&mut Self>
@@ -72,17 +72,24 @@ impl Server {
         Ok(self)
     }
 
-    pub fn listen_port(&mut self, port: f64) -> NodeResult<&mut Self> {
+    pub fn listen_port(
+        &mut self,
+        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+    ) -> NodeResult<&mut Self> {
         self.bind("0.0.0.0", source_port(port)?)
     }
 
-    pub fn listen_port_host(&mut self, port: f64, host: &str) -> NodeResult<&mut Self> {
+    pub fn listen_port_host(
+        &mut self,
+        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+        host: &str,
+    ) -> NodeResult<&mut Self> {
         self.bind(host, source_port(port)?)
     }
 
     pub fn listen_port_callable<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
@@ -93,7 +100,7 @@ impl Server {
 
     pub fn listen_port_host_callable<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
         host: &str,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
@@ -314,14 +321,13 @@ pub(crate) fn poll_runtime_servers() -> tsonic_rust_runtime::TsonicResult<bool> 
     Ok(did_work)
 }
 
-fn source_port(value: f64) -> NodeResult<u16> {
-    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u16::MAX as f64 {
-        return Err(NodeError::new(
+fn source_port(value: impl tsonic_rust_js::numeric::IntegerInput<u16>) -> NodeResult<u16> {
+    value.checked_integer().ok_or_else(|| {
+        NodeError::new(
             "ERR_SOCKET_BAD_PORT",
             "port must be an unsigned 16-bit integer",
-        ));
-    }
-    Ok(value as u16)
+        )
+    })
 }
 
 pub fn is_ip(value: &str) -> u8 {
@@ -372,16 +378,21 @@ pub fn create_connection_with_options(options: &ConnectOptions) -> NodeResult<So
     connect_with_options(options)
 }
 
-pub fn create_connection_source(port: f64, host: &str) -> NodeResult<Socket> {
+pub fn create_connection_source(
+    port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+    host: &str,
+) -> NodeResult<Socket> {
     create_connection(host, source_port(port)?)
 }
 
-pub fn create_connection_default_host(port: f64) -> NodeResult<Socket> {
+pub fn create_connection_default_host(
+    port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+) -> NodeResult<Socket> {
     create_connection_source(port, "localhost")
 }
 
 pub fn create_connection_default_host_callable<E>(
-    port: f64,
+    port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
     callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
 ) -> NodeResult<Socket>
 where
@@ -391,7 +402,7 @@ where
 }
 
 pub fn create_connection_callable<E>(
-    port: f64,
+    port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
     host: &str,
     callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
 ) -> NodeResult<Socket>

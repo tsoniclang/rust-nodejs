@@ -46,15 +46,15 @@ pub struct StatFsOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MakeDirectoryOptions {
     pub recursive: Option<bool>,
-    pub mode: Option<f64>,
+    pub mode: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RmOptions {
     pub recursive: Option<bool>,
     pub force: Option<bool>,
-    pub max_retries: Option<f64>,
-    pub retry_delay_ms: Option<f64>,
+    pub max_retries: Option<u32>,
+    pub retry_delay_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,18 +185,18 @@ pub struct WriteVResult {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ReadStreamOptions {
     pub flags: Option<String>,
-    pub mode: Option<f64>,
-    pub start: Option<f64>,
-    pub end: Option<f64>,
-    pub high_water_mark: Option<f64>,
+    pub mode: Option<u32>,
+    pub start: Option<u64>,
+    pub end: Option<u64>,
+    pub high_water_mark: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct WriteStreamOptions {
     pub flags: Option<String>,
-    pub mode: Option<f64>,
-    pub start: Option<f64>,
-    pub high_water_mark: Option<f64>,
+    pub mode: Option<u32>,
+    pub start: Option<u64>,
+    pub high_water_mark: Option<usize>,
     pub flush: Option<bool>,
 }
 

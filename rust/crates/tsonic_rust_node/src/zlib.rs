@@ -710,34 +710,33 @@ pub mod constants {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceZlibOptions {
-    pub flush: Option<f64>,
-    pub finish_flush: Option<f64>,
-    pub chunk_size: Option<f64>,
-    pub window_bits: Option<f64>,
-    pub level: Option<f64>,
-    pub mem_level: Option<f64>,
-    pub strategy: Option<f64>,
-    pub max_output_length: Option<f64>,
+    pub flush: Option<i32>,
+    pub finish_flush: Option<i32>,
+    pub chunk_size: Option<usize>,
+    pub window_bits: Option<i32>,
+    pub level: Option<i32>,
+    pub mem_level: Option<i32>,
+    pub strategy: Option<i32>,
+    pub max_output_length: Option<usize>,
     pub dictionary: Option<Buffer>,
     pub info: Option<bool>,
 }
 
 impl SourceZlibOptions {
-    fn into_runtime(self) -> NodeResult<ZlibOptions> {
+    fn into_runtime(self) -> ZlibOptions {
         let defaults = ZlibOptions::default();
-        Ok(ZlibOptions {
-            flush: optional_i32(self.flush, "flush")?,
-            finish_flush: optional_i32(self.finish_flush, "finishFlush")?,
-            chunk_size: optional_usize(self.chunk_size, "chunkSize")?
-                .unwrap_or(defaults.chunk_size),
-            window_bits: optional_i32(self.window_bits, "windowBits")?,
-            level: optional_i32(self.level, "level")?.unwrap_or(defaults.level),
-            mem_level: optional_i32(self.mem_level, "memLevel")?,
-            strategy: optional_i32(self.strategy, "strategy")?.unwrap_or(defaults.strategy),
-            max_output_length: optional_usize(self.max_output_length, "maxOutputLength")?,
+        ZlibOptions {
+            flush: self.flush,
+            finish_flush: self.finish_flush,
+            chunk_size: self.chunk_size.unwrap_or(defaults.chunk_size),
+            window_bits: self.window_bits,
+            level: self.level.unwrap_or(defaults.level),
+            mem_level: self.mem_level,
+            strategy: self.strategy.unwrap_or(defaults.strategy),
+            max_output_length: self.max_output_length,
             dictionary: self.dictionary,
             info: self.info.unwrap_or(false),
-        })
+        }
     }
 }
 
@@ -745,66 +744,66 @@ pub fn gzip_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    gzip_sync_with_options(input, &options.into_runtime()?)
+    gzip_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn gunzip_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    gunzip_sync_with_options(input, &options.into_runtime()?)
+    gunzip_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn deflate_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    deflate_sync_with_options(input, &options.into_runtime()?)
+    deflate_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn inflate_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    inflate_sync_with_options(input, &options.into_runtime()?)
+    inflate_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn deflate_raw_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    deflate_raw_sync_with_options(input, &options.into_runtime()?)
+    deflate_raw_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn inflate_raw_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    inflate_raw_sync_with_options(input, &options.into_runtime()?)
+    inflate_raw_sync_with_options(input, &options.into_runtime())
 }
 
 pub fn create_gzip_source(options: SourceZlibOptions) -> NodeResult<Gzip> {
-    Ok(create_gzip(Some(options.into_runtime()?)))
+    Ok(create_gzip(Some(options.into_runtime())))
 }
 
 pub fn create_deflate_source(options: SourceZlibOptions) -> NodeResult<Deflate> {
-    Ok(create_deflate(Some(options.into_runtime()?)))
+    Ok(create_deflate(Some(options.into_runtime())))
 }
 
 pub fn create_inflate_source(options: SourceZlibOptions) -> NodeResult<Inflate> {
-    Ok(create_inflate(Some(options.into_runtime()?)))
+    Ok(create_inflate(Some(options.into_runtime())))
 }
 
 pub fn create_gunzip_source(options: SourceZlibOptions) -> NodeResult<Gunzip> {
-    Ok(create_gunzip(Some(options.into_runtime()?)))
+    Ok(create_gunzip(Some(options.into_runtime())))
 }
 
 pub fn create_deflate_raw_source(options: SourceZlibOptions) -> NodeResult<DeflateRaw> {
-    Ok(create_deflate_raw(Some(options.into_runtime()?)))
+    Ok(create_deflate_raw(Some(options.into_runtime())))
 }
 
 pub fn create_inflate_raw_source(options: SourceZlibOptions) -> NodeResult<InflateRaw> {
-    Ok(create_inflate_raw(Some(options.into_runtime()?)))
+    Ok(create_inflate_raw(Some(options.into_runtime())))
 }
 
 pub fn gzip_callable<E>(
@@ -927,7 +926,7 @@ where
     E: std::fmt::Display + 'static,
 {
     let input = input.as_bytes();
-    let options = BackgroundZlibOptions::from(options.into_runtime()?);
+    let options = BackgroundZlibOptions::from(options.into_runtime());
     crate::background::spawn(
         move || {
             let input = Buffer::from_bytes(input);
@@ -946,50 +945,17 @@ where
     )
 }
 
-fn optional_i32(value: Option<f64>, name: &str) -> NodeResult<Option<i32>> {
-    value
-        .map(|value| {
-            if !value.is_finite()
-                || value.fract() != 0.0
-                || value < i32::MIN as f64
-                || value > i32::MAX as f64
-            {
-                return Err(NodeError::new(
-                    "ERR_OUT_OF_RANGE",
-                    format!("zlib option '{name}' must be a finite 32-bit integer"),
-                ));
-            }
-            Ok(value as i32)
-        })
-        .transpose()
-}
-
-fn optional_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
-    value
-        .map(|value| {
-            if !value.is_finite()
-                || value.fract() != 0.0
-                || value < 0.0
-                || value >= (usize::MAX as u128 + 1) as f64
-            {
-                return Err(NodeError::new(
-                    "ERR_OUT_OF_RANGE",
-                    format!("zlib option '{name}' must be a non-negative integer"),
-                ));
-            }
-            Ok(value as usize)
-        })
-        .transpose()
-}
-
 #[cfg(test)]
 mod numeric_bounds {
     #[test]
-    fn size_rejects_the_exclusive_native_upper_bound() {
-        let limit = (usize::MAX as u128 + 1) as f64;
-        assert!(super::optional_usize(Some(limit), "maxOutputLength").is_err());
-        let maximum = limit.next_down().floor();
-        assert_eq!(super::optional_usize(Some(maximum), "maxOutputLength").unwrap(), Some(maximum as usize));
-        assert_eq!(super::optional_usize(Some(0.0), "maxOutputLength").unwrap(), Some(0));
+    fn size_retains_the_complete_native_domain() {
+        for value in [0, usize::MAX] {
+            let options = super::SourceZlibOptions {
+                max_output_length: Some(value),
+                ..Default::default()
+            }
+            .into_runtime();
+            assert_eq!(options.max_output_length, Some(value));
+        }
     }
 }

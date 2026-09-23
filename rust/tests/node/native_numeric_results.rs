@@ -1,5 +1,5 @@
 use tsonic_rust_js::JsArray;
-use tsonic_rust_node::{buffer, process};
+use tsonic_rust_node::{buffer, fs, process};
 
 #[test]
 fn buffer_results_preserve_widths_and_counts() {
@@ -8,6 +8,18 @@ fn buffer_results_preserve_widths_and_counts() {
     let word: u32 = buffer::read_uint32_le_number(&bytes, 0.0).unwrap();
     assert_eq!(count, 4);
     assert_eq!(word, u32::MAX);
+    let count = buffer::write_uint32_le_number(&mut bytes, word, 0_usize).unwrap();
+    assert_eq!(count, 4);
+    assert_eq!(buffer::read_uint32_le_number(&bytes, 0_u64).unwrap(), word);
+    assert!(
+        buffer::write_uint32_le_number(&mut bytes, 9_007_199_254_740_993_u64, 0_usize).is_err()
+    );
+    assert!(buffer::read_uint8_number(&bytes, u128::MAX).is_err());
+    buffer::write_int16_le_number(&mut bytes, -32768_i64, 0_usize).unwrap();
+    assert_eq!(
+        buffer::read_int16_le_number(&bytes, 0_usize).unwrap(),
+        i16::MIN
+    );
     let count: usize = buffer::write_float_le_number(&mut bytes, 1.5, 4.0).unwrap();
     let single: f32 = buffer::read_float_le_number(&bytes, 4.0).unwrap();
     assert_eq!(count, 8);
@@ -21,12 +33,19 @@ fn buffer_results_preserve_widths_and_counts() {
 fn high_resolution_time_preserves_large_integer_inputs() {
     let before: JsArray<i64> = process::hrtime_open().unwrap();
     let previous = 9_007_199_254_740_993_i64;
-    let delta: JsArray<i64> = process::hrtime_since(&JsArray::from_dense(vec![previous, 0])).unwrap();
+    let delta: JsArray<i64> =
+        process::hrtime_since(&JsArray::from_dense(vec![previous, 0])).unwrap();
     let after = process::hrtime_open().unwrap();
     assert!(delta.get(0).unwrap() >= before.get(0).unwrap() - previous);
     assert!(delta.get(0).unwrap() <= after.get(0).unwrap() - previous);
     assert!((0..1_000_000_000).contains(&delta.get(1).unwrap()));
-    for invalid in [vec![], vec![0], vec![0, 0, 0], vec![0, -1], vec![0, 1_000_000_000]] {
+    for invalid in [
+        vec![],
+        vec![0],
+        vec![0, 0, 0],
+        vec![0, -1],
+        vec![0, 1_000_000_000],
+    ] {
         assert!(process::hrtime_since(&JsArray::from_dense(invalid)).is_err());
     }
     assert!(process::hrtime_since(&JsArray::from_dense(vec![i64::MIN, 0])).is_err());
@@ -36,12 +55,77 @@ fn high_resolution_time_preserves_large_integer_inputs() {
 fn memory_fields_do_not_round_large_native_counts() {
     let exact = 9_007_199_254_740_993_u64;
     let value = process::MemoryUsage {
-        rss: exact, heap_total: exact + 2, heap_used: exact + 4,
-        external: exact + 6, array_buffers: exact + 8,
+        rss: exact,
+        heap_total: exact + 2,
+        heap_used: exact + 4,
+        external: exact + 6,
+        array_buffers: exact + 8,
     };
     assert_eq!(value.rss, exact);
     assert_eq!(value.heap_total - value.rss, 2);
     assert_eq!(value.array_buffers - value.external, 2);
+}
+
+#[test]
+fn stream_options_preserve_native_offsets_without_a_floating_intermediate() {
+    let exact = 9_007_199_254_740_993_u64;
+    let read = fs::ReadStreamOptions {
+        start: Some(exact),
+        end: Some(exact + 2),
+        high_water_mark: Some(usize::MAX),
+        mode: Some(0o644),
+        ..Default::default()
+    };
+    let write = fs::WriteStreamOptions {
+        start: read.start,
+        high_water_mark: read.high_water_mark,
+        mode: read.mode,
+        ..Default::default()
+    };
+    assert_eq!(read.start, Some(exact));
+    assert_eq!(read.end.unwrap() - write.start.unwrap(), 2);
+    assert_eq!(write.high_water_mark, Some(usize::MAX));
+    assert_eq!(write.mode, Some(0o644));
+}
+
+#[test]
+fn native_integer_rows_and_worker_values_do_not_round() {
+    use tsonic_rust_js::JsValue;
+    use tsonic_rust_node::{sqlite::DatabaseSync, worker_threads};
+    let database = DatabaseSync::open(":memory:").unwrap();
+    let rows = database
+        .all(
+            "SELECT 9007199254740993 AS exact, -9223372036854775808 AS minimum",
+            &[],
+        )
+        .unwrap();
+    assert!(matches!(
+        rows[0]["exact"],
+        JsValue::Integer(9_007_199_254_740_993)
+    ));
+    assert!(matches!(rows[0]["minimum"], JsValue::Integer(i64::MIN)));
+    for original in [JsValue::from(i64::MIN), JsValue::from(u64::MAX)] {
+        let channel = worker_threads::MessageChannel::new();
+        channel.port1.post_message(original.clone()).unwrap();
+        let transported = worker_threads::receive_message_on_port(&channel.port2).unwrap();
+        assert_eq!(transported, original);
+        assert_eq!(transported.inspect(), original.inspect());
+    }
+}
+
+#[test]
+fn process_options_preserve_native_domains_without_a_floating_intermediate() {
+    let options = tsonic_rust_node::child_process::SpawnSyncOptions {
+        timeout: Some(9_007_199_254_740_993),
+        max_buffer: Some(usize::MAX),
+        uid: Some(u32::MAX),
+        gid: Some(u32::MAX),
+        ..Default::default()
+    };
+    assert_eq!(options.timeout, Some(9_007_199_254_740_993));
+    assert_eq!(options.max_buffer, Some(usize::MAX));
+    assert_eq!(options.uid, Some(u32::MAX));
+    assert_eq!(options.gid, Some(u32::MAX));
 }
 
 #[test]

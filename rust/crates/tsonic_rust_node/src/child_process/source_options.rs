@@ -10,14 +10,14 @@ use crate::process::ProcessEnv;
 #[derive(Debug, Clone, Default)]
 pub struct SpawnSyncOptions {
     pub encoding: Option<String>,
-    pub max_buffer: Option<f64>,
+    pub max_buffer: Option<usize>,
     pub cwd: Option<String>,
     pub env: Option<ProcessEnv>,
-    pub uid: Option<f64>,
-    pub gid: Option<f64>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
     pub stdio: Option<JsArray<JsStringNumber>>,
     pub input: Option<Uint8Array>,
-    pub timeout: Option<f64>,
+    pub timeout: Option<u64>,
     pub kill_signal: Option<String>,
 }
 
@@ -86,29 +86,16 @@ impl SpawnSyncOptions {
         Ok(SpawnOptions {
             cwd: self.cwd.as_ref().map(Into::into),
             env: self.env.as_ref().map(ProcessEnv::entries),
-            uid: self
-                .uid
-                .map(|value| integer(value, u32::MAX as u64, "uid").map(|value| value as u32))
-                .transpose()?,
-            gid: self
-                .gid
-                .map(|value| integer(value, u32::MAX as u64, "gid").map(|value| value as u32))
-                .transpose()?,
+            uid: self.uid,
+            gid: self.gid,
             stdio: StdioOptions::tuple(at(0), at(1), at(2)),
             extra_stdio: stdio.into_iter().skip(3).collect(),
             input: self
                 .input
                 .as_ref()
                 .map(|input| input.with_bytes(<[u8]>::to_vec)),
-            max_buffer: Some(integer(
-                self.max_buffer.unwrap_or(1024.0 * 1024.0),
-                usize::MAX as u64,
-                "maxBuffer",
-            )? as usize),
-            timeout_ms: self
-                .timeout
-                .map(|value| integer(value, u64::MAX, "timeout"))
-                .transpose()?,
+            max_buffer: Some(self.max_buffer.unwrap_or(1024 * 1024)),
+            timeout_ms: self.timeout,
             kill_signal: self.kill_signal.clone(),
             ..SpawnOptions::default()
         })

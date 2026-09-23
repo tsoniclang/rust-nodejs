@@ -18,21 +18,63 @@ include!("constants_errors.rs");
 mod numeric_bounds {
     #[test]
     fn stream_integer_bounds_do_not_saturate() {
-        let unsigned_limit = (u64::MAX as u128 + 1) as f64;
-        assert!(super::optional_non_negative_integer(Some(unsigned_limit), "start").is_err());
-        assert_eq!(super::optional_non_negative_integer(Some(unsigned_limit.next_down()), "start").unwrap(), Some(unsigned_limit.next_down() as u64));
-        let size_limit = (usize::MAX as u128 + 1) as f64;
-        assert!(super::optional_positive_usize(Some(size_limit), "size").is_err());
-        let maximum = size_limit.next_down().floor();
-        assert_eq!(super::optional_positive_usize(Some(maximum), "size").unwrap(), Some(maximum as usize));
-        assert!(super::optional_positive_usize(Some(0.0), "size").is_err());
+        let source = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        for options in [
+            super::ReadStreamOptions {
+                start: Some(1),
+                end: Some(0),
+                ..Default::default()
+            },
+            super::ReadStreamOptions {
+                start: Some(0),
+                end: Some(u64::MAX),
+                ..Default::default()
+            },
+            super::ReadStreamOptions {
+                high_water_mark: Some(0),
+                ..Default::default()
+            },
+        ] {
+            let result = super::ReadStream::from_file(
+                source.to_owned(),
+                std::fs::File::open(source).unwrap(),
+                &options,
+            );
+            assert_eq!(
+                result.err().expect("invalid range was accepted").code,
+                "ERR_OUT_OF_RANGE"
+            );
+        }
+        let options = super::ReadStreamOptions {
+            end: Some(u64::MAX - 1),
+            high_water_mark: Some(usize::MAX),
+            ..Default::default()
+        };
+        let result = super::ReadStream::from_file(
+            source.to_owned(),
+            std::fs::File::open(source).unwrap(),
+            &options,
+        )
+        .unwrap();
+        assert_eq!(result.remaining, Some(u64::MAX));
+        assert_eq!(result.chunk_size, usize::MAX);
     }
 
     #[test]
     fn file_time_rejects_the_exclusive_signed_upper_bound() {
         let limit = (i64::MAX as i128 + 1) as f64;
         assert!(super::file_time_from_seconds(limit).is_err());
-        assert_eq!(super::file_time_from_seconds(limit.next_down()).unwrap().unix_seconds(), limit.next_down() as i64);
-        assert_eq!(super::file_time_from_seconds(i64::MIN as f64).unwrap().unix_seconds(), i64::MIN);
+        assert_eq!(
+            super::file_time_from_seconds(limit.next_down())
+                .unwrap()
+                .unix_seconds(),
+            limit.next_down() as i64
+        );
+        assert_eq!(
+            super::file_time_from_seconds(i64::MIN as f64)
+                .unwrap()
+                .unix_seconds(),
+            i64::MIN
+        );
     }
 }

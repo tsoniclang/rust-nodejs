@@ -201,9 +201,9 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
         tls::SourceConnectOptions {
             host: Some("127.0.0.1".to_string()),
             servername: Some("localhost".to_string()),
-            port: Some(f64::from(port)),
+            port: Some(port),
             reject_unauthorized: Some(false),
-            timeout: Some(500.0),
+            timeout: Some(500),
             ..tls::SourceConnectOptions::default()
         },
         Callable::new(move |()| {

@@ -55,6 +55,9 @@ export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleD
 }
 
 export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
+  const positionCarrier = { kind: "type-parameter", name: "Position" } as const;
+  const numericCarrier = (name: string): RustTargetTypeRef => ({ kind: "type-parameter", name });
+  const numericGenerics = (...names: string[]) => names.map(sourceName => ({ kind: "type" as const, sourceName }));
   const operation = (
     name: string, path: string, parameters: readonly RustTargetTypeRef[],
     modes: readonly ("ref" | "value")[], result: RustTargetTypeRef = nativeUintCarrier,
@@ -69,18 +72,22 @@ export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderO
       { name: "string", carrier: stringCarrier, path: "open_sync_numeric" },
       { name: "Buffer", carrier: bufferCarrier, path: "open_sync_buffer_numeric" },
     ].map(path => ({
-      ...operation("openSync", path.path, [path.carrier, float64Carrier, float64Carrier], ["ref", "value", "value"], int32Carrier),
+      ...operation("openSync", path.path, [path.carrier, numericCarrier("Flags"), numericCarrier("Mode")], ["ref", "value", "value"], int32Carrier),
+      genericParameters: numericGenerics("Flags", "Mode"),
       signatureId: `${moduleId}::openSync(${path.name},number,number)`,
     })),
-    operation("closeSync", "close_sync_number", [float64Carrier], ["value"], unitCarrier),
+    { ...operation("closeSync", "close_sync_number", [numericCarrier("Descriptor")], ["value"], unitCarrier),
+      genericParameters: numericGenerics("Descriptor") },
     ...[
       { name: "Buffer", carrier: bufferCarrier, suffix: "buffer" },
       ...(typedArrays ? [{ name: "Uint8Array", carrier: rustJsTypedArrayTargetType("Uint8Array"), suffix: "uint8" }] : []),
     ].flatMap(buffer => ["read", "write"].flatMap(action => positions.map(position => ({
       ...operation(`${action}Sync`, `${action}_sync_${buffer.suffix}_number`, [
-        float64Carrier, buffer.carrier, float64Carrier, float64Carrier,
-        rustOptionTargetType(position.carrier),
+        numericCarrier("Descriptor"), buffer.carrier, numericCarrier("Offset"), numericCarrier("Length"),
+        rustOptionTargetType(positionCarrier),
       ], ["value", "ref", "value", "value", "value"]),
+      genericParameters: [...numericGenerics("Descriptor", "Offset", "Length"), { kind: "type" as const, sourceName: positionCarrier.name,
+        defaultArgument: { kind: "type" as const, type: position.carrier } }],
       signatureId: `${moduleId}::${action}Sync(${buffer.name}${position.suffix})`,
     })))),
   ];

@@ -1,5 +1,5 @@
 import {
-  uint64Carrier, nativeUintCarrier,
+  uint64Carrier, uint32Carrier, nativeUintCarrier,
   boolCarrier,
   booleanType,
   bufferCarrier,
@@ -354,7 +354,8 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
   const readStreamOptionsId = "node:fs::ReadStreamOptions";
   const writeStreamOptionsId = "node:fs::WriteStreamOptions";
   const optionBool = rustOptionTargetType(boolCarrier);
-  const optionNumber = rustOptionTargetType(float64Carrier);
+  const optionUint32 = rustOptionTargetType(uint32Carrier);
+  const optionUint64 = rustOptionTargetType(uint64Carrier);
   const fallible = (name: string, path: string, resultCarrier: RustTargetTypeRef, parameterCarriers: readonly RustTargetTypeRef[], trailingArguments?: readonly RustProviderConstantArgument[]): RustProviderOperationDefinition => ({
     exportId: `node:fs::${name}`,
     operationKind: "method",
@@ -427,16 +428,16 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       },
     ]),
     { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.recursive`, operationKind: "property-set", target: { form: "field", name: "recursive" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: makeDirectoryOptionsCarrier },
-    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property", target: { form: "field", name: "mode" }, resultCarrier: optionNumber, receiverCarrier: makeDirectoryOptionsCarrier },
-    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property-set", target: { form: "field", name: "mode" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property", target: { form: "field", name: "mode" }, resultCarrier: optionUint32, receiverCarrier: makeDirectoryOptionsCarrier },
+    { exportId: makeDirectoryOptionsId, memberId: `${makeDirectoryOptionsId}.mode`, operationKind: "property-set", target: { form: "field", name: "mode" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionUint32], receiverCarrier: makeDirectoryOptionsCarrier },
     { exportId: rmOptionsId, memberId: `${rmOptionsId}.recursive`, operationKind: "property", target: { form: "field", name: "recursive" }, resultCarrier: optionBool, receiverCarrier: rmOptionsCarrier },
     { exportId: rmOptionsId, memberId: `${rmOptionsId}.recursive`, operationKind: "property-set", target: { form: "field", name: "recursive" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: rmOptionsCarrier },
     { exportId: rmOptionsId, memberId: `${rmOptionsId}.force`, operationKind: "property", target: { form: "field", name: "force" }, resultCarrier: optionBool, receiverCarrier: rmOptionsCarrier },
     { exportId: rmOptionsId, memberId: `${rmOptionsId}.force`, operationKind: "property-set", target: { form: "field", name: "force" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionBool], receiverCarrier: rmOptionsCarrier },
-    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property", target: { form: "field", name: "max_retries" }, resultCarrier: optionNumber, receiverCarrier: rmOptionsCarrier },
-    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property-set", target: { form: "field", name: "max_retries" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: rmOptionsCarrier },
-    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: optionNumber, receiverCarrier: rmOptionsCarrier },
-    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property-set", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionNumber], receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property", target: { form: "field", name: "max_retries" }, resultCarrier: optionUint32, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.maxRetries`, operationKind: "property-set", target: { form: "field", name: "max_retries" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionUint32], receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: optionUint64, receiverCarrier: rmOptionsCarrier },
+    { exportId: rmOptionsId, memberId: `${rmOptionsId}.retryDelay`, operationKind: "property-set", target: { form: "field", name: "retry_delay_ms" }, resultCarrier: { kind: "tuple", elements: [] }, parameterCarriers: [optionUint64], receiverCarrier: rmOptionsCarrier },
     fallible("mkdtempSync", "node_fs::mkdtemp_sync", stringCarrier, [stringCarrier]),
     fallible("unlinkSync", "node_fs::unlink_sync", { kind: "tuple", elements: [] }, [stringCarrier]),
     fallible("symlinkSync", "node_fs::symlink_sync", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier]),
@@ -477,6 +478,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     },
     {
       ...fallible("createReadStream", "node_fs::create_read_stream_with_options", readStreamCarrier, [stringCarrier, readStreamOptionsCarrier]),
+      target: { form: "call", path: "node_fs::create_read_stream_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       signatureId: "node:fs::createReadStream(path,options)",
     },
     {
@@ -485,6 +487,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     },
     {
       ...fallible("createWriteStream", "node_fs::create_write_stream_with_options", writeStreamCarrier, [stringCarrier, writeStreamOptionsCarrier]),
+      target: { form: "call", path: "node_fs::create_write_stream_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       signatureId: "node:fs::createWriteStream(path,options)",
     },
     ...streamOptionRows(readStreamOptionsId, readStreamOptionsCarrier, true),
@@ -558,7 +561,6 @@ function streamOptionRows(
   includeEnd: boolean,
 ): readonly RustProviderOperationDefinition[] {
   const optionString = rustOptionTargetType(stringCarrier);
-  const optionNumber = rustOptionTargetType(float64Carrier);
   const field = (
     sourceName: string,
     targetName: string,
@@ -569,10 +571,10 @@ function streamOptionRows(
   ];
   return [
     ...field("flags", "flags", optionString),
-    ...field("mode", "mode", optionNumber),
-    ...field("start", "start", optionNumber),
-    ...(includeEnd ? field("end", "end", optionNumber) : []),
-    ...field("highWaterMark", "high_water_mark", optionNumber),
+    ...field("mode", "mode", rustOptionTargetType(uint32Carrier)),
+    ...field("start", "start", rustOptionTargetType(uint64Carrier)),
+    ...(includeEnd ? field("end", "end", rustOptionTargetType(uint64Carrier)) : []),
+    ...field("highWaterMark", "high_water_mark", rustOptionTargetType(nativeUintCarrier)),
   ];
 }
 

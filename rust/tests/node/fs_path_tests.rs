@@ -39,7 +39,7 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
         &directory_buffer,
         fs::MakeDirectoryOptions {
             recursive: Some(true),
-            mode: Some(0o700 as f64),
+            mode: Some(0o700),
         },
     )
     .unwrap();

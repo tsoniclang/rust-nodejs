@@ -16,6 +16,23 @@ fn native_file_positions_preserve_all_64_bits_without_float_transport() {
     assert!((-2_i64).file_position().is_err());
     assert!((u64::MAX as f64).file_position().is_err());
     assert!(f64::NAN.file_position().is_err());
+    if let Ok(position) = usize::try_from(9_007_199_254_740_993_u64) {
+        assert_eq!(
+            position.file_position().unwrap(),
+            Some(9_007_199_254_740_993)
+        );
+    }
+    assert_eq!(
+        u128::from(u64::MAX).file_position().unwrap(),
+        Some(u64::MAX)
+    );
+    assert!((u128::from(u64::MAX) + 1).file_position().is_err());
+    assert_eq!((-1_i128).file_position().unwrap(), None);
+    assert!((-2_i128).file_position().is_err());
+    assert_eq!(u8::MAX.file_position().unwrap(), Some(255));
+    assert_eq!((-1_i8).file_position().unwrap(), None);
+    assert_eq!(17_f32.file_position().unwrap(), Some(17));
+    assert!(0.5_f32.file_position().is_err());
 }
 
 #[test]

@@ -47,6 +47,8 @@ fn format_string(value: &JsValue) -> crate::error::NodeResult<String> {
 // rendered with JS number formatting (NaN for values that do not coerce).
 fn format_number(value: &JsValue) -> String {
     let number = match value {
+        JsValue::Integer(value) => return value.to_string(),
+        JsValue::UnsignedInteger(value) => return value.to_string(),
         JsValue::Number(value) => *value,
         JsValue::Bool(value) => {
             if *value {

@@ -1,10 +1,12 @@
 import {
-  boolCarrier, emptyCallbackCarrier, float64Carrier, numberType,
+  boolCarrier, emptyCallbackCarrier, numberType,
   providerNativeFallibility, providerRef, stringCarrier, stringType, voidType,
 } from "../model.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../model.js";
 
 export const processCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Process" };
+const pidCarrier: RustTargetTypeRef = { kind: "type-parameter", name: "Pid" };
+const signalCarrier: RustTargetTypeRef = { kind: "type-parameter", name: "Signal" };
 const moduleSpecifier = "node:process";
 const processId = `${moduleSpecifier}::Process`;
 const callbackType = { kind: "function" as const, id: `${processId}.SignalListener`, parameters: [], returnType: voidType };
@@ -33,11 +35,12 @@ export function processSignalMembers(): NonNullable<RustProviderModuleDefinition
 export function processSignalRows(): readonly RustProviderOperationDefinition[] {
   return [
     { exportId: processId, memberId: `${processId}.kill`, signatureId: `${processId}.kill(pid)`, operationKind: "method",
-      target: { form: "call", path: "node_process::kill_default" }, parameterCarriers: [float64Carrier], resultCarrier: boolCarrier, ...providerNativeFallibility },
+      target: { form: "call", path: "node_process::kill_default" }, parameterCarriers: [pidCarrier], genericParameters: [{ kind: "type", sourceName: "Pid" }], resultCarrier: boolCarrier, ...providerNativeFallibility },
     ...["string", "number"].map(kind => ({
       exportId: processId, memberId: `${processId}.kill`, signatureId: `${processId}.kill(pid,${kind})`, operationKind: "method" as const,
       target: { form: "call" as const, path: `node_process::kill_${kind === "string" ? "named" : "number"}`, argModes: ["value" as const, kind === "string" ? "ref" as const : "value" as const] },
-      parameterCarriers: [float64Carrier, kind === "string" ? stringCarrier : float64Carrier], resultCarrier: boolCarrier, ...providerNativeFallibility,
+      parameterCarriers: [pidCarrier, kind === "string" ? stringCarrier : signalCarrier], resultCarrier: boolCarrier,
+      genericParameters: [{ kind: "type" as const, sourceName: "Pid" }, ...(kind === "string" ? [] : [{ kind: "type" as const, sourceName: "Signal" }])], ...providerNativeFallibility,
     })),
     ...["once", "removeListener"].map(name => ({
       exportId: processId, memberId: `${processId}.${name}`, signatureId: `${processId}.${name}(signal,listener)`, operationKind: "method" as const,

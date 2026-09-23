@@ -12,6 +12,7 @@ test("filesystem calls preserve exact native int64 positions through provider se
   assert.deepEqual(result.diagnostics, []);
   const output = artifactText(result, "src/index.rs");
   assert.match(output, /position: i64/u);
+  assert.match(output, /position: u64/u);
   assert.match(output, /9007199254740993/u);
   assert.match(output, /read_sync_buffer_number/u);
   assert.match(output, /write_sync_buffer_number/u);

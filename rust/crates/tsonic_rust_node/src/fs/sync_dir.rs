@@ -6,16 +6,19 @@ pub fn mkdir_sync_with_options(
     path: impl AsRef<std::path::Path>,
     options: MakeDirectoryOptions,
 ) -> NodeResult<()> {
-    let mode = options
-        .mode
-        .map(|value| require_non_negative_integer(value, "mode", 0o7777))
-        .transpose()?;
+    let mode = options.mode;
+    if mode.is_some_and(|value| value > 0o7777) {
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "mode exceeds the native permission mask",
+        ));
+    }
     let mut builder = fs::DirBuilder::new();
     builder.recursive(options.recursive.unwrap_or(false));
     #[cfg(unix)]
     if let Some(mode) = mode {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(mode as u32);
+        builder.mode(mode);
     }
     #[cfg(not(unix))]
     let _ = mode;
@@ -53,17 +56,9 @@ pub fn rm_sync_with_options(
     let path = path.as_ref();
     let recursive = options.recursive.unwrap_or(false);
     let force = options.force.unwrap_or(false);
-    let configured_max_retries = require_non_negative_integer(
-        options.max_retries.unwrap_or(0.0),
-        "maxRetries",
-        u32::MAX as u64,
-    )? as u32;
+    let configured_max_retries = options.max_retries.unwrap_or(0);
     let max_retries = if recursive { configured_max_retries } else { 0 };
-    let retry_delay = require_non_negative_integer(
-        options.retry_delay_ms.unwrap_or(100.0),
-        "retryDelay",
-        u32::MAX as u64,
-    )?;
+    let retry_delay = options.retry_delay_ms.unwrap_or(100);
     let mut attempts = 0_u32;
     loop {
         match remove_path(path, recursive, force) {
@@ -85,17 +80,6 @@ pub fn rm_sync_with_options(
             Err(error) => return Err(error),
         }
     }
-}
-
-fn require_non_negative_integer(value: f64, name: &str, maximum: u64) -> NodeResult<u64> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0
-        || value >= 18_446_744_073_709_551_616.0 || value as u64 > maximum {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            format!("{name} must be a finite non-negative integer in range"),
-        ));
-    }
-    Ok(value as u64)
 }
 
 fn rm_error_is_retryable(error: &NodeError) -> bool {

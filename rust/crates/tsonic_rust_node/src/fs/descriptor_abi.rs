@@ -1,5 +1,14 @@
-fn checked_descriptor(value: f64) -> NodeResult<i32> {
-    require_non_negative_integer(value, "fd", i32::MAX as u64).map(|value| value as i32)
+#[inline]
+fn checked_descriptor(value: impl tsonic_rust_js::numeric::IntegerInput<i32>) -> NodeResult<i32> {
+    value
+        .checked_integer()
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| {
+            NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "fd must be a non-negative native descriptor",
+            )
+        })
 }
 
 pub trait NativeFilePosition {
@@ -9,26 +18,51 @@ pub trait NativeFilePosition {
 impl NativeFilePosition for f64 {
     #[inline]
     fn file_position(self) -> NodeResult<Option<u64>> {
-        if self == -1.0 { return Ok(None); }
-        require_non_negative_integer(self, "position", u64::MAX).map(Some)
+        if self == -1.0 {
+            return Ok(None);
+        }
+        tsonic_rust_js::numeric::IntegerInput::<u64>::checked_integer(self)
+            .map(Some)
+            .ok_or_else(|| {
+                NodeError::new(
+                    "ERR_OUT_OF_RANGE",
+                    "position is outside the native file offset range",
+                )
+            })
     }
 }
 
-impl NativeFilePosition for i64 {
+macro_rules! native_file_positions {
+    (unsigned: $($unsigned:ty),*; signed: $($signed:ty),* $(;)?) => {
+        $(native_file_positions!(@implementation $unsigned, |_| false);)*
+        $(native_file_positions!(@implementation $signed, |value: $signed| value == -1);)*
+    };
+    (@implementation $native:ty, $is_current:expr) => {
+        impl NativeFilePosition for $native {
+            #[inline]
+            fn file_position(self) -> NodeResult<Option<u64>> {
+                if ($is_current)(self) {
+                    return Ok(None);
+                }
+                u64::try_from(self).map(Some)
+                    .map_err(|_| NodeError::new("ERR_OUT_OF_RANGE", "position is outside the native file offset range"))
+            }
+        }
+    };
+}
+
+native_file_positions!(unsigned: u8, u16, u32, u64, usize, u128; signed: i8, i16, i32, i64, isize, i128);
+
+impl NativeFilePosition for f32 {
     #[inline]
     fn file_position(self) -> NodeResult<Option<u64>> {
-        if self == -1 { return Ok(None); }
-        u64::try_from(self).map(Some)
-            .map_err(|_| NodeError::new("ERR_OUT_OF_RANGE", "position must be non-negative"))
+        f64::from(self).file_position()
     }
 }
 
-impl NativeFilePosition for u64 {
-    #[inline]
-    fn file_position(self) -> NodeResult<Option<u64>> { Ok(Some(self)) }
-}
-
-fn checked_file_position<Position: NativeFilePosition>(value: Option<Position>) -> NodeResult<Option<u64>> {
+fn checked_file_position<Position: NativeFilePosition>(
+    value: Option<Position>,
+) -> NodeResult<Option<u64>> {
     match value {
         Some(value) => value.file_position(),
         None => Ok(None),
@@ -36,24 +70,34 @@ fn checked_file_position<Position: NativeFilePosition>(value: Option<Position>) 
 }
 
 fn checked_descriptor_range(
-    offset: f64,
-    length: f64,
+    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
     available: usize,
 ) -> NodeResult<std::ops::Range<usize>> {
-    let offset = require_non_negative_integer(offset, "offset", available as u64)? as usize;
-    let length = require_non_negative_integer(length, "length", available as u64)? as usize;
+    let offset = offset.checked_integer().ok_or_else(|| {
+        NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "offset must be a non-negative native index",
+        )
+    })?;
+    let length = length.checked_integer().ok_or_else(|| {
+        NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "length must be a non-negative native length",
+        )
+    })?;
     descriptor_buffer_range(offset, length, available)
 }
 
-pub fn close_sync_number(fd: f64) -> NodeResult<()> {
+pub fn close_sync_number(fd: impl tsonic_rust_js::numeric::IntegerInput<i32>) -> NodeResult<()> {
     close_sync(checked_descriptor(fd)?)
 }
 
 pub fn read_sync_buffer_number<Position: NativeFilePosition>(
-    fd: f64,
+    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
     buffer: &Buffer,
-    offset: f64,
-    length: f64,
+    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -65,10 +109,10 @@ pub fn read_sync_buffer_number<Position: NativeFilePosition>(
 }
 
 pub fn write_sync_buffer_number<Position: NativeFilePosition>(
-    fd: f64,
+    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
     buffer: &Buffer,
-    offset: f64,
-    length: f64,
+    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -80,10 +124,10 @@ pub fn write_sync_buffer_number<Position: NativeFilePosition>(
 }
 
 pub fn read_sync_uint8_number<Position: NativeFilePosition>(
-    fd: f64,
+    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
     buffer: &tsonic_rust_js::Uint8Array,
-    offset: f64,
-    length: f64,
+    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -95,10 +139,10 @@ pub fn read_sync_uint8_number<Position: NativeFilePosition>(
 }
 
 pub fn write_sync_uint8_number<Position: NativeFilePosition>(
-    fd: f64,
+    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
     buffer: &tsonic_rust_js::Uint8Array,
-    offset: f64,
-    length: f64,
+    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -109,29 +153,36 @@ pub fn write_sync_uint8_number<Position: NativeFilePosition>(
     })
 }
 
-pub fn open_sync_numeric(path: &str, flags: f64, mode: f64) -> NodeResult<i32> {
+pub fn open_sync_numeric(
+    path: &str,
+    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+) -> NodeResult<i32> {
     open_numeric_path(std::path::Path::new(path), flags, mode)
 }
 
-pub fn open_sync_buffer_numeric(path: &Buffer, flags: f64, mode: f64) -> NodeResult<i32> {
-    with_buffer_path(path, |path| {
-        open_numeric_path(path, flags, mode)
-    })
+pub fn open_sync_buffer_numeric(
+    path: &Buffer,
+    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+) -> NodeResult<i32> {
+    with_buffer_path(path, |path| open_numeric_path(path, flags, mode))
 }
 
-fn open_numeric_path(path: &std::path::Path, flags: f64, mode: f64) -> NodeResult<i32> {
-    if !flags.is_finite()
-        || flags.fract() != 0.0
-        || flags < i32::MIN as f64
-        || flags > i32::MAX as f64
-    {
-        return Err(NodeError::new(
+fn open_numeric_path(
+    path: &std::path::Path,
+    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+) -> NodeResult<i32> {
+    let flags = flags.checked_integer().ok_or_else(|| {
+        NodeError::new("ERR_OUT_OF_RANGE", "flags must be a signed 32-bit integer")
+    })?;
+    let mode = mode.checked_integer().ok_or_else(|| {
+        NodeError::new(
             "ERR_OUT_OF_RANGE",
-            "flags must be a signed 32-bit integer",
-        ));
-    }
-    let flags = flags as i32;
-    let mode = require_non_negative_integer(mode, "mode", u32::MAX as u64)? as u32;
+            "mode must be an unsigned 32-bit integer",
+        )
+    })?;
     let constants = constants();
     let access = flags & 3;
     if access == 3 {

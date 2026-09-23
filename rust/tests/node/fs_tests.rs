@@ -509,7 +509,7 @@ fn fs_extended_sync_directory_lifecycle() {
         &source_text,
         fs::MakeDirectoryOptions {
             recursive: Some(false),
-            mode: Some(f64::from(0o755)),
+            mode: Some(0o755),
         },
     )
     .unwrap();
@@ -625,8 +625,8 @@ fn fs_extended_sync_directory_lifecycle() {
         fs::RmOptions {
             recursive: Some(true),
             force: Some(true),
-            max_retries: Some(1.0),
-            retry_delay_ms: Some(0.0),
+            max_retries: Some(1),
+            retry_delay_ms: Some(0),
         },
     )
     .unwrap();
@@ -790,9 +790,9 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     let mut readable = fs::create_read_stream_with_options(
         &file_text,
         fs::ReadStreamOptions {
-            start: Some(1.0),
-            end: Some(3.0),
-            high_water_mark: Some(4.0),
+            start: Some(1),
+            end: Some(3),
+            high_water_mark: Some(4),
             ..fs::ReadStreamOptions::default()
         },
     )
@@ -926,20 +926,20 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
 
     let mkdir = fs::MakeDirectoryOptions {
         recursive: Some(true),
-        mode: Some(f64::from(0o755)),
+        mode: Some(0o755),
     };
     assert_eq!(mkdir.recursive, Some(true));
-    assert_eq!(mkdir.mode, Some(f64::from(0o755)));
+    assert_eq!(mkdir.mode, Some(0o755));
     let rm = fs::RmOptions {
         recursive: Some(true),
         force: Some(true),
-        max_retries: Some(2.0),
-        retry_delay_ms: Some(3.0),
+        max_retries: Some(2),
+        retry_delay_ms: Some(3),
     };
     assert_eq!(rm.recursive, Some(true));
     assert_eq!(rm.force, Some(true));
-    assert_eq!(rm.max_retries, Some(2.0));
-    assert_eq!(rm.retry_delay_ms, Some(3.0));
+    assert_eq!(rm.max_retries, Some(2));
+    assert_eq!(rm.retry_delay_ms, Some(3));
 
     let copy_base = fs::CopyOptionsBase {
         dereference: true,
@@ -1022,27 +1022,27 @@ fn fs_option_result_and_stream_carriers_expose_backend_legal_fields() {
 
     let read_stream = fs::ReadStreamOptions {
         flags: Some("r".to_string()),
-        mode: Some(0o644 as f64),
-        start: Some(1.0),
-        end: Some(8.0),
-        high_water_mark: Some(1024.0),
+        mode: Some(0o644),
+        start: Some(1),
+        end: Some(8),
+        high_water_mark: Some(1024),
     };
     assert_eq!(read_stream.flags.as_deref(), Some("r"));
-    assert_eq!(read_stream.mode, Some(0o644 as f64));
-    assert_eq!(read_stream.start, Some(1.0));
-    assert_eq!(read_stream.end, Some(8.0));
-    assert_eq!(read_stream.high_water_mark, Some(1024.0));
+    assert_eq!(read_stream.mode, Some(0o644));
+    assert_eq!(read_stream.start, Some(1));
+    assert_eq!(read_stream.end, Some(8));
+    assert_eq!(read_stream.high_water_mark, Some(1024));
     let write_stream = fs::WriteStreamOptions {
         flags: Some("a".to_string()),
-        mode: Some(0o644 as f64),
-        start: Some(1.0),
-        high_water_mark: Some(1024.0),
+        mode: Some(0o644),
+        start: Some(1),
+        high_water_mark: Some(1024),
         flush: Some(true),
     };
     assert_eq!(write_stream.flags.as_deref(), Some("a"));
-    assert_eq!(write_stream.mode, Some(0o644 as f64));
-    assert_eq!(write_stream.start, Some(1.0));
-    assert_eq!(write_stream.high_water_mark, Some(1024.0));
+    assert_eq!(write_stream.mode, Some(0o644));
+    assert_eq!(write_stream.start, Some(1));
+    assert_eq!(write_stream.high_water_mark, Some(1024));
     assert_eq!(write_stream.flush, Some(true));
 
     let watch = fs::WatchOptions {
@@ -1248,11 +1248,10 @@ fn rm_sync_options_enforce_recursive_force_and_numeric_contracts() {
     )
     .unwrap();
     assert_eq!(
-        fs::rm_sync_with_options(
+        fs::mkdir_sync_with_options(
             &root_text,
-            fs::RmOptions {
-                force: Some(true),
-                max_retries: Some(1.5),
+            fs::MakeDirectoryOptions {
+                mode: Some(0o10000),
                 ..Default::default()
             },
         )
