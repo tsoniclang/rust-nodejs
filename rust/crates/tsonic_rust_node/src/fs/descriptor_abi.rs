@@ -2,13 +2,37 @@ fn checked_descriptor(value: f64) -> NodeResult<i32> {
     require_non_negative_integer(value, "fd", i32::MAX as u64).map(|value| value as i32)
 }
 
-fn checked_file_position(value: Option<f64>) -> NodeResult<Option<u64>> {
-    if value == Some(-1.0) {
-        return Ok(None);
+pub trait NativeFilePosition {
+    fn file_position(self) -> NodeResult<Option<u64>>;
+}
+
+impl NativeFilePosition for f64 {
+    #[inline]
+    fn file_position(self) -> NodeResult<Option<u64>> {
+        if self == -1.0 { return Ok(None); }
+        require_non_negative_integer(self, "position", u64::MAX).map(Some)
     }
-    value
-        .map(|value| require_non_negative_integer(value, "position", 9_007_199_254_740_991))
-        .transpose()
+}
+
+impl NativeFilePosition for i64 {
+    #[inline]
+    fn file_position(self) -> NodeResult<Option<u64>> {
+        if self == -1 { return Ok(None); }
+        u64::try_from(self).map(Some)
+            .map_err(|_| NodeError::new("ERR_OUT_OF_RANGE", "position must be non-negative"))
+    }
+}
+
+impl NativeFilePosition for u64 {
+    #[inline]
+    fn file_position(self) -> NodeResult<Option<u64>> { Ok(Some(self)) }
+}
+
+fn checked_file_position<Position: NativeFilePosition>(value: Option<Position>) -> NodeResult<Option<u64>> {
+    match value {
+        Some(value) => value.file_position(),
+        None => Ok(None),
+    }
 }
 
 fn checked_descriptor_range(
@@ -29,12 +53,12 @@ pub fn close_sync_number(fd: f64) -> NodeResult<()> {
     close_sync(checked_descriptor(fd)?)
 }
 
-pub fn read_sync_buffer_number(
+pub fn read_sync_buffer_number<Position: NativeFilePosition>(
     fd: f64,
     buffer: &Buffer,
     offset: f64,
     length: f64,
-    position: Option<f64>,
+    position: Option<Position>,
 ) -> NodeResult<f64> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
@@ -44,12 +68,12 @@ pub fn read_sync_buffer_number(
     })
 }
 
-pub fn write_sync_buffer_number(
+pub fn write_sync_buffer_number<Position: NativeFilePosition>(
     fd: f64,
     buffer: &Buffer,
     offset: f64,
     length: f64,
-    position: Option<f64>,
+    position: Option<Position>,
 ) -> NodeResult<f64> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
@@ -59,12 +83,12 @@ pub fn write_sync_buffer_number(
     })
 }
 
-pub fn read_sync_uint8_number(
+pub fn read_sync_uint8_number<Position: NativeFilePosition>(
     fd: f64,
     buffer: &tsonic_rust_js::Uint8Array,
     offset: f64,
     length: f64,
-    position: Option<f64>,
+    position: Option<Position>,
 ) -> NodeResult<f64> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
@@ -74,12 +98,12 @@ pub fn read_sync_uint8_number(
     })
 }
 
-pub fn write_sync_uint8_number(
+pub fn write_sync_uint8_number<Position: NativeFilePosition>(
     fd: f64,
     buffer: &tsonic_rust_js::Uint8Array,
     offset: f64,
     length: f64,
-    position: Option<f64>,
+    position: Option<Position>,
 ) -> NodeResult<f64> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;

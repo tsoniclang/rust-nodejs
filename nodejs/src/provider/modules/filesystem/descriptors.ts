@@ -10,7 +10,10 @@ import type {
 } from "../../model.js";
 
 const moduleId = "node:fs";
-const positionType = { kind: "union", types: [numberType, nullType] } as const;
+const positions = [
+  { suffix: "", type: numberType, carrier: float64Carrier },
+  { suffix: ",int64", type: { kind: "source-primitive", name: "int64" }, carrier: { kind: "source-primitive", name: "int64" } },
+] as const;
 
 export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleDefinition["exports"] {
   const buffers = [
@@ -37,15 +40,15 @@ export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleD
     fnExport(moduleId, "closeSync", [{ name: "fd", type: numberType }], voidType),
     ...["readSync", "writeSync"].map(name => ({
       id: `${moduleId}::${name}`, name, kind: "function" as const,
-      signatures: buffers.map(buffer => ({
-        id: `${moduleId}::${name}(${buffer.name})`, name,
+      signatures: buffers.flatMap(buffer => positions.map(position => ({
+        id: `${moduleId}::${name}(${buffer.name}${position.suffix})`, name,
         parameters: [
           { name: "fd", type: numberType }, { name: "buffer", type: buffer.type },
           { name: "offset", type: numberType }, { name: "length", type: numberType },
-          { name: "position", type: positionType },
+          { name: "position", type: { kind: "union", types: [position.type, nullType] } },
         ],
         returnType: numberType,
-      })),
+      }))),
     })),
   ];
 }
@@ -72,12 +75,12 @@ export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderO
     ...[
       { name: "Buffer", carrier: bufferCarrier, suffix: "buffer" },
       ...(typedArrays ? [{ name: "Uint8Array", carrier: rustJsTypedArrayTargetType("Uint8Array"), suffix: "uint8" }] : []),
-    ].flatMap(buffer => ["read", "write"].map(action => ({
+    ].flatMap(buffer => ["read", "write"].flatMap(action => positions.map(position => ({
       ...operation(`${action}Sync`, `${action}_sync_${buffer.suffix}_number`, [
         float64Carrier, buffer.carrier, float64Carrier, float64Carrier,
-        rustOptionTargetType(float64Carrier),
+        rustOptionTargetType(position.carrier),
       ], ["value", "ref", "value", "value", "value"]),
-      signatureId: `${moduleId}::${action}Sync(${buffer.name})`,
-    }))),
+      signatureId: `${moduleId}::${action}Sync(${buffer.name}${position.suffix})`,
+    })))),
   ];
 }

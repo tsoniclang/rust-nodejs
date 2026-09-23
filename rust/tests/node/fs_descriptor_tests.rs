@@ -4,6 +4,18 @@ use tsonic_rust_js::Uint8Array;
 use tsonic_rust_node::{buffer::Buffer, fs};
 
 #[test]
+fn native_file_positions_preserve_all_64_bits_without_float_transport() {
+    use fs::NativeFilePosition;
+    assert_eq!(9_007_199_254_740_993_i64.file_position().unwrap(), Some(9_007_199_254_740_993));
+    assert_eq!(u64::MAX.file_position().unwrap(), Some(u64::MAX));
+    assert_eq!(i64::MAX.file_position().unwrap(), Some(i64::MAX as u64));
+    assert_eq!((-1_i64).file_position().unwrap(), None);
+    assert!((-2_i64).file_position().is_err());
+    assert!((u64::MAX as f64).file_position().is_err());
+    assert!(f64::NAN.file_position().is_err());
+}
+
+#[test]
 fn compiler_descriptor_views_positions_and_validation() {
     if std::env::var_os("TSONIC_DESCRIPTOR_CHILD").is_none() {
         let result = Command::new(std::env::current_exe().unwrap())
@@ -36,13 +48,13 @@ fn compiler_descriptor_views_positions_and_validation() {
     let bytes = Uint8Array::from_vec(vec![19.0, 97.0, 98.0, 99.0, 100.0, 23.0]).unwrap();
     let view = bytes.subarray(1.0, Some(5.0));
     assert_eq!(
-        fs::write_sync_uint8_number(fd, &view, 0.0, 4.0, None).unwrap(),
+        fs::write_sync_uint8_number(fd, &view, 0.0, 4.0, None::<f64>).unwrap(),
         4.0
     );
     let reader = fs::open_sync_number(path_text, "r").unwrap();
     let copied = Buffer::alloc(4);
     assert_eq!(
-        fs::read_sync_buffer_number(reader, &copied, 0.0, 4.0, None).unwrap(),
+        fs::read_sync_buffer_number(reader, &copied, 0.0, 4.0, None::<f64>).unwrap(),
         4.0
     );
     assert_eq!(copied.as_bytes(), b"abcd");
@@ -59,7 +71,7 @@ fn compiler_descriptor_views_positions_and_validation() {
     );
     target.with_bytes(|bytes| assert_eq!(bytes, &[17, 17, 98, 99, 17, 17]));
     assert_eq!(
-        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None).unwrap(),
+        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None::<f64>).unwrap(),
         0.0
     );
     let replacement = Buffer::from_bytes(vec![90]);
@@ -68,7 +80,7 @@ fn compiler_descriptor_views_positions_and_validation() {
         1.0
     );
     assert_eq!(
-        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None).unwrap(),
+        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None::<f64>).unwrap(),
         0.0
     );
     let result = Buffer::alloc(4);
@@ -83,13 +95,13 @@ fn compiler_descriptor_views_positions_and_validation() {
     assert_eq!(result.as_bytes(), b"Zbcd");
     for invalid in [f64::NAN, f64::INFINITY, -1.0, 0.5, 5.0] {
         assert_eq!(
-            fs::read_sync_uint8_number(fd, &target_view, invalid, 1.0, None)
+            fs::read_sync_uint8_number(fd, &target_view, invalid, 1.0, None::<f64>)
                 .unwrap_err()
                 .code,
             "ERR_OUT_OF_RANGE"
         );
         assert_eq!(
-            fs::write_sync_buffer_number(fd, &result, 0.0, invalid, None)
+            fs::write_sync_buffer_number(fd, &result, 0.0, invalid, None::<f64>)
                 .unwrap_err()
                 .code,
             "ERR_OUT_OF_RANGE"
@@ -108,7 +120,7 @@ fn compiler_descriptor_views_positions_and_validation() {
         "ERR_OUT_OF_RANGE"
     );
     assert_eq!(
-        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, Some(9_007_199_254_740_992.0))
+        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, Some(18_446_744_073_709_551_616.0))
             .unwrap_err()
             .code,
         "ERR_OUT_OF_RANGE"
@@ -127,7 +139,7 @@ fn compiler_descriptor_views_positions_and_validation() {
     );
     fs::close_sync_number(fd).unwrap();
     assert_eq!(
-        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None)
+        fs::read_sync_uint8_number(fd, &target_view, 0.0, 1.0, None::<f64>)
             .unwrap_err()
             .code,
         "EBADF"
@@ -151,7 +163,7 @@ fn compiler_descriptor_views_positions_and_validation() {
         )
         .unwrap();
         assert!(unsafe { libc::fcntl(fd as i32, libc::F_GETFD) } >= 0);
-        fs::write_sync_buffer_number(fd, &replacement, 0.0, 1.0, None).unwrap();
+        fs::write_sync_buffer_number(fd, &replacement, 0.0, 1.0, None::<f64>).unwrap();
         fs::close_sync_number(fd).unwrap();
         assert_eq!(std::fs::read(&raw).unwrap(), b"Z");
         std::fs::remove_file(raw).unwrap();
@@ -170,15 +182,15 @@ fn compiler_standard_descriptors_execute_native_io() {
     if std::env::var_os("TSONIC_STDIO_CHILD").is_some() {
         let bytes = Uint8Array::new(16.0).unwrap();
         assert_eq!(
-            fs::read_sync_uint8_number(0.0, &bytes, 0.0, 16.0, None).unwrap(),
+            fs::read_sync_uint8_number(0.0, &bytes, 0.0, 16.0, None::<f64>).unwrap(),
             16.0
         );
         assert_eq!(
-            fs::write_sync_uint8_number(1.0, &bytes, 0.0, 16.0, None).unwrap(),
+            fs::write_sync_uint8_number(1.0, &bytes, 0.0, 16.0, None::<f64>).unwrap(),
             16.0
         );
         assert_eq!(
-            fs::write_sync_uint8_number(2.0, &bytes, 0.0, 16.0, None).unwrap(),
+            fs::write_sync_uint8_number(2.0, &bytes, 0.0, 16.0, None::<f64>).unwrap(),
             16.0
         );
         return;

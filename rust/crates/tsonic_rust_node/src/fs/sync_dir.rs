@@ -88,7 +88,8 @@ pub fn rm_sync_with_options(
 }
 
 fn require_non_negative_integer(value: f64, name: &str, maximum: u64) -> NodeResult<u64> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > maximum as f64 {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0
+        || value >= 18_446_744_073_709_551_616.0 || value as u64 > maximum {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             format!("{name} must be a finite non-negative integer in range"),

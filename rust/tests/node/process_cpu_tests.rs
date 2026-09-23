@@ -33,8 +33,8 @@ fn process_cpu_sleep_is_not_reported_as_cpu_and_deltas_retain_sign() {
     let working = cpu_usage(Some(before)).unwrap();
     assert!(working.user + working.system > 0.0);
     let future = cpu_usage(Some(CpuUsage {
-        user: 9_007_199_254_740_991.0,
-        system: 9_007_199_254_740_991.0,
+        user: 9_007_199_254_740_992.0,
+        system: 9_007_199_254_740_992.0,
     }))
     .unwrap();
     assert!(future.user < 0.0 && future.system < 0.0);
@@ -45,7 +45,7 @@ fn process_cpu_sleep_is_not_reported_as_cpu_and_deltas_retain_sign() {
     .unwrap();
     assert_eq!(fractional.user.fract().abs(), 0.5);
     assert_eq!(fractional.system.fract().abs(), 0.5);
-    for invalid in [-1.0, f64::NAN, f64::INFINITY, 9_007_199_254_740_992.0] {
+    for invalid in [-1.0, f64::NAN, f64::INFINITY] {
         assert!(cpu_usage(Some(CpuUsage {
             user: invalid,
             system: 0.0

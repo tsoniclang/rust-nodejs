@@ -21,10 +21,10 @@ fn subtract_previous(current: CpuUsage, previous: Option<CpuUsage>) -> NodeResul
         return Ok(current);
     };
     for value in [previous.user, previous.system] {
-        if !value.is_finite() || !(0.0..=9_007_199_254_740_991.0).contains(&value) {
+        if !value.is_finite() || value < 0.0 {
             return Err(NodeError::new(
                 "ERR_INVALID_ARG_VALUE",
-                "CPU usage fields must be finite numbers from zero through Number.MAX_SAFE_INTEGER",
+                "CPU usage fields must be finite non-negative numbers",
             ));
         }
     }
