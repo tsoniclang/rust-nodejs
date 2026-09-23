@@ -58,6 +58,8 @@ fn compiler_descriptor_views_positions_and_validation() {
         4.0
     );
     assert_eq!(copied.as_bytes(), b"abcd");
+    assert_eq!(fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(9_007_199_254_740_993_i64)).unwrap(), 0.0);
+    assert_eq!(fs::read_sync_buffer_number(reader, &copied, 0.0, 1.0, Some(0_i64)).unwrap(), 1.0);
     fs::close_sync_number(reader).unwrap();
     assert_eq!(
         fs::open_sync_number(path_text, "invalid").unwrap_err().code,
