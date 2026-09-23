@@ -284,7 +284,7 @@ impl Worker {
                     ("error", std::slice::from_ref(&converted))
                 }
                 WorkerSignal::Exit(code) => {
-                    converted = JsValue::Number(f64::from(*code));
+                    converted = JsValue::from(*code);
                     ("exit", std::slice::from_ref(&converted))
                 }
             };

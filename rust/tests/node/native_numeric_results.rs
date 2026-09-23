@@ -2,6 +2,26 @@ use tsonic_rust_js::JsArray;
 use tsonic_rust_node::{buffer, fs, process};
 
 #[test]
+fn buffer_byte_construction_preserves_native_low_bits_and_owns_its_output() {
+    let input = JsArray::from_dense(vec![9_007_199_254_740_993_u64, u64::MAX, 256]);
+    let output = buffer::Buffer::from_number_array(&input);
+    assert_eq!(output.as_bytes(), vec![1, 255, 0]);
+    input.set(0, 17);
+    assert_eq!(output.as_bytes(), vec![1, 255, 0]);
+    assert_eq!(input.get(0), Some(17));
+    let signed = JsArray::from_dense(vec![i128::MIN + 3, -1_i128]);
+    assert_eq!(
+        buffer::Buffer::from_number_array(&signed).as_bytes(),
+        vec![3, 255]
+    );
+    let floating = JsArray::from_dense(vec![65.9, -1.9, f64::NAN, f64::INFINITY]);
+    assert_eq!(
+        buffer::Buffer::from_number_array(&floating).as_bytes(),
+        vec![65, 255, 0, 0]
+    );
+}
+
+#[test]
 fn buffer_results_preserve_widths_and_counts() {
     let mut bytes = buffer::Buffer::alloc(8);
     let count: usize = buffer::write_uint32_le_number(&mut bytes, u32::MAX as f64, 0.0).unwrap();
@@ -110,6 +130,27 @@ fn native_integer_rows_and_worker_values_do_not_round() {
         let transported = worker_threads::receive_message_on_port(&channel.port2).unwrap();
         assert_eq!(transported, original);
         assert_eq!(transported.inspect(), original.inspect());
+    }
+}
+
+#[test]
+fn byte_payloads_keep_integer_slots_in_closed_values() {
+    use tsonic_rust_js::JsValue;
+    let json = buffer::Buffer::from_bytes(vec![0, 127, 255]).to_json();
+    let data = json.as_object().unwrap().borrow().get("data");
+    let bytes = data.as_array().unwrap();
+    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
+        assert!(
+            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
+        );
+    }
+    let database = tsonic_rust_node::sqlite::DatabaseSync::open(":memory:").unwrap();
+    let rows = database.all("SELECT X'007FFF' AS bytes", &[]).unwrap();
+    let bytes = rows[0]["bytes"].as_array().unwrap();
+    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
+        assert!(
+            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
+        );
     }
 }
 

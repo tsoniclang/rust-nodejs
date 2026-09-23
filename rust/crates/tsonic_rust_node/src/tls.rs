@@ -425,7 +425,7 @@ impl TlsServer {
 
     pub fn listen(
         &mut self,
-        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
     ) -> NodeResult<&mut Self> {
         let listener = TcpListener::bind((host, source_port(port)?)).map_err(map_io_error)?;
@@ -441,7 +441,7 @@ impl TlsServer {
 
     pub fn listen_callable<E>(
         &mut self,
-        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
@@ -459,7 +459,7 @@ impl TlsServer {
 
     pub fn listen_default_host_callable<E>(
         &mut self,
-        port: impl tsonic_rust_js::numeric::IntegerInput<u16>,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
@@ -729,7 +729,7 @@ fn source_string_array(value: Option<tsonic_rust_js::JsArray<String>>) -> Vec<St
     value.map(|values| values.values()).unwrap_or_default()
 }
 
-fn source_port(value: impl tsonic_rust_js::numeric::IntegerInput<u16>) -> NodeResult<u16> {
+fn source_port(value: impl tsonic_rust_runtime::conversions::IntegerInput<u16>) -> NodeResult<u16> {
     value.checked_integer().ok_or_else(|| {
         NodeError::new(
             "ERR_SOCKET_BAD_PORT",

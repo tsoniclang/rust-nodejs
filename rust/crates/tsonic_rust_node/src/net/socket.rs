@@ -267,7 +267,7 @@ impl Socket {
 
     pub fn set_timeout_number(
         &mut self,
-        timeout_millis: impl tsonic_rust_js::numeric::IntegerInput<u64>,
+        timeout_millis: impl tsonic_rust_runtime::conversions::IntegerInput<u64>,
     ) -> NodeResult<&mut Self> {
         let timeout_millis = timeout_millis.checked_integer().ok_or_else(|| {
             NodeError::new(

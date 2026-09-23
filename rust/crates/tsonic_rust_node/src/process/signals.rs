@@ -1,5 +1,5 @@
 use crate::error::{NodeError, NodeResult};
-use tsonic_rust_js::numeric::IntegerInput;
+use tsonic_rust_runtime::conversions::IntegerInput;
 use tsonic_rust_runtime::Callable;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

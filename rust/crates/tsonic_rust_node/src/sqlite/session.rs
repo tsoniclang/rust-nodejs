@@ -167,7 +167,7 @@ fn sqlite_value(value: ValueRef<'_>) -> JsValue {
         ValueRef::Blob(value) => JsValue::from(
             value
                 .iter()
-                .map(|byte| JsValue::Number(f64::from(*byte)))
+                .map(|byte| JsValue::from(*byte))
                 .collect::<Vec<_>>(),
         ),
     }

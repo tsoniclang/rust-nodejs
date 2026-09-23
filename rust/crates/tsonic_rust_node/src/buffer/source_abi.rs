@@ -68,106 +68,106 @@ pub fn slice_closed_number(
 
 pub fn read_uint8_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<u8> {
     buffer.read_uint8(numeric_offset(offset)?)
 }
 
 pub fn read_int8_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<i8> {
     buffer.read_int8(numeric_offset(offset)?)
 }
 
 pub fn read_uint16_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<u16> {
     buffer.read_uint16_le(numeric_offset(offset)?)
 }
 
 pub fn read_uint16_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<u16> {
     buffer.read_uint16_be(numeric_offset(offset)?)
 }
 
 pub fn read_int16_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<i16> {
     buffer.read_int16_le(numeric_offset(offset)?)
 }
 
 pub fn read_int16_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<i16> {
     buffer.read_int16_be(numeric_offset(offset)?)
 }
 
 pub fn read_uint32_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<u32> {
     buffer.read_uint32_le(numeric_offset(offset)?)
 }
 
 pub fn read_uint32_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<u32> {
     buffer.read_uint32_be(numeric_offset(offset)?)
 }
 
 pub fn read_int32_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<i32> {
     buffer.read_int32_le(numeric_offset(offset)?)
 }
 
 pub fn read_int32_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<i32> {
     buffer.read_int32_be(numeric_offset(offset)?)
 }
 
 pub fn read_float_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<f32> {
     buffer.read_float_le(numeric_offset(offset)?)
 }
 
 pub fn read_float_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<f32> {
     buffer.read_float_be(numeric_offset(offset)?)
 }
 
 pub fn read_double_le_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<f64> {
     buffer.read_double_le(numeric_offset(offset)?)
 }
 
 pub fn read_double_be_number(
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<f64> {
     buffer.read_double_be(numeric_offset(offset)?)
 }
 
 pub fn write_uint8_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<u8>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<u8>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint8(integer_value(value)?, offset)?;
@@ -176,8 +176,8 @@ pub fn write_uint8_number(
 
 pub fn write_int8_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<i8>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i8>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int8(integer_value(value)?, offset)?;
@@ -186,8 +186,8 @@ pub fn write_int8_number(
 
 pub fn write_uint16_le_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<u16>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint16_le(integer_value(value)?, offset)?;
@@ -196,8 +196,8 @@ pub fn write_uint16_le_number(
 
 pub fn write_uint16_be_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<u16>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint16_be(integer_value(value)?, offset)?;
@@ -206,8 +206,8 @@ pub fn write_uint16_be_number(
 
 pub fn write_int16_le_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<i16>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i16>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int16_le(integer_value(value)?, offset)?;
@@ -216,8 +216,8 @@ pub fn write_int16_le_number(
 
 pub fn write_int16_be_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<i16>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i16>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int16_be(integer_value(value)?, offset)?;
@@ -226,8 +226,8 @@ pub fn write_int16_be_number(
 
 pub fn write_uint32_le_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<u32>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<u32>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint32_le(integer_value(value)?, offset)?;
@@ -236,8 +236,8 @@ pub fn write_uint32_le_number(
 
 pub fn write_uint32_be_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<u32>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<u32>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint32_be(integer_value(value)?, offset)?;
@@ -246,8 +246,8 @@ pub fn write_uint32_be_number(
 
 pub fn write_int32_le_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<i32>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int32_le(integer_value(value)?, offset)?;
@@ -256,8 +256,8 @@ pub fn write_int32_le_number(
 
 pub fn write_int32_be_number(
     buffer: &mut Buffer,
-    value: impl tsonic_rust_js::numeric::IntegerInput<i32>,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int32_be(integer_value(value)?, offset)?;
@@ -267,7 +267,7 @@ pub fn write_int32_be_number(
 pub fn write_float_le_number(
     buffer: &mut Buffer,
     value: f64,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_float_le(value as f32, offset)?;
@@ -277,7 +277,7 @@ pub fn write_float_le_number(
 pub fn write_float_be_number(
     buffer: &mut Buffer,
     value: f64,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_float_be(value as f32, offset)?;
@@ -287,7 +287,7 @@ pub fn write_float_be_number(
 pub fn write_double_le_number(
     buffer: &mut Buffer,
     value: f64,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_double_le(value, offset)?;
@@ -297,7 +297,7 @@ pub fn write_double_le_number(
 pub fn write_double_be_number(
     buffer: &mut Buffer,
     value: f64,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
 ) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_double_be(value, offset)?;
@@ -314,7 +314,9 @@ fn copy_index(value: impl IndexInput, name: &str) -> NodeResult<usize> {
 }
 
 #[inline]
-fn numeric_offset(value: impl tsonic_rust_js::numeric::IntegerInput<usize>) -> NodeResult<usize> {
+fn numeric_offset(
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+) -> NodeResult<usize> {
     value
         .checked_integer()
         .ok_or_else(|| NodeError::new("ERR_OUT_OF_RANGE", "offset must be a non-negative integer"))
@@ -322,7 +324,7 @@ fn numeric_offset(value: impl tsonic_rust_js::numeric::IntegerInput<usize>) -> N
 
 #[inline]
 fn integer_value<Output>(
-    value: impl tsonic_rust_js::numeric::IntegerInput<Output>,
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<Output>,
 ) -> NodeResult<Output> {
     value.truncated_integer().ok_or_else(|| {
         NodeError::new(

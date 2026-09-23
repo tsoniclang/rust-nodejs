@@ -1,5 +1,7 @@
 #[inline]
-fn checked_descriptor(value: impl tsonic_rust_js::numeric::IntegerInput<i32>) -> NodeResult<i32> {
+fn checked_descriptor(
+    value: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+) -> NodeResult<i32> {
     value
         .checked_integer()
         .filter(|value| *value >= 0)
@@ -21,7 +23,7 @@ impl NativeFilePosition for f64 {
         if self == -1.0 {
             return Ok(None);
         }
-        tsonic_rust_js::numeric::IntegerInput::<u64>::checked_integer(self)
+        tsonic_rust_runtime::conversions::IntegerInput::<u64>::checked_integer(self)
             .map(Some)
             .ok_or_else(|| {
                 NodeError::new(
@@ -70,8 +72,8 @@ fn checked_file_position<Position: NativeFilePosition>(
 }
 
 fn checked_descriptor_range(
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
-    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    length: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
     available: usize,
 ) -> NodeResult<std::ops::Range<usize>> {
     let offset = offset.checked_integer().ok_or_else(|| {
@@ -89,15 +91,17 @@ fn checked_descriptor_range(
     descriptor_buffer_range(offset, length, available)
 }
 
-pub fn close_sync_number(fd: impl tsonic_rust_js::numeric::IntegerInput<i32>) -> NodeResult<()> {
+pub fn close_sync_number(
+    fd: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+) -> NodeResult<()> {
     close_sync(checked_descriptor(fd)?)
 }
 
 pub fn read_sync_buffer_number<Position: NativeFilePosition>(
-    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    fd: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
-    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    length: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -109,10 +113,10 @@ pub fn read_sync_buffer_number<Position: NativeFilePosition>(
 }
 
 pub fn write_sync_buffer_number<Position: NativeFilePosition>(
-    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    fd: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
     buffer: &Buffer,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
-    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    length: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -124,10 +128,10 @@ pub fn write_sync_buffer_number<Position: NativeFilePosition>(
 }
 
 pub fn read_sync_uint8_number<Position: NativeFilePosition>(
-    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    fd: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
     buffer: &tsonic_rust_js::Uint8Array,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
-    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    length: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -139,10 +143,10 @@ pub fn read_sync_uint8_number<Position: NativeFilePosition>(
 }
 
 pub fn write_sync_uint8_number<Position: NativeFilePosition>(
-    fd: impl tsonic_rust_js::numeric::IntegerInput<i32>,
+    fd: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
     buffer: &tsonic_rust_js::Uint8Array,
-    offset: impl tsonic_rust_js::numeric::IntegerInput<usize>,
-    length: impl tsonic_rust_js::numeric::IntegerInput<usize>,
+    offset: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    length: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
     position: Option<Position>,
 ) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
@@ -155,24 +159,24 @@ pub fn write_sync_uint8_number<Position: NativeFilePosition>(
 
 pub fn open_sync_numeric(
     path: &str,
-    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
-    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+    flags: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+    mode: impl tsonic_rust_runtime::conversions::IntegerInput<u32>,
 ) -> NodeResult<i32> {
     open_numeric_path(std::path::Path::new(path), flags, mode)
 }
 
 pub fn open_sync_buffer_numeric(
     path: &Buffer,
-    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
-    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+    flags: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+    mode: impl tsonic_rust_runtime::conversions::IntegerInput<u32>,
 ) -> NodeResult<i32> {
     with_buffer_path(path, |path| open_numeric_path(path, flags, mode))
 }
 
 fn open_numeric_path(
     path: &std::path::Path,
-    flags: impl tsonic_rust_js::numeric::IntegerInput<i32>,
-    mode: impl tsonic_rust_js::numeric::IntegerInput<u32>,
+    flags: impl tsonic_rust_runtime::conversions::IntegerInput<i32>,
+    mode: impl tsonic_rust_runtime::conversions::IntegerInput<u32>,
 ) -> NodeResult<i32> {
     let flags = flags.checked_integer().ok_or_else(|| {
         NodeError::new("ERR_OUT_OF_RANGE", "flags must be a signed 32-bit integer")
