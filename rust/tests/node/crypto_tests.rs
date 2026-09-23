@@ -7,10 +7,10 @@ fn webcrypto_random_words_preserve_exact_view_and_quota() {
     let view = words.subarray(1.0, Some(3.0));
     let result = crypto.get_random_values_uint32(&view).unwrap();
     assert_eq!(result, view);
-    assert_eq!(words.get_number(0.0), Some(17.0));
-    assert_eq!(words.get_number(3.0), Some(19.0));
+    assert_eq!(words.get_number(0.0), Some(17));
+    assert_eq!(words.get_number(3.0), Some(19));
     result.set_number(0.0, 23.0);
-    assert_eq!(words.get_number(1.0), Some(23.0));
+    assert_eq!(words.get_number(1.0), Some(23));
     let empty = words.subarray(4.0, None);
     assert_eq!(crypto.get_random_values_uint32(&empty).unwrap(), empty);
     let limit = tsonic_rust_js::Uint32Array::new(16_384.0).unwrap();

@@ -88,7 +88,7 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
 
     emitter.on_callable(&other_event, &listener0).unwrap();
     emitter.on_callable1(&other_event, &listener1).unwrap();
-    emitter.set_max_listeners_i32(8).unwrap();
+    emitter.set_max_listeners(8);
     assert_eq!(emitter.get_max_listeners(), 8);
     emitter.remove_all_callable_listeners();
     assert_eq!(

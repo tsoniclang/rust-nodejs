@@ -1,4 +1,5 @@
 import {
+  uint64Carrier, nativeUintCarrier,
   boolCarrier,
   booleanType,
   bufferCarrier,
@@ -19,7 +20,6 @@ import {
   rmOptionsCarrier,
   rustOptionTargetType,
   rustStringToBorrowedStrValueConversion,
-  rustUint64ToFloat64ValueConversion,
   statsCarrier,
   stringCarrier,
   stringType,
@@ -516,11 +516,11 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     },
     { exportId: readStreamId, memberId: `${readStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: readStreamCarrier, parameterCarriers: [] },
     { exportId: readStreamId, memberId: `${readStreamId}.path`, operationKind: "property", target: { form: "field", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: readStreamCarrier },
-    { exportId: readStreamId, memberId: `${readStreamId}.bytesRead`, operationKind: "property", target: { form: "receiver-method", name: "bytes_read_number" }, resultCarrier: float64Carrier, receiverCarrier: readStreamCarrier },
+    { exportId: readStreamId, memberId: `${readStreamId}.bytesRead`, operationKind: "property", target: { form: "field", name: "bytes_read" }, resultCarrier: nativeUintCarrier, receiverCarrier: readStreamCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.write`, operationKind: "method", target: { form: "receiver-method", name: "write", argModes: ["value"], mutatesReceiver: true }, resultCarrier: boolCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.path`, operationKind: "property", target: { form: "field", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: writeStreamCarrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "receiver-method", name: "bytes_written_number" }, resultCarrier: float64Carrier, receiverCarrier: writeStreamCarrier },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "field", name: "bytes_written" }, resultCarrier: nativeUintCarrier, receiverCarrier: writeStreamCarrier },
     { exportId: watcherId, memberId: `${watcherId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: watcherId, memberId: `${watcherId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: watcherId, memberId: `${watcherId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
@@ -528,7 +528,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     { exportId: statsId, memberId: `${statsId}.isFile`, operationKind: "method", target: { form: "receiver-method", name: "is_file" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.isDirectory`, operationKind: "method", target: { form: "receiver-method", name: "is_directory" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.isSymbolicLink`, operationKind: "method", target: { form: "receiver-method", name: "is_symbolic_link" }, resultCarrier: boolCarrier },
-    { exportId: statsId, memberId: `${statsId}.size`, operationKind: "property", target: { form: "field", name: "size" }, resultCarrier: float64Carrier, resultConversion: rustUint64ToFloat64ValueConversion },
+    { exportId: statsId, memberId: `${statsId}.size`, operationKind: "property", target: { form: "field", name: "size" }, resultCarrier: uint64Carrier },
     { exportId: statsId, memberId: `${statsId}.mtimeMs`, operationKind: "property", target: { form: "receiver-method", name: "mtime_ms" }, resultCarrier: float64Carrier },
   ];
 }

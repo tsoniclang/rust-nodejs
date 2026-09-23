@@ -1,10 +1,11 @@
 import {
+  int32Carrier, uint32Carrier,
   boolCarrier, booleanType, bufferCarrier, float64Carrier,
   methodMember, numberType, propertyMember, providerNativeFallibility,
   providerRef, rustOptionTargetType, rustStringToBorrowedStrValueConversion, statsCarrier, stringArrayCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier, valueExport, voidType,
 } from "../../model.js";
-import { rustInt32ToFloat64ValueConversion, rustJsArrayTargetType } from "@tsonic/target-rust/provider";
+import { rustJsArrayTargetType } from "@tsonic/target-rust/provider";
 import type {
   RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef,
 } from "../../model.js";
@@ -138,7 +139,7 @@ export function filePathRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: boolCarrier, receiverCarrier: direntCarrier(nameParameter), genericParameters: direntGenerics,
     })),
     { exportId: `${moduleId}::constants`, operationKind: "property", target: { form: "call", path: "node_fs::constants" }, resultCarrier: fsConstantsCarrier },
-    ...constants.map(value => ({ ...property(constantsId, value.name, value.field, fsConstantsCarrier, float64Carrier), resultConversion: rustInt32ToFloat64ValueConversion })),
-    { exportId: `${moduleId}::Stats`, memberId: `${moduleId}::Stats.mode`, operationKind: "property", target: { form: "method", name: "mode_number" }, receiverCarrier: statsCarrier, resultCarrier: float64Carrier },
+    ...constants.map(value => property(constantsId, value.name, value.field, fsConstantsCarrier, int32Carrier)),
+    { exportId: `${moduleId}::Stats`, memberId: `${moduleId}::Stats.mode`, operationKind: "property", target: { form: "field", name: "mode" }, receiverCarrier: statsCarrier, resultCarrier: uint32Carrier },
   ];
 }

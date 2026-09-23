@@ -890,16 +890,6 @@ impl EventEmitter {
         self
     }
 
-    pub fn set_max_listeners_i32(&mut self, max: i32) -> NodeResult<&mut Self> {
-        let max = usize::try_from(max).map_err(|_| {
-            NodeError::new(
-                "ERR_OUT_OF_RANGE",
-                "EventEmitter maximum listener count must be non-negative",
-            )
-        })?;
-        Ok(self.set_max_listeners(max))
-    }
-
     pub fn get_max_listeners(&self) -> usize {
         self.max_listeners.unwrap_or(0)
     }

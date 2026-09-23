@@ -21,10 +21,10 @@ fn subtract_previous(current: CpuUsage, previous: Option<CpuUsage>) -> NodeResul
         return Ok(current);
     };
     for value in [previous.user, previous.system] {
-        if !value.is_finite() || value < 0.0 {
+        if value < 0 {
             return Err(NodeError::new(
                 "ERR_INVALID_ARG_VALUE",
-                "CPU usage fields must be finite non-negative numbers",
+                "CPU usage fields must be non-negative integers",
             ));
         }
     }
@@ -66,7 +66,7 @@ fn read_usage(who: nix::sys::resource::UsageWho) -> NodeResult<CpuUsage> {
     let usage = nix::sys::resource::getrusage(who)
         .map_err(|error| NodeError::new("ERR_CPU_USAGE", error.to_string()))?;
     Ok(CpuUsage {
-        user: usage.user_time().num_microseconds() as f64,
-        system: usage.system_time().num_microseconds() as f64,
+        user: usage.user_time().num_microseconds(),
+        system: usage.system_time().num_microseconds(),
     })
 }

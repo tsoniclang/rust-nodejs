@@ -1,4 +1,5 @@
 import {
+  uint64Carrier,
   boolCarrier,
   booleanType,
   emptyCallbackCarrier,
@@ -241,8 +242,8 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
     socketProperty("encrypted", "encrypted", boolCarrier),
     socketProperty("servername", "servername_string", stringCarrier),
     socketProperty("alpnProtocol", "alpn_protocol", rustOptionTargetType(stringCarrier)),
-    socketProperty("bytesRead", "bytes_read_number", float64Carrier),
-    socketProperty("bytesWritten", "bytes_written_number", float64Carrier),
+    socketProperty("bytesRead", "bytes_read", uint64Carrier),
+    socketProperty("bytesWritten", "bytes_written", uint64Carrier),
     serverMethod("listen", "port,callback", "listen_default_host_callable", [float64Carrier, emptyCallbackCarrier], ["value", "value"], mutableServer, true),
     serverMethod("listen", "port,host,callback", "listen_callable", [float64Carrier, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], mutableServer, true),
     serverMethod("close", undefined, "close", [], [], unitCarrier, false),

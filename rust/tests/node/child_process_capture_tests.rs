@@ -24,7 +24,7 @@ fn spawn_capture_drains_binary_pipes_concurrently_and_retains_results() {
     )
     .unwrap();
     assert_eq!(result.status, Some(0));
-    assert!(result.pid.unwrap() > 0.0);
+    assert!(result.pid.unwrap() > 0);
     assert!(result.error.is_none());
     assert!(result.signal.is_none());
     assert_eq!(result.stdout.unwrap().as_bytes(), bytes);

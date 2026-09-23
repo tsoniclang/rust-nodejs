@@ -213,10 +213,6 @@ impl ReadStream {
         Ok(Some(Buffer::from_bytes(bytes)))
     }
 
-    pub fn bytes_read_number(&self) -> f64 {
-        self.bytes_read as f64
-    }
-
     pub fn pipe_to<'a, W: crate::stream::WritableTarget>(
         &mut self,
         writable: &'a mut W,
@@ -362,10 +358,6 @@ impl WriteStream {
         Ok(true)
     }
 
-    pub fn bytes_written_number(&self) -> f64 {
-        self.bytes_written as f64
-    }
-
     pub fn flush(&mut self) -> NodeResult<()> {
         self.file
             .as_mut()
@@ -498,7 +490,7 @@ fn configure_write_stream_open(open: &mut OpenOptions, flags: &str) -> NodeResul
 fn optional_non_negative_integer(value: Option<f64>, name: &str) -> NodeResult<Option<u64>> {
     value
         .map(|value| {
-            if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u64::MAX as f64
+            if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value >= (u64::MAX as u128 + 1) as f64
             {
                 return Err(NodeError::new(
                     "ERR_OUT_OF_RANGE",
@@ -516,7 +508,7 @@ fn optional_positive_usize(value: Option<f64>, name: &str) -> NodeResult<Option<
             if !value.is_finite()
                 || value <= 0.0
                 || value.fract() != 0.0
-                || value > usize::MAX as f64
+                || value >= (usize::MAX as u128 + 1) as f64
             {
                 return Err(NodeError::new(
                     "ERR_OUT_OF_RANGE",

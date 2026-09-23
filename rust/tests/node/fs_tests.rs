@@ -807,7 +807,7 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     assert_eq!(readable.raw_listeners("open").len(), 0);
     let chunk = readable.read().unwrap().unwrap();
     assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
-    assert_eq!(readable.bytes_read_number(), 3.0);
+    assert_eq!(readable.bytes_read, 3);
     readable.close();
     assert!(!readable.pending);
 
@@ -830,7 +830,6 @@ fn fs_stream_option_carriers_are_closed_shapes() {
         .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
         .unwrap());
     assert_eq!(writable.bytes_written, 1);
-    assert_eq!(writable.bytes_written_number(), 1.0);
     writable.close().unwrap();
     assert!(!writable.pending);
     assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");

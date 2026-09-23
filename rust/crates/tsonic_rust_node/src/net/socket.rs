@@ -192,16 +192,8 @@ impl Socket {
         self.bytes_read
     }
 
-    pub fn bytes_read_number(&self) -> f64 {
-        self.bytes_read as f64
-    }
-
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
-    }
-
-    pub fn bytes_written_number(&self) -> f64 {
-        self.bytes_written as f64
     }
 
     pub fn buffer_size(&self) -> usize {
@@ -275,7 +267,7 @@ impl Socket {
 
     pub fn set_timeout_number(&mut self, timeout_millis: f64) -> NodeResult<&mut Self> {
         if !timeout_millis.is_finite() || timeout_millis.fract() != 0.0 ||
-            timeout_millis < 0.0 || timeout_millis > u64::MAX as f64
+            timeout_millis < 0.0 || timeout_millis >= (u64::MAX as u128 + 1) as f64
         {
             return Err(NodeError::new(
                 "ERR_OUT_OF_RANGE",

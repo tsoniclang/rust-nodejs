@@ -1,5 +1,5 @@
 import {
-  float64Carrier, numberType, propertyMember, providerNativeFallibility,
+  int64Carrier, numberType, propertyMember, providerNativeFallibility,
   providerRef, unitCarrier,
 } from "../model.js";
 import type { ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../model.js";
@@ -54,10 +54,10 @@ export function processMetricRows(): readonly RustProviderOperationDefinition[] 
     }))),
     ...["user", "system"].flatMap(name => [{
       exportId: cpuId, memberId: `${cpuId}.${name}`, operationKind: "property" as const,
-      target: { form: "field" as const, name }, resultCarrier: float64Carrier, receiverCarrier: processCpuCarrier,
+      target: { form: "field" as const, name }, resultCarrier: int64Carrier, receiverCarrier: processCpuCarrier,
     }, {
       exportId: cpuId, memberId: `${cpuId}.${name}`, operationKind: "property-set" as const,
-      target: { form: "field" as const, name }, resultCarrier: unitCarrier, receiverCarrier: processCpuCarrier, parameterCarriers: [float64Carrier],
+      target: { form: "field" as const, name }, resultCarrier: unitCarrier, receiverCarrier: processCpuCarrier, parameterCarriers: [int64Carrier],
     }]),
   ];
 }

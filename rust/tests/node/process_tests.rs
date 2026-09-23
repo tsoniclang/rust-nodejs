@@ -124,7 +124,7 @@ fn process_runtime_queries_have_stable_shapes() {
             <= process::cpu_usage(None).unwrap().user
     );
     let resource = process::resource_usage().unwrap();
-    assert!(resource.user_cpu_time as f64 >= cpu.user);
+    assert!(resource.user_cpu_time >= u64::try_from(cpu.user).unwrap());
     assert_eq!(resource.fs_read, 0);
     assert_eq!(resource.ipc_sent, 0);
     assert!(process::memory_usage_rss() <= memory.rss + process::memory_usage_rss());
@@ -135,21 +135,21 @@ fn process_runtime_queries_have_stable_shapes() {
 }
 
 #[test]
-fn process_source_hrtime_uses_dense_number_pairs_and_rejects_invalid_pairs() {
-    let first = process::hrtime_open_number();
+fn process_source_hrtime_uses_dense_integer_pairs_and_rejects_invalid_pairs() {
+    let first = process::hrtime_open().unwrap();
     assert_eq!(first.len(), 2);
-    assert!(first.values().into_iter().all(|value| value.is_finite()));
+    assert!(first.values().into_iter().all(|value| value >= 0));
 
-    let elapsed = process::hrtime_since_number(&first).unwrap();
+    let elapsed = process::hrtime_since(&first).unwrap();
     assert_eq!(elapsed.len(), 2);
     let elapsed_values = elapsed.values();
-    assert!(elapsed_values[0] >= 0.0);
-    assert!((0.0..1_000_000_000.0).contains(&elapsed_values[1]));
+    assert!(elapsed_values[0] >= 0);
+    assert!((0..1_000_000_000).contains(&elapsed_values[1]));
 
-    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::from_dense(vec![0.0])).is_err());
-    assert!(process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_length(2)).is_ok());
+    assert!(process::hrtime_since(&tsonic_rust_js::JsArray::from_dense(vec![0])).is_err());
+    assert!(process::hrtime_since(&tsonic_rust_js::JsArray::<i64>::with_length(2)).is_ok());
     assert!(
-        process::hrtime_since_number(&tsonic_rust_js::JsArray::<f64>::with_capacity(2)).is_err()
+        process::hrtime_since(&tsonic_rust_js::JsArray::<i64>::with_capacity(2)).is_err()
     );
 }
 

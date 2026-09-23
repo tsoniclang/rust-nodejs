@@ -96,8 +96,7 @@ fn net_socket_and_http_client_use_real_local_tcp() {
         assert_eq!(socket.encoding(), Some("utf8"));
         assert!(socket.write(b"ping").unwrap());
         assert_eq!(socket.bytes_written(), 4);
-        assert_eq!(socket.bytes_written_number(), 4.0);
-        assert_eq!(socket.bytes_read_number(), 0.0);
+        assert_eq!(socket.bytes_read(), 0);
         assert!(socket.has_ref());
         socket.unref();
         assert!(!socket.has_ref());
@@ -109,11 +108,10 @@ fn net_socket_and_http_client_use_real_local_tcp() {
     let data = socket.read_to_end().unwrap();
     assert_eq!(data, b"ping");
     assert_eq!(socket.bytes_read(), 4);
-    assert_eq!(socket.bytes_read_number(), 4.0);
-    assert_eq!(socket.bytes_written_number(), 0.0);
+    assert_eq!(socket.bytes_written(), 0);
     handle.join().unwrap();
 
-    assert_eq!(net::is_ip_number("127.0.0.1"), 4.0);
+    assert_eq!(net::is_ip("127.0.0.1"), 4);
 }
 
 #[test]
@@ -226,8 +224,8 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
         "ERR_SOCKET_CONNECTING"
     );
     assert_eq!(socket.servername_string(), "localhost");
-    assert_eq!(socket.bytes_read_number(), 0.0);
-    assert_eq!(socket.bytes_written_number(), 0.0);
+    assert_eq!(socket.bytes_read(), 0);
+    assert_eq!(socket.bytes_written(), 0);
 
     tsonic_rust_node::run_event_loop().unwrap();
     assert!(!callback_called.get());

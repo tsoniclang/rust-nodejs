@@ -1,33 +1,36 @@
-pub fn hrtime_open_number() -> JsArray<f64> {
-    let (seconds, nanoseconds) = current_hrtime_number();
-    JsArray::from_dense(vec![seconds, nanoseconds])
+pub fn hrtime_open() -> NodeResult<JsArray<i64>> {
+    let (seconds, nanoseconds) = current_hrtime()?;
+    Ok(JsArray::from_dense(vec![seconds, nanoseconds]))
 }
 
-pub fn hrtime_since_number(previous: &JsArray<f64>) -> NodeResult<JsArray<f64>> {
-    let values = previous.values();
-    if values.len() != 2 {
+pub fn hrtime_since(previous: &JsArray<i64>) -> NodeResult<JsArray<i64>> {
+    if previous.len() != 2 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "previous hrtime must contain exactly two values",
         ));
     }
-    let previous_seconds = values[0];
-    let previous_nanoseconds = values[1];
-    let (mut seconds, mut nanoseconds) = current_hrtime_number();
-    seconds -= previous_seconds;
+    let previous_seconds = previous.get(0).ok_or_else(hrtime_range_error)?;
+    let previous_nanoseconds = previous.get(1).ok_or_else(hrtime_range_error)?;
+    if !(0..1_000_000_000).contains(&previous_nanoseconds) {
+        return Err(hrtime_range_error());
+    }
+    let (mut seconds, mut nanoseconds) = current_hrtime()?;
+    seconds = seconds.checked_sub(previous_seconds).ok_or_else(hrtime_range_error)?;
     nanoseconds -= previous_nanoseconds;
-    if nanoseconds < 0.0 {
-        seconds -= 1.0;
-        nanoseconds += 1_000_000_000.0;
+    if nanoseconds < 0 {
+        seconds = seconds.checked_sub(1).ok_or_else(hrtime_range_error)?;
+        nanoseconds += 1_000_000_000;
     }
 
     Ok(JsArray::from_dense(vec![seconds, nanoseconds]))
 }
 
-fn current_hrtime_number() -> (f64, f64) {
-    let elapsed = START.get_or_init(Instant::now).elapsed();
-    (
-        elapsed.as_secs_f64().floor(),
-        f64::from(elapsed.subsec_nanos()),
-    )
+fn current_hrtime() -> NodeResult<(i64, i64)> {
+    let (seconds, nanoseconds) = hrtime(None);
+    Ok((i64::try_from(seconds).map_err(|_| hrtime_range_error())?, i64::from(nanoseconds)))
+}
+
+fn hrtime_range_error() -> NodeError {
+    NodeError::new("ERR_OUT_OF_RANGE", "hrtime exceeds its native integer range")
 }

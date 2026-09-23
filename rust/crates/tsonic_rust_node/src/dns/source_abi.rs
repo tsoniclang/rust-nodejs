@@ -2,10 +2,6 @@ impl LookupAddress {
     pub fn address_value(&self) -> String {
         self.address.clone()
     }
-
-    pub fn family_number(&self) -> f64 {
-        self.family as f64
-    }
 }
 
 pub async fn lookup_async(hostname: &str) -> NodeResult<LookupAddress> {
@@ -27,7 +23,7 @@ pub async fn reverse_async(address: &str) -> NodeResult<tsonic_rust_js::JsArray<
 pub fn lookup_callable<E>(
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
-        (Option<NodeError>, String, f64),
+        (Option<NodeError>, String, u8),
         Result<(), E>,
     >,
 ) -> NodeResult<()>
@@ -39,8 +35,8 @@ where
         move || lookup(&hostname),
         move |result| {
         let arguments = match result {
-            Ok(result) => (None, result.address, result.family as f64),
-            Err(error) => (Some(error), String::new(), 0.0),
+            Ok(result) => (None, result.address, result.family),
+            Err(error) => (Some(error), String::new(), 0),
         };
         callback
             .call(arguments)

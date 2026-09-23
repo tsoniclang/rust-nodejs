@@ -45,10 +45,6 @@ fn checked_descriptor_range(
     descriptor_buffer_range(offset, length, available)
 }
 
-pub fn open_sync_number(path: &str, flags: &str) -> NodeResult<f64> {
-    open_sync(path, flags).map(f64::from)
-}
-
 pub fn close_sync_number(fd: f64) -> NodeResult<()> {
     close_sync(checked_descriptor(fd)?)
 }
@@ -59,12 +55,12 @@ pub fn read_sync_buffer_number<Position: NativeFilePosition>(
     offset: f64,
     length: f64,
     position: Option<Position>,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
     buffer.with_mut_bytes(|bytes| {
         let range = checked_descriptor_range(offset, length, bytes.len())?;
-        read_descriptor_bytes(fd, &mut bytes[range], position).map(|count| count as f64)
+        read_descriptor_bytes(fd, &mut bytes[range], position)
     })
 }
 
@@ -74,12 +70,12 @@ pub fn write_sync_buffer_number<Position: NativeFilePosition>(
     offset: f64,
     length: f64,
     position: Option<Position>,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
     buffer.with_bytes(|bytes| {
         let range = checked_descriptor_range(offset, length, bytes.len())?;
-        write_descriptor_bytes(fd, &bytes[range], position).map(|count| count as f64)
+        write_descriptor_bytes(fd, &bytes[range], position)
     })
 }
 
@@ -89,12 +85,12 @@ pub fn read_sync_uint8_number<Position: NativeFilePosition>(
     offset: f64,
     length: f64,
     position: Option<Position>,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
     buffer.with_mut_bytes(|bytes| {
         let range = checked_descriptor_range(offset, length, bytes.len())?;
-        read_descriptor_bytes(fd, &mut bytes[range], position).map(|count| count as f64)
+        read_descriptor_bytes(fd, &mut bytes[range], position)
     })
 }
 
@@ -104,22 +100,22 @@ pub fn write_sync_uint8_number<Position: NativeFilePosition>(
     offset: f64,
     length: f64,
     position: Option<Position>,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     let fd = checked_descriptor(fd)?;
     let position = checked_file_position(position)?;
     buffer.with_bytes(|bytes| {
         let range = checked_descriptor_range(offset, length, bytes.len())?;
-        write_descriptor_bytes(fd, &bytes[range], position).map(|count| count as f64)
+        write_descriptor_bytes(fd, &bytes[range], position)
     })
 }
 
-pub fn open_sync_numeric(path: &str, flags: f64, mode: f64) -> NodeResult<f64> {
-    open_numeric_path(std::path::Path::new(path), flags, mode).map(f64::from)
+pub fn open_sync_numeric(path: &str, flags: f64, mode: f64) -> NodeResult<i32> {
+    open_numeric_path(std::path::Path::new(path), flags, mode)
 }
 
-pub fn open_sync_buffer_numeric(path: &Buffer, flags: f64, mode: f64) -> NodeResult<f64> {
+pub fn open_sync_buffer_numeric(path: &Buffer, flags: f64, mode: f64) -> NodeResult<i32> {
     with_buffer_path(path, |path| {
-        open_numeric_path(path, flags, mode).map(f64::from)
+        open_numeric_path(path, flags, mode)
     })
 }
 

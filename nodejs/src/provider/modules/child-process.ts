@@ -1,4 +1,5 @@
 import {
+  uint32Carrier,
   bufferCarrier, float64Carrier, int32Carrier, nodeErrorCarrier,
   nullType, numberType, processEnvCarrier, propertyMember, providerNativeFallibility,
   providerRef, rustJsArrayTargetType, rustOptionTargetType, spawnSyncResultCarrier,
@@ -72,7 +73,7 @@ export function childProcessRows(typedArrays: boolean): readonly RustProviderOpe
   const fields = [
     ...["stdout", "stderr"].map(name => ({ owner: resultId, name, field: name, carrier: rustOptionTargetType(bufferCarrier) })),
     { owner: resultId, name: "status", field: "status", carrier: rustOptionTargetType(int32Carrier) },
-    { owner: resultId, name: "pid", field: "pid", carrier: rustOptionTargetType(float64Carrier) },
+    { owner: resultId, name: "pid", field: "pid", carrier: rustOptionTargetType(uint32Carrier) },
     { owner: resultId, name: "signal", field: "signal", carrier: rustOptionTargetType(stringCarrier) },
     { owner: resultId, name: "error", field: "error", carrier: rustOptionTargetType(nodeErrorCarrier) },
     ...optionFields(typedArrays).map(field => ({ ...field, owner: optionsId, carrier: rustOptionTargetType(field.carrier) })),

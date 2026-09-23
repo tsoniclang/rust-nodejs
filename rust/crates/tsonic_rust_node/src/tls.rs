@@ -217,12 +217,12 @@ impl TlsSocket {
         })
     }
 
-    pub fn bytes_read_number(&self) -> f64 {
-        self.state.borrow().bytes_read as f64
+    pub fn bytes_read(&self) -> u64 {
+        self.state.borrow().bytes_read
     }
 
-    pub fn bytes_written_number(&self) -> f64 {
-        self.state.borrow().bytes_written as f64
+    pub fn bytes_written(&self) -> u64 {
+        self.state.borrow().bytes_written
     }
 
     pub fn ref_chain(&mut self) -> &mut Self {
@@ -740,7 +740,7 @@ fn source_port(value: f64) -> NodeResult<u16> {
 }
 
 fn source_timeout(value: f64) -> NodeResult<u64> {
-    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u64::MAX as f64 {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value >= (u64::MAX as u128 + 1) as f64 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "timeout must be a non-negative integer",
@@ -751,6 +751,17 @@ fn source_timeout(value: f64) -> NodeResult<u64> {
 
 fn map_io_error(error: std::io::Error) -> NodeError {
     NodeError::new("ERR_TLS_IO", error.to_string())
+}
+
+#[cfg(test)]
+mod numeric_bounds {
+    #[test]
+    fn timeout_rejects_the_exclusive_native_upper_bound() {
+        let limit = (u64::MAX as u128 + 1) as f64;
+        assert!(super::source_timeout(limit).is_err());
+        assert_eq!(super::source_timeout(limit.next_down()).unwrap(), limit.next_down() as u64);
+        assert_eq!(super::source_timeout(9_007_199_254_740_994.0).unwrap(), 9_007_199_254_740_994);
+    }
 }
 
 fn map_tls_error(error: rustls::Error) -> NodeError {

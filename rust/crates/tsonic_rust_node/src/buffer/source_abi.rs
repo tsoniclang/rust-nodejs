@@ -3,7 +3,7 @@ pub fn copy_open_number(
     target: &Buffer,
     target_start: f64,
     source_start: f64,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     copy_number(source, target, target_start, source_start, None)
 }
 
@@ -13,7 +13,7 @@ pub fn copy_closed_number(
     target_start: f64,
     source_start: f64,
     source_end: f64,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     copy_number(source, target, target_start, source_start, Some(source_end))
 }
 
@@ -23,14 +23,14 @@ fn copy_number(
     target_start: f64,
     source_start: f64,
     source_end: Option<f64>,
-) -> NodeResult<f64> {
+) -> NodeResult<usize> {
     let target_start = copy_index(target_start, "targetStart")?;
     let source_start = copy_index(source_start, "sourceStart")?;
     let source_end = source_end
         .map(|value| copy_index(value, "sourceEnd"))
         .transpose()?;
     if target_start >= target.len() {
-        return Ok(0.0);
+        return Ok(0);
     }
     if source_start > source.len() {
         return Err(NodeError::new(
@@ -38,7 +38,7 @@ fn copy_number(
             "sourceStart is outside the source buffer",
         ));
     }
-    Ok(source.copy(target, target_start, source_start, source_end)? as f64)
+    source.copy(target, target_start, source_start, source_end)
 }
 
 pub fn slice_open_number(buffer: &Buffer, start: f64) -> Buffer {
@@ -58,52 +58,52 @@ fn view_number(buffer: &Buffer, start: f64, end: Option<f64>) -> Buffer {
     }
 }
 
-pub fn read_uint8_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_uint8(numeric_offset(offset)?)?))
+pub fn read_uint8_number(buffer: &Buffer, offset: f64) -> NodeResult<u8> {
+    buffer.read_uint8(numeric_offset(offset)?)
 }
 
-pub fn read_int8_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_int8(numeric_offset(offset)?)?))
+pub fn read_int8_number(buffer: &Buffer, offset: f64) -> NodeResult<i8> {
+    buffer.read_int8(numeric_offset(offset)?)
 }
 
-pub fn read_uint16_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_uint16_le(numeric_offset(offset)?)?))
+pub fn read_uint16_le_number(buffer: &Buffer, offset: f64) -> NodeResult<u16> {
+    buffer.read_uint16_le(numeric_offset(offset)?)
 }
 
-pub fn read_uint16_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_uint16_be(numeric_offset(offset)?)?))
+pub fn read_uint16_be_number(buffer: &Buffer, offset: f64) -> NodeResult<u16> {
+    buffer.read_uint16_be(numeric_offset(offset)?)
 }
 
-pub fn read_int16_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_int16_le(numeric_offset(offset)?)?))
+pub fn read_int16_le_number(buffer: &Buffer, offset: f64) -> NodeResult<i16> {
+    buffer.read_int16_le(numeric_offset(offset)?)
 }
 
-pub fn read_int16_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_int16_be(numeric_offset(offset)?)?))
+pub fn read_int16_be_number(buffer: &Buffer, offset: f64) -> NodeResult<i16> {
+    buffer.read_int16_be(numeric_offset(offset)?)
 }
 
-pub fn read_uint32_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_uint32_le(numeric_offset(offset)?)?))
+pub fn read_uint32_le_number(buffer: &Buffer, offset: f64) -> NodeResult<u32> {
+    buffer.read_uint32_le(numeric_offset(offset)?)
 }
 
-pub fn read_uint32_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_uint32_be(numeric_offset(offset)?)?))
+pub fn read_uint32_be_number(buffer: &Buffer, offset: f64) -> NodeResult<u32> {
+    buffer.read_uint32_be(numeric_offset(offset)?)
 }
 
-pub fn read_int32_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_int32_le(numeric_offset(offset)?)?))
+pub fn read_int32_le_number(buffer: &Buffer, offset: f64) -> NodeResult<i32> {
+    buffer.read_int32_le(numeric_offset(offset)?)
 }
 
-pub fn read_int32_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_int32_be(numeric_offset(offset)?)?))
+pub fn read_int32_be_number(buffer: &Buffer, offset: f64) -> NodeResult<i32> {
+    buffer.read_int32_be(numeric_offset(offset)?)
 }
 
-pub fn read_float_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_float_le(numeric_offset(offset)?)?))
+pub fn read_float_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f32> {
+    buffer.read_float_le(numeric_offset(offset)?)
 }
 
-pub fn read_float_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
-    Ok(f64::from(buffer.read_float_be(numeric_offset(offset)?)?))
+pub fn read_float_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f32> {
+    buffer.read_float_be(numeric_offset(offset)?)
 }
 
 pub fn read_double_le_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
@@ -114,103 +114,103 @@ pub fn read_double_be_number(buffer: &Buffer, offset: f64) -> NodeResult<f64> {
     buffer.read_double_be(numeric_offset(offset)?)
 }
 
-pub fn write_uint8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_uint8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint8(unsigned_number::<u8>(value, u8::MAX as f64)?, offset)?;
-    Ok((offset + 1) as f64)
+    Ok(offset + 1)
 }
 
-pub fn write_int8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_int8_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int8(
         signed_number::<i8>(value, i8::MIN as f64, i8::MAX as f64)?,
         offset,
     )?;
-    Ok((offset + 1) as f64)
+    Ok(offset + 1)
 }
 
-pub fn write_uint16_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_uint16_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint16_le(unsigned_number::<u16>(value, u16::MAX as f64)?, offset)?;
-    Ok((offset + 2) as f64)
+    Ok(offset + 2)
 }
 
-pub fn write_uint16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_uint16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint16_be(unsigned_number::<u16>(value, u16::MAX as f64)?, offset)?;
-    Ok((offset + 2) as f64)
+    Ok(offset + 2)
 }
 
-pub fn write_int16_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_int16_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int16_le(
         signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?,
         offset,
     )?;
-    Ok((offset + 2) as f64)
+    Ok(offset + 2)
 }
 
-pub fn write_int16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_int16_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int16_be(
         signed_number::<i16>(value, i16::MIN as f64, i16::MAX as f64)?,
         offset,
     )?;
-    Ok((offset + 2) as f64)
+    Ok(offset + 2)
 }
 
-pub fn write_uint32_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_uint32_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint32_le(unsigned_number::<u32>(value, u32::MAX as f64)?, offset)?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_uint32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_uint32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_uint32_be(unsigned_number::<u32>(value, u32::MAX as f64)?, offset)?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_int32_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_int32_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int32_le(
         signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?,
         offset,
     )?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_int32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_int32_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_int32_be(
         signed_number::<i32>(value, i32::MIN as f64, i32::MAX as f64)?,
         offset,
     )?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_float_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_float_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_float_le(value as f32, offset)?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_float_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_float_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_float_be(value as f32, offset)?;
-    Ok((offset + 4) as f64)
+    Ok(offset + 4)
 }
 
-pub fn write_double_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_double_le_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_double_le(value, offset)?;
-    Ok((offset + 8) as f64)
+    Ok(offset + 8)
 }
 
-pub fn write_double_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<f64> {
+pub fn write_double_be_number(buffer: &mut Buffer, value: f64, offset: f64) -> NodeResult<usize> {
     let offset = numeric_offset(offset)?;
     buffer.write_double_be(value, offset)?;
-    Ok((offset + 8) as f64)
+    Ok(offset + 8)
 }
 
 fn copy_index(value: f64, name: &str) -> NodeResult<usize> {
@@ -219,7 +219,7 @@ fn copy_index(value: f64, name: &str) -> NodeResult<usize> {
     } else {
         0.0
     };
-    if value < 0.0 || value > usize::MAX as f64 {
+    if value < 0.0 || value >= (usize::MAX as u128 + 1) as f64 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             format!("{name} is outside the representable buffer range"),
@@ -244,7 +244,7 @@ fn relative_index(value: f64, len: usize) -> usize {
 }
 
 fn numeric_offset(value: f64) -> NodeResult<usize> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > usize::MAX as f64 {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value >= (usize::MAX as u128 + 1) as f64 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "offset must be a non-negative integer",

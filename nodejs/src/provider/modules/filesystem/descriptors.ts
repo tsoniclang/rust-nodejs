@@ -1,4 +1,5 @@
 import {
+  int32Carrier, nativeUintCarrier,
   bufferCarrier, float64Carrier, fnExport, nullType, numberType,
   providerNativeFallibility, providerRef, rustOptionTargetType,
   stringCarrier, stringType, unitCarrier, voidType,
@@ -56,19 +57,19 @@ export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleD
 export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
   const operation = (
     name: string, path: string, parameters: readonly RustTargetTypeRef[],
-    modes: readonly ("ref" | "value")[], result: RustTargetTypeRef = float64Carrier,
+    modes: readonly ("ref" | "value")[], result: RustTargetTypeRef = nativeUintCarrier,
   ): RustProviderOperationDefinition => ({
     exportId: `${moduleId}::${name}`, operationKind: "method",
     target: { form: "call", path: `node_fs::${path}`, argModes: modes },
     resultCarrier: result, parameterCarriers: parameters, ...providerNativeFallibility,
   });
   return [
-    { ...operation("openSync", "open_sync_number", [stringCarrier, stringCarrier], ["ref", "ref"]), signatureId: `${moduleId}::openSync(path,flags)` },
+    { ...operation("openSync", "open_sync", [stringCarrier, stringCarrier], ["ref", "ref"], int32Carrier), signatureId: `${moduleId}::openSync(path,flags)` },
     ...[
       { name: "string", carrier: stringCarrier, path: "open_sync_numeric" },
       { name: "Buffer", carrier: bufferCarrier, path: "open_sync_buffer_numeric" },
     ].map(path => ({
-      ...operation("openSync", path.path, [path.carrier, float64Carrier, float64Carrier], ["ref", "value", "value"]),
+      ...operation("openSync", path.path, [path.carrier, float64Carrier, float64Carrier], ["ref", "value", "value"], int32Carrier),
       signatureId: `${moduleId}::openSync(${path.name},number,number)`,
     })),
     operation("closeSync", "close_sync_number", [float64Carrier], ["value"], unitCarrier),

@@ -1,4 +1,5 @@
 import {
+  uint8Carrier, uint64Carrier,
   boolCarrier,
   booleanType,
   bufferCarrier,
@@ -194,8 +195,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     {
       exportId: `${moduleSpecifier}::isIP`,
       operationKind: "method",
-      target: { form: "call", path: "node_net::is_ip_number", argModes: ["ref"] },
-      resultCarrier: { kind: "source-primitive", name: "float64" },
+      target: { form: "call", path: "node_net::is_ip", argModes: ["ref"] },
+      resultCarrier: uint8Carrier,
       parameterCarriers: [stringCarrier],
     },
   ];
@@ -252,8 +253,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     });
   }
   for (const [memberName, methodName, resultCarrier] of [
-    ["bytesRead", "bytes_read_number", { kind: "source-primitive", name: "float64" }],
-    ["bytesWritten", "bytes_written_number", { kind: "source-primitive", name: "float64" }],
+    ["bytesRead", "bytes_read", uint64Carrier],
+    ["bytesWritten", "bytes_written", uint64Carrier],
     ["destroyed", "destroyed", boolCarrier],
     ["pending", "pending", boolCarrier],
   ] as const) {

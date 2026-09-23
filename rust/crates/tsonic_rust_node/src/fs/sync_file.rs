@@ -218,7 +218,7 @@ fn file_time_from_seconds(value: f64) -> NodeResult<FileTime> {
         ));
     }
     let seconds = value.floor();
-    if seconds < i64::MIN as f64 || seconds > i64::MAX as f64 {
+    if seconds < i64::MIN as f64 || seconds >= (i64::MAX as i128 + 1) as f64 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "file time is outside supported range",

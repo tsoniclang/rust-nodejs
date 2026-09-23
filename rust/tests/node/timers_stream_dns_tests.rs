@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use tsonic_rust_node::{buffer::Buffer, dns, stream, timers};
+use tsonic_rust_node::{buffer::Buffer, dns, net, stream, timers};
 use tsonic_rust_runtime::Callable;
 
 #[test]
@@ -717,17 +717,17 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
     assert!(lookup.family == 4 || lookup.family == 6);
     assert!(!lookup.address.is_empty());
     assert_eq!(lookup.address_value(), lookup.address);
-    assert_eq!(lookup.family_number(), f64::from(lookup.family));
+    assert_eq!(lookup.family, if net::is_ipv4(&lookup.address) { 4 } else { 6 });
 
     let callback_count = std::rc::Rc::new(std::cell::Cell::new(0));
     let lookup_count = std::rc::Rc::clone(&callback_count);
     dns::lookup_callable(
         "localhost",
         tsonic_rust_runtime::Callable::new(
-            move |(error, address, family): (Option<tsonic_rust_node::NodeError>, String, f64)| {
+            move |(error, address, family): (Option<tsonic_rust_node::NodeError>, String, u8)| {
                 assert!(error.is_none());
                 assert!(!address.is_empty());
-                assert!(family == 4.0 || family == 6.0);
+                assert!(family == 4 || family == 6);
                 lookup_count.set(lookup_count.get() + 1);
                 Ok::<(), String>(())
             },

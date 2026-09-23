@@ -970,7 +970,7 @@ fn optional_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
             if !value.is_finite()
                 || value.fract() != 0.0
                 || value < 0.0
-                || value > usize::MAX as f64
+                || value >= (usize::MAX as u128 + 1) as f64
             {
                 return Err(NodeError::new(
                     "ERR_OUT_OF_RANGE",
@@ -980,4 +980,16 @@ fn optional_usize(value: Option<f64>, name: &str) -> NodeResult<Option<usize>> {
             Ok(value as usize)
         })
         .transpose()
+}
+
+#[cfg(test)]
+mod numeric_bounds {
+    #[test]
+    fn size_rejects_the_exclusive_native_upper_bound() {
+        let limit = (usize::MAX as u128 + 1) as f64;
+        assert!(super::optional_usize(Some(limit), "maxOutputLength").is_err());
+        let maximum = limit.next_down().floor();
+        assert_eq!(super::optional_usize(Some(maximum), "maxOutputLength").unwrap(), Some(maximum as usize));
+        assert_eq!(super::optional_usize(Some(0.0), "maxOutputLength").unwrap(), Some(0));
+    }
 }

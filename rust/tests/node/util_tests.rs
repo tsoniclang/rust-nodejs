@@ -20,7 +20,7 @@ fn text_codecs_use_exact_typed_array_views() {
         .decode_uint8(&view)
         .is_err());
     let empty = encoder.encode_uint8("").unwrap();
-    assert_eq!(empty.length(), 0.0);
+    assert_eq!(empty.length(), 0);
     assert_eq!(decoder.decode_uint8(&empty).unwrap(), "");
     assert_eq!(
         decoder

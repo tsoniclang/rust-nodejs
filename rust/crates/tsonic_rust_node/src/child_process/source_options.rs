@@ -126,7 +126,7 @@ pub fn spawn_sync_result_with_options<Arguments: SpawnSyncArguments + ?Sized>(
     let output = capture_command(command, &options);
     Ok(match output {
         Ok(output) => SpawnSyncResult {
-            pid: output.pid.map(f64::from),
+            pid: output.pid,
             status: output.status,
             signal: output.signal,
             error: output.error,

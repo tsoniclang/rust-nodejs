@@ -10,9 +10,6 @@ import {
   rustOptionTargetType,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
-  rustUint32ToInt32ValueConversion,
-  rustUint64ToFloat64ValueConversion,
-  rustUsizeToInt32ValueConversion,
 } from "@tsonic/target-rust/provider";
 import type {
   RustProviderConstantArgument,
@@ -31,9 +28,6 @@ export {
   rustOptionTargetType,
   rustSourcePrimitiveTargetType,
   rustStringTargetType,
-  rustUint32ToInt32ValueConversion,
-  rustUint64ToFloat64ValueConversion,
-  rustUsizeToInt32ValueConversion,
 };
 export type {
   RustProviderConstantArgument,
@@ -44,6 +38,11 @@ export type {
 export const stringCarrier = rustStringTargetType();
 export const boolCarrier = rustSourcePrimitiveTargetType("bool");
 export const int32Carrier = rustSourcePrimitiveTargetType("int32");
+export const int64Carrier = rustSourcePrimitiveTargetType("int64");
+export const uint8Carrier = rustSourcePrimitiveTargetType("uint8");
+export const uint32Carrier = rustSourcePrimitiveTargetType("uint32");
+export const uint64Carrier = rustSourcePrimitiveTargetType("uint64");
+export const nativeUintCarrier = rustSourcePrimitiveTargetType("native-uint");
 export const float64Carrier = rustSourcePrimitiveTargetType("float64");
 export const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };
 export const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
@@ -116,7 +115,7 @@ export const fileStatWatchCallbackCarrier = rustCallableTargetType(
   unitCarrier,
 );
 export const dnsLookupCallbackCarrier = rustCallableTargetType(
-  [rustOptionTargetType(nodeErrorCarrier), stringCarrier, float64Carrier],
+  [rustOptionTargetType(nodeErrorCarrier), stringCarrier, uint8Carrier],
   unitCarrier,
 );
 export const dnsAddressArrayCallbackCarrier = rustCallableTargetType(

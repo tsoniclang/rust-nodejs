@@ -91,7 +91,7 @@ pub struct SpawnSyncResult {
     pub stdout: Option<crate::buffer::Buffer>,
     pub stderr: Option<crate::buffer::Buffer>,
     pub status: Option<i32>,
-    pub pid: Option<f64>,
+    pub pid: Option<u32>,
     pub signal: Option<String>,
     pub error: Option<NodeError>,
 }

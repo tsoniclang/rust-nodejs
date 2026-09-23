@@ -37,7 +37,7 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 
     interface.write("done😀").unwrap();
     assert_eq!(interface.line(), "done😀");
-    assert_eq!(interface.cursor_number(), 6.0);
+    assert_eq!(interface.cursor(), 6);
     assert_eq!(interface.get_cursor_pos().cols, 6);
     interface.set_prompt("next> ");
     assert_eq!(interface.get_prompt(), "next> ");

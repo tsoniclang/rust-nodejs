@@ -339,10 +339,6 @@ pub fn is_ipv6(value: &str) -> bool {
     is_ip(value) == 6
 }
 
-pub fn is_ip_number(value: &str) -> f64 {
-    is_ip(value) as f64
-}
-
 pub fn connect(host: &str, port: u16) -> NodeResult<Socket> {
     Socket::connect(host, port)
 }
