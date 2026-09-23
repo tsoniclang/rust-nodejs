@@ -16,7 +16,7 @@ import {
   rustJsArrayTargetType,
   stringCarrier,
   stringType,
-  zeroFloat64Argument,
+  zeroIntegerArgument,
 } from "../model.js";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
@@ -106,7 +106,7 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
       memberId,
       signatureId: `${memberId}(${member.mode === "read" ? "" : "value"})`,
       operationKind: "method",
-      target: { ...target, trailingArguments: [zeroFloat64Argument] },
+      target: { ...target, trailingArguments: [zeroIntegerArgument] },
       resultCarrier: member.resultCarrier,
       parameterCarriers: valueCarriers,
       ...(valueGenerics.length === 0 ? {} : { genericParameters: valueGenerics }),
@@ -237,7 +237,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.copy`,
       signatureId: `${bufferId}.copy(target)`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroFloat64Argument, zeroFloat64Argument] },
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroIntegerArgument, zeroIntegerArgument] },
       resultCarrier: nativeUintCarrier,
       parameterCarriers: [bufferCarrier],
       ...providerNativeFallibility,
@@ -247,7 +247,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.copy`,
       signatureId: `${bufferId}.copy(target,targetStart)`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroFloat64Argument] },
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroIntegerArgument] },
       resultCarrier: nativeUintCarrier,
       parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }],
       genericParameters: [{ kind: "type", sourceName: "TargetStart" }],
@@ -280,7 +280,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.${name}`,
       signatureId: `${bufferId}.${name}()`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroFloat64Argument] },
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroIntegerArgument] },
       resultCarrier: bufferCarrier,
       parameterCarriers: [],
     }, {
@@ -315,7 +315,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
     ...bufferNumericRows(bufferId),
     { exportId: bufferId, memberId: `${bufferId}.equals`, operationKind: "method", target: { form: "receiver-method", name: "equals", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.compare`, operationKind: "method", target: { form: "receiver-method", name: "compare", argModes: ["ref"] }, resultCarrier: int32Carrier, parameterCarriers: [bufferCarrier] },
-    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: nativeUintCarrier },
+    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len", emptyTestMethod: "is_empty" }, resultCarrier: nativeUintCarrier, evaluation: "pure" },
     { exportId: "node:buffer::btoa", operationKind: "method", target: { form: "call", path: "node_buffer::btoa", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: "node:buffer::atob", operationKind: "method", target: { form: "call", path: "node_buffer::atob", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: "node:buffer::isEncoding", operationKind: "method", target: { form: "call", path: "node_buffer::is_encoding", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },

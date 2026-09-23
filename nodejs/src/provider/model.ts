@@ -153,7 +153,7 @@ export const httpResponseCallbackCarrier = rustCallableTargetType(
 );
 export const trueArgument = { kind: "boolean", value: true } as const;
 export const noneArgument = { kind: "none" } as const;
-export const zeroFloat64Argument = { kind: "float64", value: 0 } as const;
+export const zeroIntegerArgument = { kind: "integer", value: 0 } as const;
 export const providerNativeFallibility: {
   readonly isFallible: true;
   readonly errorBoundary: "provider-native";

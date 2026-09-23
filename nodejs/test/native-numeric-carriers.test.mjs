@@ -59,7 +59,7 @@ test("descriptor counts and high-resolution time never require floating storage"
     row.target.path === "node_process::hrtime_since");
   assert.equal(times.length, 4);
   for (const row of times) {
-    assert.deepEqual(row.resultCarrier.typeArguments, [{ kind: "source-primitive", name: "int64" }]);
+    assert.deepEqual(row.resultCarrier.genericArguments, [{ kind: "type", type: { kind: "source-primitive", name: "int64" } }]);
     assert.equal(row.isFallible, true);
   }
 });
