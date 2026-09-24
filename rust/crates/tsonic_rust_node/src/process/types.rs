@@ -21,8 +21,8 @@ pub struct MemoryUsage {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CpuUsage {
-    pub user: f64,
-    pub system: f64,
+    pub user: i64,
+    pub system: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

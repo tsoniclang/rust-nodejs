@@ -39,7 +39,7 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
         &directory_buffer,
         fs::MakeDirectoryOptions {
             recursive: Some(true),
-            mode: Some(0o700 as f64),
+            mode: Some(0o700),
         },
     )
     .unwrap();
@@ -110,7 +110,11 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
     assert!(stats.is_file());
     assert_eq!(stats.size, 5);
     assert_eq!(stats.mtime_ms(), 1_700_000_001_500.0);
-    assert_eq!(stats.mode_number(), f64::from(stats.mode));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(stats.mode, std::fs::metadata(&file).unwrap().mode());
+    }
     assert_eq!(
         fs::stat_sync_buffer_with_options(
             &file_buffer,

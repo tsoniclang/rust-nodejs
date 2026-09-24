@@ -49,10 +49,6 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn mode_number(&self) -> f64 {
-        f64::from(self.mode)
-    }
-
     pub fn is_file(&self) -> bool {
         self.is_file
     }

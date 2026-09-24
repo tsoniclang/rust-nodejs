@@ -17,14 +17,14 @@ fn spawn_capture_drains_binary_pipes_concurrently_and_retains_results() {
         &arguments(&[]),
         SpawnSyncOptions {
             input: Some(input),
-            max_buffer: Some(bytes.len() as f64),
-            timeout: Some(5_000.0),
+            max_buffer: Some(bytes.len()),
+            timeout: Some(5_000),
             ..Default::default()
         },
     )
     .unwrap();
     assert_eq!(result.status, Some(0));
-    assert!(result.pid.unwrap() > 0.0);
+    assert!(result.pid.unwrap() > 0);
     assert!(result.error.is_none());
     assert!(result.signal.is_none());
     assert_eq!(result.stdout.unwrap().as_bytes(), bytes);
@@ -48,8 +48,8 @@ fn spawn_capture_bounds_output_and_enforces_timeout_and_signals() {
         "/bin/sh",
         &arguments(&["-c", "while :; do printf abcdefghijklmnopqrstuvwxyz; done"]),
         SpawnSyncOptions {
-            max_buffer: Some(64.0),
-            timeout: Some(5_000.0),
+            max_buffer: Some(64),
+            timeout: Some(5_000),
             ..Default::default()
         },
     )
@@ -64,7 +64,7 @@ fn spawn_capture_bounds_output_and_enforces_timeout_and_signals() {
         "/bin/sleep",
         &arguments(&["5"]),
         SpawnSyncOptions {
-            timeout: Some(30.0),
+            timeout: Some(30),
             kill_signal: Some("SIGKILL".to_owned()),
             ..Default::default()
         },
@@ -121,9 +121,9 @@ fn spawn_options_retain_cwd_environment_and_ignored_output() {
         &arguments(&["ignored"]),
         SpawnSyncOptions {
             stdio: Some(JsArray::from_dense(vec![
-                JsStringNumber::String(
+                Some(JsStringNumber::String(
                     "ignore".to_owned()
-                );
+                ));
                 3
             ])),
             ..Default::default()
@@ -142,7 +142,9 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
             "/bin/echo",
             &arguments(&[]),
             SpawnSyncOptions {
-                uid: Some(value),
+                stdio: Some(JsArray::from_dense(vec![Some(JsStringNumber::Number(
+                    value,
+                ))])),
                 ..Default::default()
             },
         )
@@ -150,14 +152,6 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
         assert_eq!(error.code(), "ERR_OUT_OF_RANGE");
     }
     for options in [
-        SpawnSyncOptions {
-            max_buffer: Some(-1.0),
-            ..Default::default()
-        },
-        SpawnSyncOptions {
-            timeout: Some(f64::INFINITY),
-            ..Default::default()
-        },
         SpawnSyncOptions {
             encoding: Some("utf8".to_owned()),
             ..Default::default()
@@ -167,9 +161,9 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
             ..Default::default()
         },
         SpawnSyncOptions {
-            stdio: Some(JsArray::from_dense(vec![JsStringNumber::String(
+            stdio: Some(JsArray::from_dense(vec![Some(JsStringNumber::String(
                 "invalid".to_owned(),
-            )])),
+            ))])),
             ..Default::default()
         },
     ] {
@@ -230,10 +224,10 @@ fn spawn_options_inherit_open_file_positions_and_native_credentials() {
                     .unwrap(),
             ),
             stdio: Some(JsArray::from_dense(vec![
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::Number(f64::from(descriptor)),
+                None,
+                Some(JsStringNumber::String("pipe".to_owned())),
+                Some(JsStringNumber::String("pipe".to_owned())),
+                Some(JsStringNumber::Number(f64::from(descriptor))),
             ])),
             ..Default::default()
         },

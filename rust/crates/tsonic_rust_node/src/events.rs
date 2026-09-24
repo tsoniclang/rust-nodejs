@@ -164,7 +164,7 @@ impl EventEmitter {
                 let listener = listener.clone();
                 move |arguments| {
                     listener
-                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Null),))
                         .map_err(callback_node_error)
                 }
             },
@@ -190,8 +190,8 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -218,9 +218,9 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -267,7 +267,7 @@ impl EventEmitter {
                 let listener = listener.clone();
                 move |arguments| {
                     listener
-                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Null),))
                         .map_err(callback_node_error)
                 }
             },
@@ -293,8 +293,8 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -321,9 +321,9 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -370,7 +370,7 @@ impl EventEmitter {
                 let listener = listener.clone();
                 move |arguments| {
                     listener
-                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Null),))
                         .map_err(callback_node_error)
                 }
             },
@@ -396,8 +396,8 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -424,9 +424,9 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -473,7 +473,7 @@ impl EventEmitter {
                 let listener = listener.clone();
                 move |arguments| {
                     listener
-                        .call((arguments.first().cloned().unwrap_or(JsValue::Undefined),))
+                        .call((arguments.first().cloned().unwrap_or(JsValue::Null),))
                         .map_err(callback_node_error)
                 }
             },
@@ -499,8 +499,8 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -527,9 +527,9 @@ impl EventEmitter {
                 move |arguments| {
                     listener
                         .call((
-                            arguments.first().cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(1).cloned().unwrap_or(JsValue::Undefined),
-                            arguments.get(2).cloned().unwrap_or(JsValue::Undefined),
+                            arguments.first().cloned().unwrap_or(JsValue::Null),
+                            arguments.get(1).cloned().unwrap_or(JsValue::Null),
+                            arguments.get(2).cloned().unwrap_or(JsValue::Null),
                         ))
                         .map_err(callback_node_error)
                 }
@@ -890,16 +890,6 @@ impl EventEmitter {
         self
     }
 
-    pub fn set_max_listeners_i32(&mut self, max: i32) -> NodeResult<&mut Self> {
-        let max = usize::try_from(max).map_err(|_| {
-            NodeError::new(
-                "ERR_OUT_OF_RANGE",
-                "EventEmitter maximum listener count must be non-negative",
-            )
-        })?;
-        Ok(self.set_max_listeners(max))
-    }
-
     pub fn get_max_listeners(&self) -> usize {
         self.max_listeners.unwrap_or(0)
     }
@@ -913,7 +903,7 @@ fn unhandled_error(arguments: &[JsValue]) -> NodeError {
     let detail = arguments
         .first()
         .map(JsValue::inspect)
-        .unwrap_or_else(|| "undefined".to_string());
+        .unwrap_or_else(|| "null".to_string());
     NodeError::new(
         "ERR_UNHANDLED_ERROR",
         format!("Unhandled 'error' event ({detail})"),

@@ -100,7 +100,7 @@ impl ClientRequest {
 impl ServerHandle {
     pub fn listen<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
@@ -115,7 +115,7 @@ impl ServerHandle {
 
     pub fn listen_default_host<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where

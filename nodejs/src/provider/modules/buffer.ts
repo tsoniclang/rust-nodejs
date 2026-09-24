@@ -1,4 +1,6 @@
 import {
+  nativeUintCarrier,
+  rustSourcePrimitiveTargetType,
   boolCarrier,
   booleanType,
   bufferCarrier,
@@ -11,54 +13,55 @@ import {
   propertyMember,
   providerNativeFallibility,
   providerRef,
-  rustInt32ToUsizeValueConversion,
   rustJsArrayTargetType,
-  rustUsizeToInt32ValueConversion,
   stringCarrier,
   stringType,
-  zeroFloat64Argument,
+  zeroIntegerArgument,
 } from "../model.js";
-import { rustInt32ToFloat64ValueConversion, rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
+import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 
 import type {
   RustProviderModuleDefinition,
   RustProviderOperationDefinition,
+  RustTargetTypeRef,
 } from "../model.js";
 interface BufferNumericMemberDefinition {
   readonly sourceName: string;
   readonly targetName: string;
   readonly mode: "read" | "write";
+  readonly resultCarrier: RustTargetTypeRef;
+  readonly integerInput?: boolean;
 }
 
 const bufferNumericMembers: readonly BufferNumericMemberDefinition[] = Object.freeze([
-  { sourceName: "readUInt8", targetName: "read_uint8_number", mode: "read" },
-  { sourceName: "readInt8", targetName: "read_int8_number", mode: "read" },
-  { sourceName: "readUInt16LE", targetName: "read_uint16_le_number", mode: "read" },
-  { sourceName: "readUInt16BE", targetName: "read_uint16_be_number", mode: "read" },
-  { sourceName: "readInt16LE", targetName: "read_int16_le_number", mode: "read" },
-  { sourceName: "readInt16BE", targetName: "read_int16_be_number", mode: "read" },
-  { sourceName: "readUInt32LE", targetName: "read_uint32_le_number", mode: "read" },
-  { sourceName: "readUInt32BE", targetName: "read_uint32_be_number", mode: "read" },
-  { sourceName: "readInt32LE", targetName: "read_int32_le_number", mode: "read" },
-  { sourceName: "readInt32BE", targetName: "read_int32_be_number", mode: "read" },
-  { sourceName: "readFloatLE", targetName: "read_float_le_number", mode: "read" },
-  { sourceName: "readFloatBE", targetName: "read_float_be_number", mode: "read" },
-  { sourceName: "readDoubleLE", targetName: "read_double_le_number", mode: "read" },
-  { sourceName: "readDoubleBE", targetName: "read_double_be_number", mode: "read" },
-  { sourceName: "writeUInt8", targetName: "write_uint8_number", mode: "write" },
-  { sourceName: "writeInt8", targetName: "write_int8_number", mode: "write" },
-  { sourceName: "writeUInt16LE", targetName: "write_uint16_le_number", mode: "write" },
-  { sourceName: "writeUInt16BE", targetName: "write_uint16_be_number", mode: "write" },
-  { sourceName: "writeInt16LE", targetName: "write_int16_le_number", mode: "write" },
-  { sourceName: "writeInt16BE", targetName: "write_int16_be_number", mode: "write" },
-  { sourceName: "writeUInt32LE", targetName: "write_uint32_le_number", mode: "write" },
-  { sourceName: "writeUInt32BE", targetName: "write_uint32_be_number", mode: "write" },
-  { sourceName: "writeInt32LE", targetName: "write_int32_le_number", mode: "write" },
-  { sourceName: "writeInt32BE", targetName: "write_int32_be_number", mode: "write" },
-  { sourceName: "writeFloatLE", targetName: "write_float_le_number", mode: "write" },
-  { sourceName: "writeFloatBE", targetName: "write_float_be_number", mode: "write" },
-  { sourceName: "writeDoubleLE", targetName: "write_double_le_number", mode: "write" },
-  { sourceName: "writeDoubleBE", targetName: "write_double_be_number", mode: "write" },
+  { sourceName: "readUInt8", targetName: "read_uint8_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("uint8") },
+  { sourceName: "readInt8", targetName: "read_int8_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("int8") },
+  { sourceName: "readUInt16LE", targetName: "read_uint16_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("uint16") },
+  { sourceName: "readUInt16BE", targetName: "read_uint16_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("uint16") },
+  { sourceName: "readInt16LE", targetName: "read_int16_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("int16") },
+  { sourceName: "readInt16BE", targetName: "read_int16_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("int16") },
+  { sourceName: "readUInt32LE", targetName: "read_uint32_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("uint32") },
+  { sourceName: "readUInt32BE", targetName: "read_uint32_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("uint32") },
+  { sourceName: "readInt32LE", targetName: "read_int32_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("int32") },
+  { sourceName: "readInt32BE", targetName: "read_int32_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("int32") },
+  { sourceName: "readFloatLE", targetName: "read_float_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("float32") },
+  { sourceName: "readFloatBE", targetName: "read_float_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("float32") },
+  { sourceName: "readDoubleLE", targetName: "read_double_le_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("float64") },
+  { sourceName: "readDoubleBE", targetName: "read_double_be_number", mode: "read", resultCarrier: rustSourcePrimitiveTargetType("float64") },
+  { sourceName: "writeUInt8", targetName: "write_uint8_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeInt8", targetName: "write_int8_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeUInt16LE", targetName: "write_uint16_le_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeUInt16BE", targetName: "write_uint16_be_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeInt16LE", targetName: "write_int16_le_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeInt16BE", targetName: "write_int16_be_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeUInt32LE", targetName: "write_uint32_le_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeUInt32BE", targetName: "write_uint32_be_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeInt32LE", targetName: "write_int32_le_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeInt32BE", targetName: "write_int32_be_number", mode: "write", resultCarrier: nativeUintCarrier, integerInput: true },
+  { sourceName: "writeFloatLE", targetName: "write_float_le_number", mode: "write", resultCarrier: nativeUintCarrier },
+  { sourceName: "writeFloatBE", targetName: "write_float_be_number", mode: "write", resultCarrier: nativeUintCarrier },
+  { sourceName: "writeDoubleLE", targetName: "write_double_le_number", mode: "write", resultCarrier: nativeUintCarrier },
+  { sourceName: "writeDoubleBE", targetName: "write_double_be_number", mode: "write", resultCarrier: nativeUintCarrier },
 ]);
 
 function bufferNumericMemberDeclarations(bufferId: string) {
@@ -90,7 +93,9 @@ function bufferNumericMemberDeclarations(bufferId: string) {
 function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefinition[] {
   return bufferNumericMembers.flatMap((member): readonly RustProviderOperationDefinition[] => {
     const memberId = `${bufferId}.${member.sourceName}`;
-    const valueCarriers = member.mode === "read" ? [] : [float64Carrier];
+    const valueCarriers: readonly RustTargetTypeRef[] = member.mode === "read" ? []
+      : [member.integerInput ? { kind: "type-parameter", name: "Value" } : float64Carrier];
+    const valueGenerics = member.integerInput ? [{ kind: "type" as const, sourceName: "Value" }] : [];
     const target = {
       form: "free-call" as const,
       path: `node_buffer::${member.targetName}`,
@@ -101,9 +106,10 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
       memberId,
       signatureId: `${memberId}(${member.mode === "read" ? "" : "value"})`,
       operationKind: "method",
-      target: { ...target, trailingArguments: [zeroFloat64Argument] },
-      resultCarrier: float64Carrier,
+      target: { ...target, trailingArguments: [zeroIntegerArgument] },
+      resultCarrier: member.resultCarrier,
       parameterCarriers: valueCarriers,
+      ...(valueGenerics.length === 0 ? {} : { genericParameters: valueGenerics }),
       ...providerNativeFallibility,
     }, {
       exportId: bufferId,
@@ -111,8 +117,9 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
       signatureId: `${memberId}(${member.mode === "read" ? "offset" : "value,offset"})`,
       operationKind: "method",
       target,
-      resultCarrier: float64Carrier,
-      parameterCarriers: [...valueCarriers, float64Carrier],
+      resultCarrier: member.resultCarrier,
+      parameterCarriers: [...valueCarriers, { kind: "type-parameter", name: "Offset" }],
+      genericParameters: [...valueGenerics, { kind: "type", sourceName: "Offset" }],
       ...providerNativeFallibility,
     }];
   });
@@ -215,14 +222,14 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
     {
       exportId: bufferId, memberId: `${bufferId}.compare.static`, signatureId: `${bufferId}.compare(left,right)`,
       operationKind: "method", target: { form: "call", path: "node_buffer::compare", argModes: ["ref", "ref"] },
-      resultCarrier: float64Carrier, resultConversion: rustInt32ToFloat64ValueConversion,
+      resultCarrier: int32Carrier,
       parameterCarriers: [bufferCarrier, bufferCarrier],
     },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(float64Carrier)] },
-    { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc", argConversions: [rustInt32ToUsizeValueConversion] }, resultCarrier: bufferCarrier, parameterCarriers: [int32Carrier] },
-    { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: int32Carrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility, resultConversion: rustUsizeToInt32ValueConversion },
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType({ kind: "type-parameter", name: "Value" })], genericParameters: [{ kind: "type", sourceName: "Value" }] },
+    { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc" }, resultCarrier: bufferCarrier, parameterCarriers: [nativeUintCarrier] },
+    { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     {
@@ -230,8 +237,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.copy`,
       signatureId: `${bufferId}.copy(target)`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroFloat64Argument, zeroFloat64Argument] },
-      resultCarrier: float64Carrier,
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroIntegerArgument, zeroIntegerArgument] },
+      resultCarrier: nativeUintCarrier,
       parameterCarriers: [bufferCarrier],
       ...providerNativeFallibility,
     },
@@ -240,9 +247,10 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.copy`,
       signatureId: `${bufferId}.copy(target,targetStart)`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroFloat64Argument] },
-      resultCarrier: float64Carrier,
-      parameterCarriers: [bufferCarrier, float64Carrier],
+      target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroIntegerArgument] },
+      resultCarrier: nativeUintCarrier,
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }],
+      genericParameters: [{ kind: "type", sourceName: "TargetStart" }],
       ...providerNativeFallibility,
     },
     {
@@ -251,8 +259,9 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       signatureId: `${bufferId}.copy(target,targetStart,sourceStart)`,
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value", "value"] },
-      resultCarrier: float64Carrier,
-      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier],
+      resultCarrier: nativeUintCarrier,
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }, { kind: "type-parameter", name: "SourceStart" }],
+      genericParameters: [{ kind: "type", sourceName: "TargetStart" }, { kind: "type", sourceName: "SourceStart" }],
       ...providerNativeFallibility,
     },
     {
@@ -261,8 +270,9 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       signatureId: `${bufferId}.copy(target,targetStart,sourceStart,sourceEnd)`,
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::copy_closed_number", receiverMode: "ref", argModes: ["ref", "value", "value", "value"] },
-      resultCarrier: float64Carrier,
-      parameterCarriers: [bufferCarrier, float64Carrier, float64Carrier, float64Carrier],
+      resultCarrier: nativeUintCarrier,
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }, { kind: "type-parameter", name: "SourceStart" }, { kind: "type-parameter", name: "SourceEnd" }],
+      genericParameters: [{ kind: "type", sourceName: "TargetStart" }, { kind: "type", sourceName: "SourceStart" }, { kind: "type", sourceName: "SourceEnd" }],
       ...providerNativeFallibility,
     },
     ...["slice", "subarray"].flatMap((name): readonly RustProviderOperationDefinition[] => [{
@@ -270,7 +280,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       memberId: `${bufferId}.${name}`,
       signatureId: `${bufferId}.${name}()`,
       operationKind: "method",
-      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroFloat64Argument] },
+      target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref", trailingArguments: [zeroIntegerArgument] },
       resultCarrier: bufferCarrier,
       parameterCarriers: [],
     }, {
@@ -280,7 +290,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref" },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [float64Carrier],
+      parameterCarriers: [{ kind: "type-parameter", name: "Start" }],
+      genericParameters: [{ kind: "type", sourceName: "Start" }],
     }, {
       exportId: bufferId,
       memberId: `${bufferId}.${name}`,
@@ -288,7 +299,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::slice_closed_number", receiverMode: "ref" },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [float64Carrier, float64Carrier],
+      parameterCarriers: [{ kind: "type-parameter", name: "Start" }, { kind: "type-parameter", name: "End" }],
+      genericParameters: [{ kind: "type", sourceName: "Start" }, { kind: "type", sourceName: "End" }],
     }]),
     ...["swap16", "swap32", "swap64"].map((name): RustProviderOperationDefinition => ({
       exportId: bufferId,
@@ -303,7 +315,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
     ...bufferNumericRows(bufferId),
     { exportId: bufferId, memberId: `${bufferId}.equals`, operationKind: "method", target: { form: "receiver-method", name: "equals", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [bufferCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.compare`, operationKind: "method", target: { form: "receiver-method", name: "compare", argModes: ["ref"] }, resultCarrier: int32Carrier, parameterCarriers: [bufferCarrier] },
-    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len" }, resultCarrier: int32Carrier, resultConversion: rustUsizeToInt32ValueConversion },
+    { exportId: bufferId, memberId: `${bufferId}.length`, operationKind: "property", target: { form: "receiver-method", name: "len", emptyTestMethod: "is_empty" }, resultCarrier: nativeUintCarrier, evaluation: "pure" },
     { exportId: "node:buffer::btoa", operationKind: "method", target: { form: "call", path: "node_buffer::btoa", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: "node:buffer::atob", operationKind: "method", target: { form: "call", path: "node_buffer::atob", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: "node:buffer::isEncoding", operationKind: "method", target: { form: "call", path: "node_buffer::is_encoding", argModes: ["ref"] }, resultCarrier: boolCarrier, parameterCarriers: [stringCarrier] },

@@ -38,8 +38,8 @@ impl Default for WorkerOptions {
         Self {
             name: None,
             argv: None,
-            env: JsValue::Undefined,
-            worker_data: JsValue::Undefined,
+            env: JsValue::Null,
+            worker_data: JsValue::Null,
         }
     }
 }
@@ -284,7 +284,7 @@ impl Worker {
                     ("error", std::slice::from_ref(&converted))
                 }
                 WorkerSignal::Exit(code) => {
-                    converted = JsValue::Number(f64::from(*code));
+                    converted = JsValue::from(*code);
                     ("exit", std::slice::from_ref(&converted))
                 }
             };
@@ -458,7 +458,7 @@ fn accept_worker(listener: &TcpListener, child: &mut Child) -> NodeResult<std::n
 
 fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
     match value {
-        JsValue::Undefined => Ok(()),
+        JsValue::Null => Ok(()),
         JsValue::Object(object) => {
             let entries = object
                 .try_borrow()
@@ -478,7 +478,7 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
                     )
                 })?;
                 match value {
-                    JsValue::Undefined => {}
+                    JsValue::Null => {}
                     JsValue::String(value) => {
                         command.env(key, value);
                     }

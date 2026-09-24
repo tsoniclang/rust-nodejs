@@ -1,7 +1,7 @@
 import {
+  nativeUintCarrier,
   boolCarrier,
   booleanType,
-  float64Carrier,
   propertyMember,
   providerNativeFallibility,
   providerRef,
@@ -124,7 +124,7 @@ export function readlineRows(): readonly RustProviderOperationDefinition[] {
     interfaceMethod("getPrompt", "get_prompt", [], [], stringCarrier, false),
     interfaceMethod("prompt", "prompt", [], [], unitCarrier, true),
     interfaceProperty("line", "line", stringCarrier),
-    interfaceProperty("cursor", "cursor_number", float64Carrier),
+    interfaceProperty("cursor", "cursor", nativeUintCarrier),
     interfaceProperty("terminal", "terminal", boolCarrier),
   ];
 }

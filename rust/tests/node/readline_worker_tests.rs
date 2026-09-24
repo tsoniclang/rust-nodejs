@@ -37,7 +37,7 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 
     interface.write("done😀").unwrap();
     assert_eq!(interface.line(), "done😀");
-    assert_eq!(interface.cursor_number(), 6.0);
+    assert_eq!(interface.cursor(), 6);
     assert_eq!(interface.get_cursor_pos().cols, 6);
     interface.set_prompt("next> ");
     assert_eq!(interface.get_prompt(), "next> ");
@@ -87,7 +87,7 @@ fn worker_message_channel_structured_clones_js_values() {
     );
     assert!(worker_threads::is_main_thread());
     assert!(worker_threads::parent_port().is_none());
-    assert_eq!(worker_threads::worker_data(), JsValue::Undefined);
+    assert_eq!(worker_threads::worker_data(), JsValue::Null);
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn worker_message_port_round_trips_structure_without_identity() {
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(items.has_index(1));
-    assert_eq!(items.get(1), Some(JsValue::Undefined));
+    assert_eq!(items.get(1), Some(JsValue::Null));
     assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // Each delivery mints fresh handles: two posts of the same value are not
@@ -224,7 +224,7 @@ fn worker_environment_data_round_trips_structure_without_identity() {
     assert_eq!(items.len(), 3);
     assert_eq!(items.get(0), Some(JsValue::Number(1.0)));
     assert!(items.has_index(1));
-    assert_eq!(items.get(1), Some(JsValue::Undefined));
+    assert_eq!(items.get(1), Some(JsValue::Null));
     assert_eq!(items.get(2), Some(JsValue::from("tail".to_string())));
 
     // The payload rebuilds identical structure on every rebuild.

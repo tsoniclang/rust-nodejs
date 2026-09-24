@@ -165,7 +165,7 @@ pub fn worker_data() -> JsValue {
             .borrow()
             .as_ref()
             .map(|context| context.worker_data.clone())
-            .unwrap_or(JsValue::Undefined)
+            .unwrap_or(JsValue::Null)
     })
 }
 

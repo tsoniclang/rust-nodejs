@@ -652,15 +652,15 @@ test("provider package closes process identity, timing, and memory contracts", (
   assert.deepEqual(
     rows.filter((row) => row.exportId === "node:process::hrtime").map((row) => [row.signatureId, row.target.path]),
     [
-      ["node:process::hrtime()", "node_process::hrtime_open_number"],
-      ["node:process::hrtime(previous)", "node_process::hrtime_since_number"],
+      ["node:process::hrtime()", "node_process::hrtime_open"],
+      ["node:process::hrtime(previous)", "node_process::hrtime_since"],
     ],
   );
   assert.deepEqual(
     rows.filter((row) => row.memberId === "node:process::Process.hrtime").map((row) => [row.signatureId, row.target.path]),
     [
-      ["node:process::Process.hrtime()", "node_process::hrtime_open_number"],
-      ["node:process::Process.hrtime(previous)", "node_process::hrtime_since_number"],
+      ["node:process::Process.hrtime()", "node_process::hrtime_open"],
+      ["node:process::Process.hrtime(previous)", "node_process::hrtime_since"],
     ],
   );
 
@@ -692,10 +692,8 @@ test("provider package closes process identity, timing, and memory contracts", (
     const row = rows.find((candidate) =>
       candidate.memberId === `node:process::MemoryUsage.${sourceName}`);
     assert.deepEqual(row?.target, { form: "field", name: targetName });
-    assert.deepEqual(row?.resultConversion, {
-      kind: "semantic-conversion",
-      id: "js-number-from-u64",
-    });
+    assert.equal(row?.resultConversion, undefined);
+    assert.deepEqual(row?.resultCarrier, { kind: "source-primitive", name: "uint64" });
   }
   assert.equal(
     contribution.definition.carrierPaths["rust.node.MemoryUsage"],
@@ -882,11 +880,11 @@ test("provider package closes Buffer views, copies, swaps, and numeric operation
     row.memberId === `node:buffer::Buffer.${name}`)).length, numericNames.length * 2);
   const writeUInt8 = rows.filter((row) => row.memberId === "node:buffer::Buffer.writeUInt8");
   assert.deepEqual(writeUInt8.map((row) => row.resultCarrier), [
-    { kind: "source-primitive", name: "float64" },
-    { kind: "source-primitive", name: "float64" },
+    { kind: "source-primitive", name: "native-uint" },
+    { kind: "source-primitive", name: "native-uint" },
   ]);
   assert.deepEqual(writeUInt8.map((row) => row.target.receiverMode), ["mut-ref", "mut-ref"]);
-  assert.deepEqual(writeUInt8[0].target.trailingArguments, [{ kind: "float64", value: 0 }]);
+  assert.deepEqual(writeUInt8[0].target.trailingArguments, [{ kind: "integer", value: 0 }]);
 
   const copyRows = rows.filter((row) => row.memberId === "node:buffer::Buffer.copy");
   assert.equal(copyRows.length, 4);

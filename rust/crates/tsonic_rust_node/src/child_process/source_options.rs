@@ -10,19 +10,24 @@ use crate::process::ProcessEnv;
 #[derive(Debug, Clone, Default)]
 pub struct SpawnSyncOptions {
     pub encoding: Option<String>,
-    pub max_buffer: Option<f64>,
+    pub max_buffer: Option<usize>,
     pub cwd: Option<String>,
     pub env: Option<ProcessEnv>,
-    pub uid: Option<f64>,
-    pub gid: Option<f64>,
-    pub stdio: Option<JsArray<JsStringNumber>>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    pub stdio: Option<JsArray<Option<JsStringNumber>>>,
     pub input: Option<Uint8Array>,
-    pub timeout: Option<f64>,
+    pub timeout: Option<u64>,
     pub kill_signal: Option<String>,
 }
 
-fn integer(value: f64, maximum: f64, label: &str) -> NodeResult<u64> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > maximum {
+fn integer(value: f64, maximum: u64, label: &str) -> NodeResult<u64> {
+    if !value.is_finite()
+        || value < 0.0
+        || value.fract() != 0.0
+        || value >= 18_446_744_073_709_551_616.0
+        || value as u64 > maximum
+    {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             format!("{label} is outside its exact integer range"),
@@ -47,14 +52,14 @@ impl SpawnSyncOptions {
         if let Some(values) = &self.stdio {
             for (index, value) in values.values().into_iter().enumerate() {
                 let mode = match value {
-                    JsStringNumber::Undefined | JsStringNumber::Null => {
+                    None => {
                         if index < 3 {
                             Stdio::Pipe
                         } else {
                             Stdio::Ignore
                         }
                     }
-                    JsStringNumber::String(value) => {
+                    Some(JsStringNumber::String(value)) => {
                         if value == "pipe" {
                             Stdio::Pipe
                         } else if value == "ignore" {
@@ -68,9 +73,9 @@ impl SpawnSyncOptions {
                             ));
                         }
                     }
-                    JsStringNumber::Number(value) => {
+                    Some(JsStringNumber::Number(value)) => {
                         Stdio::Descriptor(
-                            integer(value, i32::MAX as f64, "stdio descriptor")? as i32
+                            integer(value, i32::MAX as u64, "stdio descriptor")? as i32
                         )
                     }
                 };
@@ -81,29 +86,16 @@ impl SpawnSyncOptions {
         Ok(SpawnOptions {
             cwd: self.cwd.as_ref().map(Into::into),
             env: self.env.as_ref().map(ProcessEnv::entries),
-            uid: self
-                .uid
-                .map(|value| integer(value, u32::MAX as f64, "uid").map(|value| value as u32))
-                .transpose()?,
-            gid: self
-                .gid
-                .map(|value| integer(value, u32::MAX as f64, "gid").map(|value| value as u32))
-                .transpose()?,
+            uid: self.uid,
+            gid: self.gid,
             stdio: StdioOptions::tuple(at(0), at(1), at(2)),
             extra_stdio: stdio.into_iter().skip(3).collect(),
             input: self
                 .input
                 .as_ref()
                 .map(|input| input.with_bytes(<[u8]>::to_vec)),
-            max_buffer: Some(integer(
-                self.max_buffer.unwrap_or(1024.0 * 1024.0),
-                (usize::MAX as f64).min(9_007_199_254_740_991.0),
-                "maxBuffer",
-            )? as usize),
-            timeout_ms: self
-                .timeout
-                .map(|value| integer(value, 9_007_199_254_740_991.0, "timeout"))
-                .transpose()?,
+            max_buffer: Some(self.max_buffer.unwrap_or(1024 * 1024)),
+            timeout_ms: self.timeout,
             kill_signal: self.kill_signal.clone(),
             ..SpawnOptions::default()
         })
@@ -121,7 +113,7 @@ pub fn spawn_sync_result_with_options<Arguments: SpawnSyncArguments + ?Sized>(
     let output = capture_command(command, &options);
     Ok(match output {
         Ok(output) => SpawnSyncResult {
-            pid: output.pid.map(f64::from),
+            pid: output.pid,
             status: output.status,
             signal: output.signal,
             error: output.error,

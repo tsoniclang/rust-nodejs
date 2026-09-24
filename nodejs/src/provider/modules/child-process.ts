@@ -1,5 +1,6 @@
 import {
-  bufferCarrier, float64Carrier, int32Carrier, nodeErrorCarrier,
+  uint32Carrier, uint64Carrier, nativeUintCarrier,
+  bufferCarrier, int32Carrier, nodeErrorCarrier,
   nullType, numberType, processEnvCarrier, propertyMember, providerNativeFallibility,
   providerRef, rustJsArrayTargetType, rustOptionTargetType, spawnSyncResultCarrier,
   stringArrayType, stringCarrier, stringType, unitCarrier,
@@ -22,15 +23,18 @@ function optionFields(typedArrays: boolean): readonly {
     { name: "encoding", field: "encoding", type: { kind: "literal", value: "buffer" }, carrier: stringCarrier },
     { name: "cwd", field: "cwd", type: stringType, carrier: stringCarrier },
     { name: "env", field: "env", type: providerRef("node:process", "ProcessEnv"), carrier: processEnvCarrier },
-    ...["maxBuffer", "uid", "gid", "timeout"].map(name => ({
-      name, field: name === "maxBuffer" ? "max_buffer" : name, type: numberType, carrier: float64Carrier,
-    })),
+    ...([
+      ["maxBuffer", "max_buffer", nativeUintCarrier],
+      ["uid", "uid", uint32Carrier],
+      ["gid", "gid", uint32Carrier],
+      ["timeout", "timeout", uint64Carrier],
+    ] as const).map(([name, field, carrier]) => ({ name, field, type: numberType, carrier })),
     { name: "killSignal", field: "kill_signal", type: providerRef("node:process", "Signals"), carrier: stringCarrier },
     { name: "input", field: "input", type: typedArrays ? { kind: "source-global", name: "Uint8Array" } : providerRef("node:buffer", "Buffer"), carrier: rustJsTypedArrayTargetType("Uint8Array") },
     { name: "stdio", field: "stdio", type: { kind: "array", elementType: {
       kind: "union", types: [numberType, nullType, { kind: "undefined" },
         ...["pipe", "ignore", "inherit"].map(value => ({ kind: "literal" as const, value }))],
-    } }, carrier: rustJsArrayTargetType(rustJsStringNumberTargetType()) },
+    } }, carrier: rustJsArrayTargetType(rustOptionTargetType(rustJsStringNumberTargetType())) },
   ];
 }
 
@@ -72,7 +76,7 @@ export function childProcessRows(typedArrays: boolean): readonly RustProviderOpe
   const fields = [
     ...["stdout", "stderr"].map(name => ({ owner: resultId, name, field: name, carrier: rustOptionTargetType(bufferCarrier) })),
     { owner: resultId, name: "status", field: "status", carrier: rustOptionTargetType(int32Carrier) },
-    { owner: resultId, name: "pid", field: "pid", carrier: rustOptionTargetType(float64Carrier) },
+    { owner: resultId, name: "pid", field: "pid", carrier: rustOptionTargetType(uint32Carrier) },
     { owner: resultId, name: "signal", field: "signal", carrier: rustOptionTargetType(stringCarrier) },
     { owner: resultId, name: "error", field: "error", carrier: rustOptionTargetType(nodeErrorCarrier) },
     ...optionFields(typedArrays).map(field => ({ ...field, owner: optionsId, carrier: rustOptionTargetType(field.carrier) })),

@@ -278,8 +278,8 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     assert!(read_stream.read().unwrap().is_some());
     let mut ranged_stream = handle
         .create_read_stream_with_options(fs_promises::ReadStreamOptions {
-            start: Some(0.0),
-            end: Some(4.0),
+            start: Some(0),
+            end: Some(4),
             ..fs_promises::ReadStreamOptions::default()
         })
         .unwrap();
@@ -294,7 +294,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     );
     let mut write_stream = handle
         .create_write_stream_with_options(fs_promises::WriteStreamOptions {
-            start: Some(14.0),
+            start: Some(14),
             ..fs_promises::WriteStreamOptions::default()
         })
         .unwrap();
@@ -472,7 +472,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         &nested_text,
         fs_promises::MakeDirectoryOptions {
             recursive: Some(false),
-            mode: Some(f64::from(0o755)),
+            mode: Some(0o755),
         },
     )
     .unwrap();
@@ -597,8 +597,8 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         fs_promises::RmOptions {
             recursive: Some(true),
             force: Some(false),
-            max_retries: Some(0.0),
-            retry_delay_ms: Some(0.0),
+            max_retries: Some(0),
+            retry_delay_ms: Some(0),
         },
     )
     .unwrap();

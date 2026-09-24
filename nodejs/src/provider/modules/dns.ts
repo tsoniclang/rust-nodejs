@@ -1,8 +1,8 @@
 import {
+  uint8Carrier,
   dnsAddressArrayCallbackCarrier,
   dnsLookupAddressCarrier,
   dnsLookupCallbackCarrier,
-  float64Carrier,
   fnExport,
   numberType,
   propertyMember,
@@ -129,8 +129,8 @@ export function dnsRows(): readonly RustProviderOperationDefinition[] {
       exportId: lookupAddressId,
       memberId: `${lookupAddressId}.family`,
       operationKind: "property",
-      target: { form: "receiver-method", name: "family_number" },
-      resultCarrier: float64Carrier,
+      target: { form: "field", name: "family" },
+      resultCarrier: uint8Carrier,
       receiverCarrier: dnsLookupAddressCarrier,
     },
     {

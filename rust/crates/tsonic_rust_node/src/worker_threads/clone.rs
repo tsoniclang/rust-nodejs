@@ -18,10 +18,11 @@ pub struct ClonedValue {
 
 #[derive(Debug, Clone, PartialEq)]
 enum ClonedSlot {
-    Undefined,
     Null,
     Bool(bool),
     Number(f64),
+    Integer(i64),
+    UnsignedInteger(u64),
     NativeString(String),
     String(JsString),
     Reference(usize),
@@ -99,10 +100,11 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
         ));
     }
     match value {
-        JsValue::Undefined => Ok(ClonedSlot::Undefined),
         JsValue::Null => Ok(ClonedSlot::Null),
         JsValue::Bool(value) => Ok(ClonedSlot::Bool(*value)),
         JsValue::Number(value) => Ok(ClonedSlot::Number(*value)),
+        JsValue::Integer(value) => Ok(ClonedSlot::Integer(*value)),
+        JsValue::UnsignedInteger(value) => Ok(ClonedSlot::UnsignedInteger(*value)),
         JsValue::String(value) => {
             reserve_native_string(value.len(), state)?;
             Ok(ClonedSlot::NativeString(value.clone()))
@@ -168,10 +170,11 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
 
 fn materialize_slot(value: &ClonedSlot, containers: &[JsValue]) -> JsValue {
     match value {
-        ClonedSlot::Undefined => JsValue::Undefined,
         ClonedSlot::Null => JsValue::Null,
         ClonedSlot::Bool(value) => JsValue::Bool(*value),
         ClonedSlot::Number(value) => JsValue::Number(*value),
+        ClonedSlot::Integer(value) => JsValue::Integer(*value),
+        ClonedSlot::UnsignedInteger(value) => JsValue::UnsignedInteger(*value),
         ClonedSlot::NativeString(value) => JsValue::String(value.clone()),
         ClonedSlot::String(value) => JsValue::Utf16String(value.clone()),
         ClonedSlot::Reference(index) => containers[*index].clone(),
@@ -278,13 +281,20 @@ pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
 
 fn encode_slot(value: &ClonedSlot, output: &mut Vec<u8>) -> NodeResult<()> {
     match value {
-        ClonedSlot::Undefined => output.push(0),
         ClonedSlot::Null => output.push(1),
         ClonedSlot::Bool(false) => output.push(2),
         ClonedSlot::Bool(true) => output.push(3),
         ClonedSlot::Number(value) => {
             output.push(4);
             output.extend_from_slice(&value.to_bits().to_be_bytes());
+        }
+        ClonedSlot::Integer(value) => {
+            output.push(8);
+            output.extend_from_slice(&value.to_be_bytes());
+        }
+        ClonedSlot::UnsignedInteger(value) => {
+            output.push(9);
+            output.extend_from_slice(&value.to_be_bytes());
         }
         ClonedSlot::NativeString(value) => {
             output.push(7);
@@ -515,11 +525,14 @@ impl<'a> Reader<'a> {
 
     fn slot(&mut self) -> NodeResult<ClonedSlot> {
         match self.byte()? {
-            0 => Ok(ClonedSlot::Undefined),
             1 => Ok(ClonedSlot::Null),
             2 => Ok(ClonedSlot::Bool(false)),
             3 => Ok(ClonedSlot::Bool(true)),
             4 => Ok(ClonedSlot::Number(f64::from_bits(self.u64()?))),
+            8 => Ok(ClonedSlot::Integer(i64::from_be_bytes(
+                self.bytes(8)?.try_into().expect("exact byte count"),
+            ))),
+            9 => Ok(ClonedSlot::UnsignedInteger(self.u64()?)),
             5 => Ok(ClonedSlot::String(self.string()?)),
             6 => Ok(ClonedSlot::Reference(self.count()?)),
             7 => {

@@ -1,4 +1,5 @@
 import {
+  uint8Carrier, uint64Carrier,
   boolCarrier,
   booleanType,
   bufferCarrier,
@@ -194,8 +195,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     {
       exportId: `${moduleSpecifier}::isIP`,
       operationKind: "method",
-      target: { form: "call", path: "node_net::is_ip_number", argModes: ["ref"] },
-      resultCarrier: { kind: "source-primitive", name: "float64" },
+      target: { form: "call", path: "node_net::is_ip", argModes: ["ref"] },
+      resultCarrier: uint8Carrier,
       parameterCarriers: [stringCarrier],
     },
   ];
@@ -227,16 +228,16 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     { exportId: socketId, memberId: `${socketId}.pause`, operationKind: "method", target: { form: "receiver-method", name: "pause_chain", mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [] },
     { exportId: socketId, memberId: `${socketId}.resume`, operationKind: "method", target: { form: "receiver-method", name: "resume_chain", mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [] },
     { exportId: socketId, memberId: `${socketId}.setNoDelay`, operationKind: "method", target: { form: "receiver-method", name: "set_no_delay_chain", argModes: ["value"], mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [boolCarrier], ...providerNativeFallibility },
-    { exportId: socketId, memberId: `${socketId}.setTimeout`, operationKind: "method", target: { form: "receiver-method", name: "set_timeout_number", argModes: ["value"], mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [{ kind: "source-primitive", name: "float64" }], ...providerNativeFallibility },
+    { exportId: socketId, memberId: `${socketId}.setTimeout`, operationKind: "method", target: { form: "receiver-method", name: "set_timeout_number", argModes: ["value"], mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [{ kind: "type-parameter", name: "Timeout" }], genericParameters: [{ kind: "type", sourceName: "Timeout" }], ...providerNativeFallibility },
     { exportId: serverId, memberId: `${serverId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: unitCarrier, receiverCarrier: netServerCarrier, parameterCarriers: [] },
     { exportId: serverId, memberId: `${serverId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_chain", mutatesReceiver: true }, resultCarrier: mutableServer, receiverCarrier: netServerCarrier, parameterCarriers: [] },
     { exportId: serverId, memberId: `${serverId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref_chain", mutatesReceiver: true }, resultCarrier: mutableServer, receiverCarrier: netServerCarrier, parameterCarriers: [] },
   );
   const listenRows = [
-    ["port", "listen_port", [{ kind: "source-primitive", name: "float64" }], ["value"]],
-    ["port,host", "listen_port_host", [{ kind: "source-primitive", name: "float64" }, stringCarrier], ["value", "ref"]],
-    ["port,callback", "listen_port_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier], ["value", "value"]],
-    ["port,host,callback", "listen_port_host_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
+    ["port", "listen_port", [{ kind: "type-parameter", name: "Port" }], ["value"]],
+    ["port,host", "listen_port_host", [{ kind: "type-parameter", name: "Port" }, stringCarrier], ["value", "ref"]],
+    ["port,callback", "listen_port_callable", [{ kind: "type-parameter", name: "Port" }, emptyCallbackCarrier], ["value", "value"]],
+    ["port,host,callback", "listen_port_host_callable", [{ kind: "type-parameter", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
   ] as const;
   for (const [signature, target, parameterCarriers, argModes] of listenRows) {
     rows.push({
@@ -248,12 +249,13 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: mutableServer,
       receiverCarrier: netServerCarrier,
       parameterCarriers,
+      genericParameters: [{ kind: "type", sourceName: "Port" }],
       ...providerNativeFallibility,
     });
   }
   for (const [memberName, methodName, resultCarrier] of [
-    ["bytesRead", "bytes_read_number", { kind: "source-primitive", name: "float64" }],
-    ["bytesWritten", "bytes_written_number", { kind: "source-primitive", name: "float64" }],
+    ["bytesRead", "bytes_read", uint64Carrier],
+    ["bytesWritten", "bytes_written", uint64Carrier],
     ["destroyed", "destroyed", boolCarrier],
     ["pending", "pending", boolCarrier],
   ] as const) {
@@ -265,10 +267,10 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
 
 function connectionRows(): readonly RustProviderOperationDefinition[] {
   const rows = [
-    ["port", "create_connection_default_host", [{ kind: "source-primitive", name: "float64" }], ["value"]],
-    ["port,host", "create_connection_source", [{ kind: "source-primitive", name: "float64" }, stringCarrier], ["value", "ref"]],
-    ["port,callback", "create_connection_default_host_callable", [{ kind: "source-primitive", name: "float64" }, emptyCallbackCarrier], ["value", "value"]],
-    ["port,host,callback", "create_connection_callable", [{ kind: "source-primitive", name: "float64" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
+    ["port", "create_connection_default_host", [{ kind: "type-parameter", name: "Port" }], ["value"]],
+    ["port,host", "create_connection_source", [{ kind: "type-parameter", name: "Port" }, stringCarrier], ["value", "ref"]],
+    ["port,callback", "create_connection_default_host_callable", [{ kind: "type-parameter", name: "Port" }, emptyCallbackCarrier], ["value", "value"]],
+    ["port,host,callback", "create_connection_callable", [{ kind: "type-parameter", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"]],
   ] as const;
   return rows.map(([signature, path, parameterCarriers, argModes]) => ({
     exportId: `${moduleSpecifier}::createConnection`,
@@ -277,6 +279,7 @@ function connectionRows(): readonly RustProviderOperationDefinition[] {
     target: { form: "call" as const, path: `node_net::${path}`, argModes },
     resultCarrier: netSocketCarrier,
     parameterCarriers,
+    genericParameters: [{ kind: "type", sourceName: "Port" }],
     ...providerNativeFallibility,
   }));
 }

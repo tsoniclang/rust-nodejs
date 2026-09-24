@@ -5,6 +5,8 @@ import {
   fnExport,
   noneArgument,
   numberType,
+  int32Carrier,
+  nativeUintCarrier,
   propertyMember,
   providerCallbackType,
   providerNativeFallibility,
@@ -320,23 +322,23 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
     },
   );
   const optionFields = [
-    ["flush", "flush"],
-    ["finishFlush", "finish_flush"],
-    ["chunkSize", "chunk_size"],
-    ["windowBits", "window_bits"],
-    ["level", "level"],
-    ["memLevel", "mem_level"],
-    ["strategy", "strategy"],
-    ["maxOutputLength", "max_output_length"],
+    ["flush", "flush", int32Carrier],
+    ["finishFlush", "finish_flush", int32Carrier],
+    ["chunkSize", "chunk_size", nativeUintCarrier],
+    ["windowBits", "window_bits", int32Carrier],
+    ["level", "level", int32Carrier],
+    ["memLevel", "mem_level", int32Carrier],
+    ["strategy", "strategy", int32Carrier],
+    ["maxOutputLength", "max_output_length", nativeUintCarrier],
   ] as const;
-  for (const [memberName, fieldName] of optionFields) {
+  for (const [memberName, fieldName, carrier] of optionFields) {
     rows.push(
       {
         exportId: optionsId,
         memberId: `${optionsId}.${memberName}`,
         operationKind: "property",
         target: { form: "field", name: fieldName },
-        resultCarrier: rustOptionTargetType({ kind: "source-primitive", name: "float64" }),
+        resultCarrier: rustOptionTargetType(carrier),
         receiverCarrier: zlibOptionsCarrier,
       },
       {
@@ -345,7 +347,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "property-set",
         target: { form: "field", name: fieldName },
         resultCarrier: unitCarrier,
-        parameterCarriers: [rustOptionTargetType({ kind: "source-primitive", name: "float64" })],
+        parameterCarriers: [rustOptionTargetType(carrier)],
         receiverCarrier: zlibOptionsCarrier,
       },
     );

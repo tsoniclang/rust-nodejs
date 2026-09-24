@@ -136,8 +136,8 @@ impl Interface {
         self.line.clone()
     }
 
-    pub fn cursor_number(&self) -> f64 {
-        self.cursor as f64
+    pub fn cursor(&self) -> usize {
+        self.cursor
     }
 
     pub fn terminal(&self) -> bool {

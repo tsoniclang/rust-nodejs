@@ -13,11 +13,11 @@ use crate::error::{NodeError, NodeResult};
 pub struct SourceConnectOptions {
     pub host: Option<String>,
     pub servername: Option<String>,
-    pub port: Option<f64>,
+    pub port: Option<u16>,
     pub alpn_protocols: Option<tsonic_rust_js::JsArray<String>>,
     pub reject_unauthorized: Option<bool>,
     pub ca: Option<tsonic_rust_js::JsArray<String>>,
-    pub timeout: Option<f64>,
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -217,12 +217,12 @@ impl TlsSocket {
         })
     }
 
-    pub fn bytes_read_number(&self) -> f64 {
-        self.state.borrow().bytes_read as f64
+    pub fn bytes_read(&self) -> u64 {
+        self.state.borrow().bytes_read
     }
 
-    pub fn bytes_written_number(&self) -> f64 {
-        self.state.borrow().bytes_written as f64
+    pub fn bytes_written(&self) -> u64 {
+        self.state.borrow().bytes_written
     }
 
     pub fn ref_chain(&mut self) -> &mut Self {
@@ -282,7 +282,7 @@ impl PreparedClientConnection {
     fn new(options: SourceConnectOptions) -> NodeResult<Self> {
         let host = options.host.unwrap_or_else(|| "localhost".to_string());
         let servername = options.servername.unwrap_or_else(|| host.clone());
-        let port = source_port(options.port.unwrap_or(443.0))?;
+        let port = options.port.unwrap_or(443);
         let reject_unauthorized = options.reject_unauthorized.unwrap_or(true);
         let mut config = client_config(reject_unauthorized, source_string_array(options.ca))?;
         config.alpn_protocols = options
@@ -292,11 +292,7 @@ impl PreparedClientConnection {
             .into_iter()
             .map(String::into_bytes)
             .collect();
-        let timeout = options
-            .timeout
-            .map(source_timeout)
-            .transpose()?
-            .map(std::time::Duration::from_millis);
+        let timeout = options.timeout.map(std::time::Duration::from_millis);
         ServerName::try_from(servername.clone())
             .map_err(|error| NodeError::new("ERR_TLS_CERT_ALTNAME_INVALID", error.to_string()))?;
         Ok(Self {
@@ -427,7 +423,11 @@ impl TlsServer {
         })
     }
 
-    pub fn listen(&mut self, port: f64, host: &str) -> NodeResult<&mut Self> {
+    pub fn listen(
+        &mut self,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
+        host: &str,
+    ) -> NodeResult<&mut Self> {
         let listener = TcpListener::bind((host, source_port(port)?)).map_err(map_io_error)?;
         let listener = crate::readiness::Listener::new(listener)?;
         {
@@ -441,7 +441,7 @@ impl TlsServer {
 
     pub fn listen_callable<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
@@ -459,7 +459,7 @@ impl TlsServer {
 
     pub fn listen_default_host_callable<E>(
         &mut self,
-        port: f64,
+        port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
     ) -> NodeResult<&mut Self>
     where
@@ -729,28 +729,32 @@ fn source_string_array(value: Option<tsonic_rust_js::JsArray<String>>) -> Vec<St
     value.map(|values| values.values()).unwrap_or_default()
 }
 
-fn source_port(value: f64) -> NodeResult<u16> {
-    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u16::MAX as f64 {
-        return Err(NodeError::new(
+fn source_port(value: impl tsonic_rust_runtime::conversions::IntegerInput<u16>) -> NodeResult<u16> {
+    value.checked_integer().ok_or_else(|| {
+        NodeError::new(
             "ERR_SOCKET_BAD_PORT",
             "port must be an unsigned 16-bit integer",
-        ));
-    }
-    Ok(value as u16)
-}
-
-fn source_timeout(value: f64) -> NodeResult<u64> {
-    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u64::MAX as f64 {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            "timeout must be a non-negative integer",
-        ));
-    }
-    Ok(value as u64)
+        )
+    })
 }
 
 fn map_io_error(error: std::io::Error) -> NodeError {
     NodeError::new("ERR_TLS_IO", error.to_string())
+}
+
+#[cfg(test)]
+mod numeric_bounds {
+    #[test]
+    fn timeout_retains_the_complete_native_domain() {
+        for value in [0, 9_007_199_254_740_993, u64::MAX] {
+            let options = super::SourceConnectOptions {
+                timeout: Some(value),
+                ..Default::default()
+            };
+            let prepared = super::PreparedClientConnection::new(options).unwrap();
+            assert_eq!(prepared.timeout.unwrap().as_millis(), u128::from(value));
+        }
+    }
 }
 
 fn map_tls_error(error: rustls::Error) -> NodeError {

@@ -37,10 +37,10 @@ fn js_backend_legal_abi_paths_are_emit_ready() {
     );
 
     let buffer = js::abi::ArrayBuffer::new(4.0).unwrap();
-    assert_eq!(buffer.byte_length(), 4.0);
+    assert_eq!(buffer.byte_length(), 4);
     let typed = js::abi::Uint8Array::from_vec(vec![1.0, 2.0, 3.0]).unwrap();
     typed.set_number(1.0, 9.0);
-    assert_eq!(typed.get_number(1.0), Some(9.0));
+    assert_eq!(typed.get_number(1.0), Some(9));
 }
 
 #[test]

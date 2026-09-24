@@ -159,7 +159,7 @@ pub mod constants {
 fn sqlite_value(value: ValueRef<'_>) -> JsValue {
     match value {
         ValueRef::Null => JsValue::Null,
-        ValueRef::Integer(value) => JsValue::Number(value as f64),
+        ValueRef::Integer(value) => JsValue::from(value),
         ValueRef::Real(value) => JsValue::Number(value),
         ValueRef::Text(value) => {
             JsValue::String((String::from_utf8_lossy(value).as_ref()).to_owned())
@@ -167,7 +167,7 @@ fn sqlite_value(value: ValueRef<'_>) -> JsValue {
         ValueRef::Blob(value) => JsValue::from(
             value
                 .iter()
-                .map(|byte| JsValue::Number(f64::from(*byte)))
+                .map(|byte| JsValue::from(*byte))
                 .collect::<Vec<_>>(),
         ),
     }

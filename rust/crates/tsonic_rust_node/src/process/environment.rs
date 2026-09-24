@@ -7,7 +7,7 @@ use crate::error::{NodeError, NodeResult};
 #[derive(Debug, Clone)]
 enum EnvironmentStorage {
     Process,
-    Owned(Rc<RefCell<BTreeMap<String, Option<String>>>>),
+    Owned(Rc<RefCell<BTreeMap<String, String>>>),
 }
 
 #[derive(Debug, Clone)]
@@ -27,25 +27,35 @@ impl ProcessEnv {
     pub fn get(&self, name: &str) -> Option<String> {
         match &self.storage {
             EnvironmentStorage::Process => super::env_get(name),
-            EnvironmentStorage::Owned(values) => values.borrow().get(name).cloned().flatten(),
+            EnvironmentStorage::Owned(values) => values.borrow().get(name).cloned(),
         }
     }
 
     pub fn set(&self, name: &str, value: Option<String>) -> NodeResult<()> {
         match &self.storage {
             EnvironmentStorage::Process => {
-                let value = value.unwrap_or_else(|| "undefined".to_owned());
-                if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+                if name.is_empty()
+                    || name.contains(['=', '\0'])
+                    || value.as_ref().is_some_and(|value| value.contains('\0'))
+                {
                     return Err(NodeError::new(
                         "ERR_INVALID_ARG_VALUE",
                         "invalid process environment entry",
                     ));
                 }
-                super::env_set(name, &value);
+                match value {
+                    Some(value) => super::env_set(name, &value),
+                    None => super::env_delete(name),
+                }
             }
-            EnvironmentStorage::Owned(values) => {
-                values.borrow_mut().insert(name.to_owned(), value);
-            }
+            EnvironmentStorage::Owned(values) => match value {
+                Some(value) => {
+                    values.borrow_mut().insert(name.to_owned(), value);
+                }
+                None => {
+                    values.borrow_mut().remove(name);
+                }
+            },
         }
         Ok(())
     }
@@ -60,13 +70,7 @@ impl ProcessEnv {
                     )
                 })
                 .collect(),
-            EnvironmentStorage::Owned(values) => values
-                .borrow()
-                .iter()
-                .filter_map(|(name, value)| {
-                    value.as_ref().map(|value| (name.clone(), value.clone()))
-                })
-                .collect(),
+            EnvironmentStorage::Owned(values) => values.borrow().clone(),
         }
     }
 }

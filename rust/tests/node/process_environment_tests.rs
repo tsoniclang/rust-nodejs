@@ -22,7 +22,7 @@ fn environment_values_preserve_local_aliases_and_live_process_reads() {
     assert_eq!(process::environment().get(name).as_deref(), Some("parent"));
     assert_eq!(local.get(name), None);
     parent.set(name, None).unwrap();
-    assert_eq!(parent.get(name).as_deref(), Some("undefined"));
+    assert_eq!(parent.get(name), None);
     process::env_delete(name);
     assert_eq!(parent.get(name), None);
     assert!(parent.set("bad=name", Some("value".into())).is_err());

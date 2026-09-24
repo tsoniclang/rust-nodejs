@@ -1,4 +1,5 @@
 use crate::error::{NodeError, NodeResult};
+use tsonic_rust_runtime::conversions::IntegerInput;
 use tsonic_rust_runtime::Callable;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -8,31 +9,31 @@ pub fn process() -> Process {
     Process
 }
 
-pub fn kill(pid: f64, signal: Option<i32>) -> NodeResult<bool> {
-    if !pid.is_finite() || pid.fract() != 0.0 || pid < i32::MIN as f64 || pid > i32::MAX as f64 {
-        return Err(NodeError::new(
-            "ERR_OUT_OF_RANGE",
-            "pid must be a signed 32-bit integer",
-        ));
-    }
-    kill_native(pid as i32, signal.unwrap_or(15))
+pub fn kill(pid: impl IntegerInput<i32>, signal: Option<i32>) -> NodeResult<bool> {
+    let pid = pid
+        .checked_integer()
+        .ok_or_else(|| NodeError::new("ERR_OUT_OF_RANGE", "pid must be a signed 32-bit integer"))?;
+    kill_native(pid, signal.unwrap_or(15))
 }
 
-pub fn kill_named(pid: f64, signal: &str) -> NodeResult<bool> {
+pub fn kill_named(pid: impl IntegerInput<i32>, signal: &str) -> NodeResult<bool> {
     kill(pid, Some(signal_number(signal)?))
 }
 
-pub fn kill_number(pid: f64, signal: f64) -> NodeResult<bool> {
-    if !signal.is_finite() || signal.fract() != 0.0 || signal < 0.0 || signal > i32::MAX as f64 {
-        return Err(NodeError::new(
-            "ERR_UNKNOWN_SIGNAL",
-            "signal must be a nonnegative integer",
-        ));
-    }
-    kill(pid, Some(signal as i32))
+pub fn kill_number(
+    pid: impl IntegerInput<i32>,
+    signal: impl IntegerInput<i32>,
+) -> NodeResult<bool> {
+    let signal = signal
+        .checked_integer()
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| {
+            NodeError::new("ERR_UNKNOWN_SIGNAL", "signal must be a nonnegative integer")
+        })?;
+    kill(pid, Some(signal))
 }
 
-pub fn kill_default(pid: f64) -> NodeResult<bool> {
+pub fn kill_default(pid: impl IntegerInput<i32>) -> NodeResult<bool> {
     kill(pid, None)
 }
 

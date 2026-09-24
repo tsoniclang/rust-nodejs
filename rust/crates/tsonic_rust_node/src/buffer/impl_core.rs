@@ -54,8 +54,8 @@ impl Buffer {
         value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
     }
 
-    pub fn from_number_array(values: &JsArray<f64>) -> Self {
-        let bytes = values.values().into_iter().map(to_uint8).collect();
+    pub fn from_number_array<Value: tsonic_rust_js::Integer32 + Copy>(values: &JsArray<Value>) -> Self {
+        let bytes = values.with_values(|values| values.iter().map(|value| value.integer32() as u8).collect());
         Self::from_bytes(bytes)
     }
 
@@ -257,7 +257,7 @@ impl Buffer {
         let values = self.with_bytes(|bytes| {
             bytes
                 .iter()
-                .map(|byte| JsValue::Number(f64::from(*byte)))
+                .map(|byte| JsValue::from(*byte))
                 .collect::<Vec<_>>()
         });
         JsValue::object(JsObject::from_pairs([
@@ -427,11 +427,4 @@ impl Buffer {
         self.write_exact(offset, &bytes[..count])?;
         Ok(count)
     }
-}
-
-fn to_uint8(value: f64) -> u8 {
-    if !value.is_finite() || value == 0.0 {
-        return 0;
-    }
-    value.trunc().rem_euclid(256.0) as u8
 }

@@ -14,8 +14,8 @@ fn assert_and_perf_hooks_are_closed_runtime_helpers() {
     assert::not_strict_equal(&1, &2, None).unwrap();
     assert::deep_equal(&JsValue::Null, &JsValue::Null, None).unwrap();
     assert::deep_strict_equal(&JsValue::Null, &JsValue::Null, None).unwrap();
-    assert::not_deep_equal(&JsValue::Null, &JsValue::Undefined, None).unwrap();
-    assert::not_deep_strict_equal(&JsValue::Null, &JsValue::Undefined, None).unwrap();
+    assert!(assert::not_deep_equal(&JsValue::Null, &JsValue::undefined(), None).is_err());
+    assert!(assert::not_deep_strict_equal(&JsValue::Null, &JsValue::undefined(), None).is_err());
     assert::throws(
         || Err(tsonic_rust_node::error::NodeError::new("E", "boom")),
         None,

@@ -261,7 +261,7 @@ impl Buffer {
     fn view(&self, start: isize, end: Option<isize>) -> Self {
         let (start, end) = normalize_range(self.len(), start, end);
         Self {
-            view: self.view.subarray(start as f64, Some(end as f64)),
+            view: self.view.subarray(start, Some(end)),
         }
     }
 
