@@ -692,10 +692,8 @@ test("provider package closes process identity, timing, and memory contracts", (
     const row = rows.find((candidate) =>
       candidate.memberId === `node:process::MemoryUsage.${sourceName}`);
     assert.deepEqual(row?.target, { form: "field", name: targetName });
-    assert.deepEqual(row?.resultConversion, {
-      kind: "semantic-conversion",
-      id: "js-number-from-u64",
-    });
+    assert.equal(row?.resultConversion, undefined);
+    assert.deepEqual(row?.resultCarrier, { kind: "source-primitive", name: "uint64" });
   }
   assert.equal(
     contribution.definition.carrierPaths["rust.node.MemoryUsage"],
