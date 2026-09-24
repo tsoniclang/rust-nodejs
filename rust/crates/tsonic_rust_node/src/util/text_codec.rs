@@ -120,11 +120,11 @@ pub mod types {
     }
 
     pub fn is_null_or_undefined(value: &JsValue) -> bool {
-        matches!(value, JsValue::Null | JsValue::Undefined)
+        matches!(value, JsValue::Null)
     }
 
     pub fn is_undefined(value: &JsValue) -> bool {
-        matches!(value, JsValue::Undefined)
+        matches!(value, JsValue::Null)
     }
 
     pub fn is_number(value: &JsValue) -> bool {

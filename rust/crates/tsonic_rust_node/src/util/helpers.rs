@@ -9,7 +9,7 @@ fn split_diff_units(value: &str) -> Vec<&str> {
 }
 
 fn next_arg<'a>(args: &'a [JsValue], index: &mut usize) -> &'a JsValue {
-    let value = args.get(*index).unwrap_or(&JsValue::Undefined);
+    let value = args.get(*index).unwrap_or(&JsValue::Null);
     *index += 1;
     value
 }

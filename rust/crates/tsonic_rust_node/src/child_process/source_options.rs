@@ -15,7 +15,7 @@ pub struct SpawnSyncOptions {
     pub env: Option<ProcessEnv>,
     pub uid: Option<u32>,
     pub gid: Option<u32>,
-    pub stdio: Option<JsArray<JsStringNumber>>,
+    pub stdio: Option<JsArray<Option<JsStringNumber>>>,
     pub input: Option<Uint8Array>,
     pub timeout: Option<u64>,
     pub kill_signal: Option<String>,
@@ -52,14 +52,14 @@ impl SpawnSyncOptions {
         if let Some(values) = &self.stdio {
             for (index, value) in values.values().into_iter().enumerate() {
                 let mode = match value {
-                    JsStringNumber::Undefined | JsStringNumber::Null => {
+                    None => {
                         if index < 3 {
                             Stdio::Pipe
                         } else {
                             Stdio::Ignore
                         }
                     }
-                    JsStringNumber::String(value) => {
+                    Some(JsStringNumber::String(value)) => {
                         if value == "pipe" {
                             Stdio::Pipe
                         } else if value == "ignore" {
@@ -73,7 +73,7 @@ impl SpawnSyncOptions {
                             ));
                         }
                     }
-                    JsStringNumber::Number(value) => {
+                    Some(JsStringNumber::Number(value)) => {
                         Stdio::Descriptor(
                             integer(value, i32::MAX as u64, "stdio descriptor")? as i32
                         )

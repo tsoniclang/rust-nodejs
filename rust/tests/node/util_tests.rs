@@ -106,8 +106,8 @@ fn util_format_and_inspect_closed_values() {
     assert!(util::types::is_number(&JsValue::Number(1.0)));
     assert!(util::types::is_boolean(&JsValue::Bool(true)));
     assert!(util::types::is_null(&JsValue::Null));
-    assert!(util::types::is_undefined(&JsValue::Undefined));
-    assert!(util::types::is_null_or_undefined(&JsValue::Undefined));
+    assert!(util::types::is_undefined(&JsValue::Null));
+    assert!(util::types::is_null_or_undefined(&JsValue::Null));
     assert!(!util::types::is_any_array_buffer(&JsValue::Null));
 }
 
@@ -121,10 +121,7 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
     assert_eq!(util::format("%s", &[JsValue::Number(5.0)]).unwrap(), "5");
     assert_eq!(util::format("%s", &[JsValue::Bool(true)]).unwrap(), "true");
     assert_eq!(util::format("%s", &[JsValue::Null]).unwrap(), "null");
-    assert_eq!(
-        util::format("%s", &[JsValue::Undefined]).unwrap(),
-        "undefined"
-    );
+    assert_eq!(util::format("%s", &[JsValue::undefined()]).unwrap(), "null");
 
     // %d: Number() coercion, NaN when the value does not coerce.
     assert_eq!(util::format("%d", &[JsValue::Number(3.5)]).unwrap(), "3.5");
@@ -134,7 +131,7 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
     );
     assert_eq!(util::format("%d", &[JsValue::Bool(true)]).unwrap(), "1");
     assert_eq!(util::format("%d", &[JsValue::Null]).unwrap(), "0");
-    assert_eq!(util::format("%d", &[JsValue::Undefined]).unwrap(), "NaN");
+    assert_eq!(util::format("%d", &[JsValue::undefined()]).unwrap(), "0");
     assert_eq!(
         util::format("%d", &[JsValue::from("nope".to_string())]).unwrap(),
         "NaN"
@@ -147,10 +144,7 @@ fn util_format_placeholder_matrix_follows_node_semantics() {
     );
     assert_eq!(util::format("%j", &[JsValue::Number(3.0)]).unwrap(), "3");
     assert_eq!(util::format("%j", &[JsValue::Bool(true)]).unwrap(), "true");
-    assert_eq!(
-        util::format("%j", &[JsValue::Undefined]).unwrap(),
-        "undefined"
-    );
+    assert_eq!(util::format("%j", &[JsValue::undefined()]).unwrap(), "null");
     let cycle = JsValue::object(JsObject::new());
     cycle
         .as_object()

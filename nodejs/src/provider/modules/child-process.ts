@@ -34,7 +34,7 @@ function optionFields(typedArrays: boolean): readonly {
     { name: "stdio", field: "stdio", type: { kind: "array", elementType: {
       kind: "union", types: [numberType, nullType, { kind: "undefined" },
         ...["pipe", "ignore", "inherit"].map(value => ({ kind: "literal" as const, value }))],
-    } }, carrier: rustJsArrayTargetType(rustJsStringNumberTargetType()) },
+    } }, carrier: rustJsArrayTargetType(rustOptionTargetType(rustJsStringNumberTargetType())) },
   ];
 }
 

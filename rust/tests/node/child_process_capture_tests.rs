@@ -121,9 +121,9 @@ fn spawn_options_retain_cwd_environment_and_ignored_output() {
         &arguments(&["ignored"]),
         SpawnSyncOptions {
             stdio: Some(JsArray::from_dense(vec![
-                JsStringNumber::String(
+                Some(JsStringNumber::String(
                     "ignore".to_owned()
-                );
+                ));
                 3
             ])),
             ..Default::default()
@@ -142,7 +142,9 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
             "/bin/echo",
             &arguments(&[]),
             SpawnSyncOptions {
-                stdio: Some(JsArray::from_dense(vec![JsStringNumber::Number(value)])),
+                stdio: Some(JsArray::from_dense(vec![Some(JsStringNumber::Number(
+                    value,
+                ))])),
                 ..Default::default()
             },
         )
@@ -159,9 +161,9 @@ fn spawn_options_reject_invalid_numbers_modes_and_missing_executables() {
             ..Default::default()
         },
         SpawnSyncOptions {
-            stdio: Some(JsArray::from_dense(vec![JsStringNumber::String(
+            stdio: Some(JsArray::from_dense(vec![Some(JsStringNumber::String(
                 "invalid".to_owned(),
-            )])),
+            ))])),
             ..Default::default()
         },
     ] {
@@ -222,10 +224,10 @@ fn spawn_options_inherit_open_file_positions_and_native_credentials() {
                     .unwrap(),
             ),
             stdio: Some(JsArray::from_dense(vec![
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::String("pipe".to_owned()),
-                JsStringNumber::Number(f64::from(descriptor)),
+                None,
+                Some(JsStringNumber::String("pipe".to_owned())),
+                Some(JsStringNumber::String("pipe".to_owned())),
+                Some(JsStringNumber::Number(f64::from(descriptor))),
             ])),
             ..Default::default()
         },

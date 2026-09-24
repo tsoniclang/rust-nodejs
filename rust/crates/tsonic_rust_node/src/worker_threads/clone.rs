@@ -18,7 +18,6 @@ pub struct ClonedValue {
 
 #[derive(Debug, Clone, PartialEq)]
 enum ClonedSlot {
-    Undefined,
     Null,
     Bool(bool),
     Number(f64),
@@ -101,7 +100,6 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
         ));
     }
     match value {
-        JsValue::Undefined => Ok(ClonedSlot::Undefined),
         JsValue::Null => Ok(ClonedSlot::Null),
         JsValue::Bool(value) => Ok(ClonedSlot::Bool(*value)),
         JsValue::Number(value) => Ok(ClonedSlot::Number(*value)),
@@ -172,7 +170,6 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
 
 fn materialize_slot(value: &ClonedSlot, containers: &[JsValue]) -> JsValue {
     match value {
-        ClonedSlot::Undefined => JsValue::Undefined,
         ClonedSlot::Null => JsValue::Null,
         ClonedSlot::Bool(value) => JsValue::Bool(*value),
         ClonedSlot::Number(value) => JsValue::Number(*value),
@@ -284,7 +281,6 @@ pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
 
 fn encode_slot(value: &ClonedSlot, output: &mut Vec<u8>) -> NodeResult<()> {
     match value {
-        ClonedSlot::Undefined => output.push(0),
         ClonedSlot::Null => output.push(1),
         ClonedSlot::Bool(false) => output.push(2),
         ClonedSlot::Bool(true) => output.push(3),
@@ -529,7 +525,6 @@ impl<'a> Reader<'a> {
 
     fn slot(&mut self) -> NodeResult<ClonedSlot> {
         match self.byte()? {
-            0 => Ok(ClonedSlot::Undefined),
             1 => Ok(ClonedSlot::Null),
             2 => Ok(ClonedSlot::Bool(false)),
             3 => Ok(ClonedSlot::Bool(true)),

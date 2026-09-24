@@ -1,5 +1,5 @@
 id	status	packet	rust_api	evidence	notes
-JS-GLOBAL-001	implemented	A/F	tsonic_rust_js::abi::{JsValue,ArrayBuffer,*Array}	JS-OBJ-002, JS-JSON-003	closed `JsValue::Undefined`
+JS-GLOBAL-001	implemented	A/F	tsonic_rust_js::abi::{JsValue,ArrayBuffer,*Array}	JS-OBJ-002, JS-JSON-003	closed native absence `JsValue::Null`
 JS-GLOBAL-002	implemented	F	tsonic_rust_js::abi::{JsValue,ArrayBuffer,*Array}	JS-JSON-001	closed `JsValue::Null`
 JS-GLOBAL-003	implemented	B	tsonic_rust_js::{number,math,equality} and tsonic_rust_runtime::operators	JS-NUM-003, JS-MAP-005, JS-SET-004	equality helpers must handle correctly
 JS-GLOBAL-004	implemented	B	tsonic_rust_js::{number,math,equality} and tsonic_rust_runtime::operators	JS-MATH-001, JS-MATH-002	f64 infinities
