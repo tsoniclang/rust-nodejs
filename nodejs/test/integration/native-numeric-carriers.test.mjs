@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTsonicPlugin } from "../../dist/index.js";
+import { createTsonicPlugin } from "../../../dist/index.js";
 
 const [contribution] = createTsonicPlugin().createTargetContributions({});
 const operations = contribution.definition.operations;

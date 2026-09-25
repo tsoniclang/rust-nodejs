@@ -4,6 +4,10 @@ import { createRustNodejsProviderPackage } from "./provider/package.js";
 export type RustNodejsCapabilityPlugin = RustProviderPackageImplementation;
 type CapabilityContext = Parameters<NonNullable<RustNodejsCapabilityPlugin["sourceCompilerContributions"]>>[0];
 
+export function createTsonicPlugin(): RustNodejsCapabilityPlugin {
+  return createRustNodejsCapability();
+}
+
 export function createRustNodejsCapability(): RustNodejsCapabilityPlugin {
   const nativeProfile = createRustNodejsProviderPackage(false);
   const jsProfile = createRustNodejsProviderPackage(true);

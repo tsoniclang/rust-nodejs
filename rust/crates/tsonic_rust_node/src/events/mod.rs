@@ -1,9 +1,9 @@
+mod async_resource;
 mod callable_listeners;
 mod event_target;
-mod async_resource;
 
-pub use event_target::NodeEventTarget;
 pub use async_resource::{EventEmitterAsyncResource, EventEmitterAsyncResourceOptions};
+pub use event_target::NodeEventTarget;
 
 use std::collections::HashMap;
 use std::rc::Rc;

@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { createTsonicPlugin } from "../../dist/index.js";
+import { createTsonicPlugin } from "../../../dist/index.js";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 test("runtime contribution references the canonical package-owned crate", () => {
   const plugin = createTsonicPlugin();

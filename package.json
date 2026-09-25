@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p nodejs/tsconfig.json",
-    "test": "npm run build && node --test nodejs/test/*.test.mjs && cargo test --locked --workspace",
+    "test": "bash scripts/test.sh",
     "prepack": "npm run build"
   },
   "dependencies": {

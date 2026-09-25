@@ -1,4 +1,12 @@
-use super::*;
+use super::{
+    create_deflate, create_deflate_raw, create_gunzip, create_gzip, create_inflate,
+    create_inflate_raw, deflate_raw_sync_with_options, deflate_sync, deflate_sync_with_options,
+    gunzip_sync, gunzip_sync_with_options, gzip_sync, gzip_sync_with_options,
+    inflate_raw_sync_with_options, inflate_sync, inflate_sync_with_options, BackgroundZlibOptions,
+    Deflate, DeflateRaw, Gunzip, Gzip, Inflate, InflateRaw, ZlibOptions,
+};
+use crate::buffer::Buffer;
+use crate::error::{NodeError, NodeResult};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceZlibOptions {

@@ -10,9 +10,9 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { createTestWorkspace } from "../../../tsonic/test/scripts/test-workspaces.mjs";
+import { createTestWorkspace } from "../../../../tsonic/test/scripts/test-workspaces.mjs";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const scratchRoot = resolve(repoRoot, ".temp");
 const packageRoots = new Map([
   ["tsts", resolve(repoRoot, "../tsonic/packages/tsts")],

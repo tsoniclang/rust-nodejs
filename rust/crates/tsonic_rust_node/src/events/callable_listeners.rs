@@ -1,4 +1,4 @@
-use super::{unhandled_error, CallableEmission, CallableListener, CallableListenerEntry, EventEmitter, EventKey, Rc};
+use super::{unhandled_error, CallableEmission, CallableListenerEntry, EventEmitter, EventKey, Rc};
 use crate::error::{callback_node_error, NodeResult};
 use tsonic_rust_js::{JsArray, JsValue};
 use tsonic_rust_runtime::Callable;
@@ -592,5 +592,4 @@ impl EventEmitter {
             }
         }
     }
-
 }

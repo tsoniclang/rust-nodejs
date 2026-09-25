@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artifactText, compileRust } from "../../../tsonic-rust/test/helpers/rust-session.mjs";
-import { validateGeneratedProject } from "../../../tsonic-rust/test/helpers/cargo-projects.mjs";
-import { nativeFilePositionSource } from "../../../tsonic/test/fixtures/native-file-positions.mjs";
-import { createTsonicPlugin } from "../../dist/index.js";
+import { artifactText, compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
+import { validateGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
+import { nativeFilePositionSource } from "../../../../tsonic/test/fixtures/native-file-positions.mjs";
+import { createTsonicPlugin } from "../../../dist/index.js";
 
 test("filesystem calls preserve exact native int64 positions through provider selection", { timeout: 300_000 }, () => {
   const { result } = compileRust({

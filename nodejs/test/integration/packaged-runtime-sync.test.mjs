@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 test("the npm artifact declares one canonical Node runtime tree", () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));

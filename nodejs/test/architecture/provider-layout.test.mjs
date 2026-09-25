@@ -3,10 +3,10 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { readSourceInventory } from "../../../tsonic/test/architecture/tooling/file-inventory.mjs";
-import { evaluateNodeProviderContract } from "../../../tsonic/test/architecture/tooling/node-provider-contract.mjs";
+import { readSourceInventory } from "../../../../tsonic/test/architecture/tooling/file-inventory.mjs";
+import { evaluateNodeProviderContract } from "../../../../tsonic/test/architecture/tooling/node-provider-contract.mjs";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const forbiddenEnginePackages = new Set([
   "boa_engine", "deno_core", "javascriptcore-rs", "libquickjs-sys", "mozjs",
@@ -47,12 +47,10 @@ test("engine dependency checks retain actual package identity through aliases an
 });
 
 test("Rust Node provider follows the shared module, ownership and public SDK contract", () => {
-  const sources = readSourceInventory(repositoryRoot, {
+  const sources = readSourceInventory(resolve(repositoryRoot, "nodejs/src"), {
     extensions: [".ts"],
-    include: ["nodejs/src"],
-    exclude: ["dist", "node_modules", ".analysis", ".temp"],
   });
-  const providerSources = new Map([...sources].filter(([path]) => path.startsWith("nodejs/src/")));
+  const providerSources = new Map([...sources].map(([path, source]) => [`nodejs/src/${path}`, source]));
   assert.deepEqual(evaluateNodeProviderContract(providerSources, {
     targetPackage: "@tsonic/target-rust",
     factoryName: "createRustProviderPackage",

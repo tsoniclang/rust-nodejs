@@ -1,7 +1,14 @@
+#[allow(non_upper_case_globals)]
 pub mod constants;
 mod source_abi;
 
-pub use source_abi::{SourceZlibOptions, gzip_sync_source, gunzip_sync_source, deflate_sync_source, inflate_sync_source, deflate_raw_sync_source, inflate_raw_sync_source, create_gzip_source, create_deflate_source, create_inflate_source, create_gunzip_source, create_deflate_raw_source, create_inflate_raw_source, gzip_callable, gunzip_callable, deflate_callable, inflate_callable, gzip_options_callable, gunzip_options_callable, deflate_options_callable, inflate_options_callable};
+pub use source_abi::{
+    create_deflate_raw_source, create_deflate_source, create_gunzip_source, create_gzip_source,
+    create_inflate_raw_source, create_inflate_source, deflate_callable, deflate_options_callable,
+    deflate_raw_sync_source, deflate_sync_source, gunzip_callable, gunzip_options_callable,
+    gunzip_sync_source, gzip_callable, gzip_options_callable, gzip_sync_source, inflate_callable,
+    inflate_options_callable, inflate_raw_sync_source, inflate_sync_source, SourceZlibOptions,
+};
 
 use std::io::{Read, Write};
 
@@ -538,5 +545,3 @@ fn limit_output(output: Vec<u8>, max_output_length: Option<usize>) -> NodeResult
 fn map_zlib_error(error: std::io::Error) -> NodeError {
     NodeError::new("Z_DATA_ERROR", error.to_string())
 }
-
-#[allow(non_upper_case_globals)]

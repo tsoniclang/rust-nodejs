@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acmeTestingPackage, artifactText, compileRust } from "../../../tsonic-rust/test/helpers/rust-session.mjs";
-import { validateGeneratedProject } from "../../../tsonic-rust/test/helpers/cargo-projects.mjs";
-import { invalidNativeProcessOptionValues, nativeProcessOptionSource, nativeOptionContracts, nativeOptionSource, nativeOptionRuntimeSource } from "../../../tsonic/test/fixtures/native-process-options.mjs";
-import { createTsonicPlugin } from "../../dist/index.js";
+import { acmeTestingPackage, artifactText, compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
+import { validateGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
+import { invalidNativeProcessOptionValues, nativeProcessOptionSource, nativeOptionContracts, nativeOptionSource, nativeOptionRuntimeSource } from "../../../../tsonic/test/fixtures/native-process-options.mjs";
+import { createTsonicPlugin } from "../../../dist/index.js";
 
 test("Buffer byte construction retains native array elements without a floating or copied input", { timeout: 300_000 }, () => {
   const { result } = compileRust({

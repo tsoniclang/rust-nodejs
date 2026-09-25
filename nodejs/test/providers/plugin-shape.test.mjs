@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTsonicPlugin, createRustNodejsCapability } from "../../dist/index.js";
+import { createTsonicPlugin, createRustNodejsCapability } from "../../../dist/index.js";
 
 test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
   const plugin = createTsonicPlugin();
