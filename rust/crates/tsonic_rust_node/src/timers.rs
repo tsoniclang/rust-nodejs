@@ -8,7 +8,7 @@ use tsonic_rust_runtime::{Callable, TsonicResult};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
-type TimerCallback = Rc<RefCell<Box<dyn FnMut() -> TsonicResult<()>>>>;
+type TimerCallback = Rc<RefCell<dyn FnMut() -> TsonicResult<()>>>;
 
 struct TimerEntry {
     callback: TimerCallback,
@@ -104,12 +104,12 @@ pub fn set_timeout_with_options(
 ) -> Timeout {
     let mut callback = Some(callback);
     schedule(
-        Box::new(move || {
+        move || {
             if let Some(callback) = callback.take() {
                 callback();
             }
             Ok(())
-        }),
+        },
         delay_ms,
         false,
         options,
@@ -126,12 +126,12 @@ pub fn set_immediate_with_options(
 ) -> Timeout {
     let mut callback = Some(callback);
     schedule(
-        Box::new(move || {
+        move || {
             if let Some(callback) = callback.take() {
                 callback();
             }
             Ok(())
-        }),
+        },
         0,
         false,
         options,
@@ -149,10 +149,10 @@ pub fn set_interval_with_options(
 ) -> Timeout {
     let mut callback = callback;
     schedule(
-        Box::new(move || {
+        move || {
             callback();
             Ok(())
-        }),
+        },
         delay_ms.max(1),
         true,
         options,
@@ -165,11 +165,11 @@ where
 {
     let delay_ms = u64::try_from(delay_ms).unwrap_or(0).max(1);
     schedule(
-        Box::new(move || {
+        move || {
             callback
                 .call(())
                 .map_err(crate::error::callback_runtime_error)
-        }),
+        },
         delay_ms,
         true,
         TimerOptions::default(),
@@ -182,11 +182,11 @@ where
 {
     let delay_ms = u64::try_from(delay_ms).unwrap_or(0);
     schedule(
-        Box::new(move || {
+        move || {
             callback
                 .call(())
                 .map_err(crate::error::callback_runtime_error)
-        }),
+        },
         delay_ms,
         false,
         TimerOptions::default(),
@@ -249,7 +249,7 @@ pub(crate) fn poll_runtime_timers() -> TsonicResult<bool> {
 }
 
 fn schedule(
-    callback: Box<dyn FnMut() -> TsonicResult<()>>,
+    callback: impl FnMut() -> TsonicResult<()> + 'static,
     delay_ms: u64,
     interval: bool,
     options: TimerOptions,
