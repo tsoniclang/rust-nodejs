@@ -17,6 +17,8 @@ export const uint64Carrier = rustSourcePrimitiveTargetType("uint64");
 
 export const nativeUintCarrier = rustSourcePrimitiveTargetType("native-uint");
 
+export const nativeIntCarrier = rustSourcePrimitiveTargetType("native-int");
+
 export const float64Carrier = rustSourcePrimitiveTargetType("float64");
 
 export const jsValueCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.js.JsValue" };

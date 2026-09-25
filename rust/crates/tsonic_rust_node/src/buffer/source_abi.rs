@@ -1,5 +1,42 @@
 use tsonic_rust_js::numeric::IndexInput;
 
+pub fn to_string_range_number(
+    buffer: &Buffer,
+    encoding: &str,
+    start: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+    end: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+) -> NodeResult<String> {
+    buffer.to_string_range(
+        Some(encoding),
+        numeric_offset(start)?,
+        Some(numeric_offset(end)?),
+    )
+}
+
+pub fn to_string_from_number(
+    buffer: &Buffer,
+    encoding: &str,
+    start: impl tsonic_rust_runtime::conversions::IntegerInput<usize>,
+) -> NodeResult<String> {
+    buffer.to_string_range(Some(encoding), numeric_offset(start)?, None)
+}
+
+pub fn index_of_buffer_number(
+    buffer: &Buffer,
+    needle: &Buffer,
+    byte_offset: impl tsonic_rust_runtime::conversions::IntegerInput<isize>,
+) -> NodeResult<isize> {
+    let byte_offset = byte_offset.checked_integer().ok_or_else(|| {
+        NodeError::new("ERR_OUT_OF_RANGE", "byteOffset must be an integer")
+    })?;
+    Ok(needle.with_bytes(|bytes| {
+        buffer
+            .index_of(bytes, byte_offset)
+            .and_then(|index| isize::try_from(index).ok())
+            .unwrap_or(-1)
+    }))
+}
+
 pub fn copy_open_number(
     source: &Buffer,
     target: &Buffer,

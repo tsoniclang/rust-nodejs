@@ -213,6 +213,20 @@ impl Hmac {
         self.update_string(value, None)
     }
 
+    pub fn update_string_chain(
+        &mut self,
+        value: &str,
+        encoding: Option<&str>,
+    ) -> NodeResult<&mut Self> {
+        self.update_string(value, encoding)?;
+        Ok(self)
+    }
+
+    pub fn update_buffer_chain(&mut self, value: &Buffer) -> NodeResult<&mut Self> {
+        value.with_bytes(|bytes| self.update_bytes(bytes));
+        Ok(self)
+    }
+
     pub fn digest(self, encoding: Option<&str>) -> NodeResult<DigestResult> {
         encode_digest(self.digest.finish(), encoding)
     }
@@ -244,6 +258,10 @@ pub fn create_hmac(algorithm: &str, key: &[u8]) -> NodeResult<Hmac> {
 
 pub fn create_hmac_str(algorithm: &str, key: &str) -> NodeResult<Hmac> {
     create_hmac(algorithm, key.as_bytes())
+}
+
+pub fn create_hmac_buffer(algorithm: &str, key: &Buffer) -> NodeResult<Hmac> {
+    key.with_bytes(|bytes| create_hmac(algorithm, bytes))
 }
 
 pub fn hmac_digest(

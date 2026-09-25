@@ -54,6 +54,10 @@ impl Buffer {
         value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
     }
 
+    pub fn copy_from_buffer(value: &Buffer) -> Self {
+        value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
+    }
+
     pub fn from_number_array<Value: tsonic_rust_js::Integer32 + Copy>(values: &JsArray<Value>) -> Self {
         let bytes = values.with_values(|values| values.iter().map(|value| value.integer32() as u8).collect());
         Self::from_bytes(bytes)
@@ -253,6 +257,22 @@ impl Buffer {
         self.to_string(Some(encoding))
     }
 
+    pub fn to_string_range(
+        &self,
+        encoding: Option<&str>,
+        start: usize,
+        end: Option<usize>,
+    ) -> NodeResult<String> {
+        let end = end.unwrap_or_else(|| self.len());
+        if start > end || end > self.len() {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "buffer string range is outside the buffer",
+            ));
+        }
+        self.with_bytes(|bytes| decode_bytes(&bytes[start..end], encoding))
+    }
+
     pub fn to_json(&self) -> JsValue {
         let values = self.with_bytes(|bytes| {
             bytes
@@ -266,7 +286,7 @@ impl Buffer {
         ]))
     }
 
-    fn with_pair<Result>(
+    pub(crate) fn with_pair<Result>(
         &self,
         other: &Buffer,
         operation: impl FnOnce(&[u8], &[u8]) -> Result,

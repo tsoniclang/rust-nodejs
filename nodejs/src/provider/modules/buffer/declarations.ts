@@ -1,4 +1,4 @@
-import { nativeUintCarrier, boolCarrier, float64Carrier, int32Carrier, stringCarrier } from "../../model/carriers.js";
+import { nativeIntCarrier, nativeUintCarrier, boolCarrier, float64Carrier, int32Carrier, stringCarrier } from "../../model/carriers.js";
 import { rustSourcePrimitiveTargetType, rustJsArrayTargetType } from "@tsonic/target-rust/provider";
 import { booleanType, numberType, stringType } from "../../model/source-types.js";
 import { bufferCarrier } from "./carriers.js";
@@ -132,6 +132,11 @@ export function bufferModule(typedArrays: boolean): RustProviderModuleDefinition
                 returnType: providerRef(m, "Buffer"),
               }] : []),
               {
+                id: `${bufferId}.from(buffer)`,
+                parameters: [{ name: "value", type: providerRef(m, "Buffer") }],
+                returnType: providerRef(m, "Buffer"),
+              },
+              {
                 id: `${bufferId}.from(string)`,
                 parameters: [{ name: "value", type: stringType }],
                 returnType: providerRef(m, "Buffer"),
@@ -149,9 +154,46 @@ export function bufferModule(typedArrays: boolean): RustProviderModuleDefinition
             ],
           },
           methodMember(bufferId, "alloc", [{ name: "size", type: numberType }], providerRef(m, "Buffer"), { static: true }),
-          methodMember(bufferId, "byteLength", [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], numberType, { static: true }),
-          methodMember(bufferId, "concat", [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }], providerRef(m, "Buffer"), { static: true }),
-          methodMember(bufferId, "toString", [{ name: "encoding", type: stringType }], stringType),
+          {
+            id: `${bufferId}.byteLength`,
+            name: "byteLength",
+            kind: "method",
+            static: true,
+            signatures: [
+              { id: `${bufferId}.byteLength(value)`, parameters: [{ name: "value", type: stringType }], returnType: numberType },
+              { id: `${bufferId}.byteLength(value,encoding)`, parameters: [{ name: "value", type: stringType }, { name: "encoding", type: stringType }], returnType: numberType },
+            ],
+          },
+          {
+            id: `${bufferId}.concat`,
+            name: "concat",
+            kind: "method",
+            static: true,
+            signatures: [
+              { id: `${bufferId}.concat(list)`, parameters: [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }], returnType: providerRef(m, "Buffer") },
+              { id: `${bufferId}.concat(list,totalLength)`, parameters: [{ name: "list", type: { kind: "array", elementType: providerRef(m, "Buffer") } }, { name: "totalLength", type: numberType }], returnType: providerRef(m, "Buffer") },
+            ],
+          },
+          {
+            id: `${bufferId}.toString`,
+            name: "toString",
+            kind: "method",
+            signatures: [
+              { id: `${bufferId}.toString()`, parameters: [], returnType: stringType },
+              { id: `${bufferId}.toString(encoding)`, parameters: [{ name: "encoding", type: stringType }], returnType: stringType },
+              { id: `${bufferId}.toString(encoding,start)`, parameters: [{ name: "encoding", type: stringType }, { name: "start", type: numberType }], returnType: stringType },
+              { id: `${bufferId}.toString(encoding,start,end)`, parameters: [{ name: "encoding", type: stringType }, { name: "start", type: numberType }, { name: "end", type: numberType }], returnType: stringType },
+            ],
+          },
+          {
+            id: `${bufferId}.indexOf`,
+            name: "indexOf",
+            kind: "method",
+            signatures: [
+              { id: `${bufferId}.indexOf(buffer)`, parameters: [{ name: "value", type: providerRef(m, "Buffer") }], returnType: numberType },
+              { id: `${bufferId}.indexOf(buffer,byteOffset)`, parameters: [{ name: "value", type: providerRef(m, "Buffer") }, { name: "byteOffset", type: numberType }], returnType: numberType },
+            ],
+          },
           {
             id: `${bufferId}.copy`,
             name: "copy",
@@ -201,6 +243,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       target: { form: "call" as const, path: "node_buffer::Buffer::from_uint8_array", argModes: ["ref" as const] },
       resultCarrier: bufferCarrier, parameterCarriers: [rustJsTypedArrayTargetType("Uint8Array")],
     }] : []),
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(buffer)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::copy_from_buffer", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [bufferCarrier] },
     {
       exportId: bufferId, memberId: `${bufferId}.compare.static`, signatureId: `${bufferId}.compare(left,right)`,
       operationKind: "method", target: { form: "call", path: "node_buffer::compare", argModes: ["ref", "ref"] },
@@ -211,9 +254,16 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType({ kind: "type-parameter", name: "Value" })], genericParameters: [{ kind: "type", sourceName: "Value" }] },
     { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc" }, resultCarrier: bufferCarrier, parameterCarriers: [nativeUintCarrier] },
-    { exportId: bufferId, memberId: `${bufferId}.byteLength`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.concat`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.toString`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.byteLength`, signatureId: `${bufferId}.byteLength(value)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.byteLength`, signatureId: `${bufferId}.byteLength(value,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.concat`, signatureId: `${bufferId}.concat(list)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier)], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.concat`, signatureId: `${bufferId}.concat(list,totalLength)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::concat_with_total_length", argModes: ["ref", "value"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType(bufferCarrier), nativeUintCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.toString`, signatureId: `${bufferId}.toString()`, operationKind: "method", target: { form: "receiver-method", name: "to_string", trailingArguments: [noneArgument] }, resultCarrier: stringCarrier, parameterCarriers: [], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.toString`, signatureId: `${bufferId}.toString(encoding)`, operationKind: "method", target: { form: "receiver-method", name: "to_string_enc", argModes: ["ref"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.toString`, signatureId: `${bufferId}.toString(encoding,start)`, operationKind: "method", target: { form: "free-call", path: "node_buffer::to_string_from_number", receiverMode: "ref", argModes: ["ref", "value"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, { kind: "type-parameter", name: "Start" }], genericParameters: [{ kind: "type", sourceName: "Start" }], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.toString`, signatureId: `${bufferId}.toString(encoding,start,end)`, operationKind: "method", target: { form: "free-call", path: "node_buffer::to_string_range_number", receiverMode: "ref", argModes: ["ref", "value", "value"] }, resultCarrier: stringCarrier, parameterCarriers: [stringCarrier, { kind: "type-parameter", name: "Start" }, { kind: "type-parameter", name: "End" }], genericParameters: [{ kind: "type", sourceName: "Start" }, { kind: "type", sourceName: "End" }], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.indexOf`, signatureId: `${bufferId}.indexOf(buffer)`, operationKind: "method", target: { form: "free-call", path: "node_buffer::index_of_buffer_number", receiverMode: "ref", argModes: ["ref"], trailingArguments: [zeroIntegerArgument] }, resultCarrier: nativeIntCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: bufferId, memberId: `${bufferId}.indexOf`, signatureId: `${bufferId}.indexOf(buffer,byteOffset)`, operationKind: "method", target: { form: "free-call", path: "node_buffer::index_of_buffer_number", receiverMode: "ref", argModes: ["ref", "value"] }, resultCarrier: nativeIntCarrier, parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "ByteOffset" }], genericParameters: [{ kind: "type", sourceName: "ByteOffset" }], ...providerNativeFallibility },
     {
       exportId: bufferId,
       memberId: `${bufferId}.copy`,
