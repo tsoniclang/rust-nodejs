@@ -1,14 +1,11 @@
-import {
-  int32Carrier, nativeUintCarrier,
-  bufferCarrier, float64Carrier, fnExport, nullType, numberType,
-  providerNativeFallibility, providerRef, rustOptionTargetType,
-  stringCarrier, stringType, unitCarrier, voidType,
-} from "../../model.js";
+import { int32Carrier, nativeUintCarrier, float64Carrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { bufferCarrier } from "../buffer/carriers.js";
+import { fnExport, providerRef } from "../../declarations/builders.js";
+import { nullType, numberType, stringType, voidType } from "../../model/source-types.js";
+import { providerNativeFallibility } from "../../model/operations.js";
+import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
-import type {
-  RustProviderModuleDefinition, RustProviderOperationDefinition,
-  RustTargetTypeRef,
-} from "../../model.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 const moduleId = "node:fs";
 const positions = [

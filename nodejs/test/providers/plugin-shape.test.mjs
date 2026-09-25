@@ -1,0 +1,50 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createTsonicPlugin, createRustNodejsCapability } from "../../../dist/index.js";
+
+test("createTsonicPlugin returns the Rust NodeJS target capability", () => {
+  const plugin = createTsonicPlugin();
+  assert.equal(plugin.kind, "target-capability");
+  assert.equal(plugin.id, "@tsonic/rust-nodejs");
+  assert.equal(plugin.targetId, "rust");
+  assert.equal(plugin.displayName, "Node.js for Rust");
+  assert.ok(plugin.moduleOwnership.length > 0);
+  assert.ok(plugin.moduleOwnership.every(({ providerId }) =>
+    providerId === "tsonic.rust.provider-package.@tsonic/rust-nodejs.binding"));
+  assert.equal(Object.hasOwn(plugin, "requiredSurfaces"), false);
+});
+
+test("plugin exposes source, target-policy, and runtime contributions", () => {
+  const plugin = createRustNodejsCapability();
+  assert.equal(typeof plugin.sourceCompilerContributions, "function");
+  assert.equal(typeof plugin.createTargetContributions, "function");
+  assert.equal(typeof plugin.runtimeContributions, "function");
+  assert.deepEqual(plugin.sourceProfileContributions({ selectedSurfaceIds: ["js"] }), {
+    declarations: [{
+      fileName: "provider-globals.d.ts",
+      text: [
+        'declare var performance: typeof import("node:perf_hooks")["performance"];',
+        'declare var crypto: typeof import("node:crypto")["webcrypto"];',
+      ].join("\n"),
+    }, {
+      fileName: "node-globals.d.ts",
+      text: [
+        'declare var process: typeof import("node:process").default;',
+        'declare namespace NodeJS {',
+        '  type ProcessEnv = import("node:process").ProcessEnv;',
+        '  type Signals = import("node:process").Signals;',
+        '}',
+        'declare var TextEncoder: typeof import("node:util").TextEncoder;',
+        'declare var TextDecoder: typeof import("node:util").TextDecoder;',
+      ].join("\n"),
+    }],
+  });
+  assert.equal(plugin.sourceProfileContributions({ selectedSurfaceIds: [] })
+    .declarations[0].text.includes("TextEncoder"), false);
+  const source = plugin.sourceCompilerContributions({});
+  assert.equal(source.extensions.length, 1);
+  assert.equal(source.extensions[0].identity.id, "tsonic.rust.provider-package.@tsonic/rust-nodejs");
+  const [policy] = plugin.createTargetContributions({});
+  assert.equal(policy.kind, "rust-provider-policy");
+  assert.equal(policy.definition.id, plugin.id);
+});

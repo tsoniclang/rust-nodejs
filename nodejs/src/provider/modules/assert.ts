@@ -1,17 +1,8 @@
-import {
-  boolCarrier,
-  booleanType,
-  noneArgument,
-  providerNativeFallibility,
-  stringCarrier,
-  stringType,
-  voidType,
-} from "../model.js";
+import { boolCarrier, stringCarrier } from "../model/carriers.js";
+import { booleanType, stringType, voidType } from "../model/source-types.js";
+import { noneArgument, providerNativeFallibility } from "../model/operations.js";
 
-import type {
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-} from "../model.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function assertModule(): RustProviderModuleDefinition {
   const moduleSpecifier = "node:assert";
   const exportId = `${moduleSpecifier}::ok`;

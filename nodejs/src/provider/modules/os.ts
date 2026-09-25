@@ -1,15 +1,10 @@
-import {
-  fnExport,
-  providerNativeFallibility,
-  rustBorrowedStrToStringValueConversion,
-  stringCarrier,
-  stringType,
-} from "../model.js";
+import { fnExport } from "../declarations/builders.js";
+import { providerNativeFallibility } from "../model/operations.js";
+import { rustBorrowedStrToStringValueConversion } from "@tsonic/target-rust/provider";
+import { stringCarrier } from "../model/carriers.js";
+import { stringType } from "../model/source-types.js";
 
-import type {
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-} from "../model.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function osModule(): RustProviderModuleDefinition {
   const m = "node:os";
   return {
