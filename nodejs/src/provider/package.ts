@@ -3,60 +3,29 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
-import {
-  bufferCarrier,
-  cloneOnlyCarrierTraits,
-  closedJsValueCarrierTraits,
-  cloneDefaultCarrierTraits,
-  copyDefaultCarrierTraits,
-  hashCarrier,
-  hmacCarrier,
-  httpIncomingMessageCarrier,
-  httpServerCarrier,
-  httpServerResponseCarrier,
-  makeDirectoryOptionsCarrier,
-  nodeErrorCarrier,
-  processEnvCarrier,
-  processMemoryUsageCarrier,
-  rmOptionsCarrier,
-  searchParamsCarrier,
-  statsCarrier,
-  timeoutCarrier,
-  textDecoderCarrier,
-  textEncoderCarrier,
-  cryptoCarrier,
-  urlCarrier,
-  urlObjectCarrier,
-  eventEmitterCarrier,
-  readableCarrier,
-  writableCarrier,
-  readStreamCarrier,
-  readStreamOptionsCarrier,
-  writeStreamCarrier,
-  writeStreamOptionsCarrier,
-  fsWatcherCarrier,
-  dnsLookupAddressCarrier,
-  zlibOptionsCarrier,
-  zlibTransformCarrier,
-  netSocketCarrier,
-  netServerCarrier,
-  tlsConnectOptionsCarrier,
-  tlsServerOptionsCarrier,
-  tlsSocketCarrier,
-  tlsServerCarrier,
-  httpsServerCarrier,
-  httpsClientRequestCarrier,
-  readlineOptionsCarrier,
-  readlineInterfaceCarrier,
-  messageChannelCarrier,
-  messagePortCarrier,
-  workerCarrier,
-  workerOptionsCarrier,
-} from "./model.js";
+import { bufferCarrier } from "./modules/buffer/carriers.js";
+import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
+import { hashCarrier, hmacCarrier, cryptoCarrier } from "./modules/crypto/carriers.js";
+import { httpIncomingMessageCarrier, httpServerCarrier, httpServerResponseCarrier } from "./modules/http/carriers.js";
+import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier, readStreamCarrier, readStreamOptionsCarrier, writeStreamCarrier, writeStreamOptionsCarrier, fsWatcherCarrier } from "./modules/filesystem/carriers.js";
+import { nodeErrorCarrier } from "./model/carriers.js";
+import { processEnvCarrier, processMemoryUsageCarrier } from "./modules/process/carriers.js";
+import { searchParamsCarrier, urlCarrier, urlObjectCarrier } from "./modules/url/carriers.js";
+import { timeoutCarrier } from "./modules/timers/carriers.js";
+import { textDecoderCarrier, textEncoderCarrier } from "./modules/util/carriers.js";
+import { eventEmitterCarrier } from "./modules/events/carriers.js";
+import { readableCarrier, writableCarrier } from "./modules/stream/carriers.js";
+import { dnsLookupAddressCarrier } from "./modules/dns/carriers.js";
+import { zlibOptionsCarrier, zlibTransformCarrier } from "./modules/zlib/carriers.js";
+import { netSocketCarrier, netServerCarrier } from "./modules/net/carriers.js";
+import { tlsConnectOptionsCarrier, tlsServerOptionsCarrier, tlsSocketCarrier, tlsServerCarrier } from "./modules/tls/carriers.js";
+import { httpsServerCarrier, httpsClientRequestCarrier } from "./modules/https/carriers.js";
+import { readlineOptionsCarrier, readlineInterfaceCarrier } from "./modules/readline/carriers.js";
+import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./modules/worker-threads/carriers.js";
 import { assertModule, assertRows } from "./modules/assert.js";
-import { bufferModule, bufferRows } from "./modules/buffer.js";
-import { cryptoModule, cryptoRows } from "./modules/crypto.js";
-import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process.js";
+import { bufferModule, bufferRows } from "./modules/buffer/declarations.js";
+import { cryptoModule, cryptoRows } from "./modules/crypto/declarations.js";
+import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
 import { fsModule, fsRows } from "./modules/filesystem/calls.js";
 import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem/paths.js";
 import { bufferEncodingOptionsCarrier } from "./modules/filesystem/realpath.js";
@@ -64,34 +33,34 @@ import {
   fsPromisesModule,
   fsPromisesRows,
 } from "./modules/filesystem/promises.js";
-import { httpModule, httpRows } from "./modules/http.js";
+import { httpModule, httpRows } from "./modules/http/declarations.js";
 import { osModule, osRows } from "./modules/os.js";
 import { v8HeapInfoCarrier, v8Module, v8Rows } from "./modules/v8.js";
 import { pathModule, pathRows } from "./modules/path.js";
-import { processModule, processRows } from "./modules/process.js";
-import { processCarrier } from "./modules/process-signals.js";
-import { processCpuCarrier } from "./modules/process-metrics.js";
+import { processModule, processRows } from "./modules/process/declarations.js";
+import { processCarrier } from "./modules/process/signals.js";
+import { processCpuCarrier } from "./modules/process/metrics.js";
 import { performanceCarrier, performanceModule, performanceRows } from "./modules/performance.js";
-import { timersModule, timersRows } from "./modules/timers.js";
-import { eventsModule, eventsRows } from "./modules/events.js";
-import { streamModule, streamRows } from "./modules/stream.js";
-import { urlModule, urlRows } from "./modules/url.js";
-import { utilModule, utilRows } from "./modules/util.js";
+import { timersModule, timersRows } from "./modules/timers/declarations.js";
+import { eventsModule, eventsRows } from "./modules/events/declarations.js";
+import { streamModule, streamRows } from "./modules/stream/declarations.js";
+import { urlModule, urlRows } from "./modules/url/declarations.js";
+import { utilModule, utilRows } from "./modules/util/declarations.js";
 import {
   dnsModule,
   dnsPromisesModule,
   dnsRows,
-} from "./modules/dns.js";
-import { zlibModule, zlibRows } from "./modules/zlib.js";
-import { netModule, netRows } from "./modules/net.js";
-import { tlsModule, tlsRows } from "./modules/tls.js";
-import { httpsModule, httpsRows } from "./modules/https.js";
-import { readlineModule, readlineRows } from "./modules/readline.js";
+} from "./modules/dns/declarations.js";
+import { zlibModule, zlibRows } from "./modules/zlib/declarations.js";
+import { netModule, netRows } from "./modules/net/declarations.js";
+import { tlsModule, tlsRows } from "./modules/tls/declarations.js";
+import { httpsModule, httpsRows } from "./modules/https/declarations.js";
+import { readlineModule, readlineRows } from "./modules/readline/declarations.js";
 import {
   workerThreadCarrierTraits,
   workerThreadsModule,
   workerThreadsRows,
-} from "./modules/worker-threads.js";
+} from "./modules/worker-threads/declarations.js";
 
 // Compiled layout is dist/provider/package.js, so the installed package root
 // is two directories up from this module.

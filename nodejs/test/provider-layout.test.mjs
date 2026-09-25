@@ -1,23 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import {
-  evaluateBarrelModules,
-  formatArchitectureFindings,
-} from "../../../tsonic/test/architecture/tooling/architecture-rules.mjs";
-import {
-  readSourceInventory,
-} from "../../../tsonic/test/architecture/tooling/file-inventory.mjs";
-import {
-  buildTypeScriptModuleAnalysis,
-} from "../../../tsonic/test/architecture/tooling/module-graph.mjs";
+import { readSourceInventory } from "../../../tsonic/test/architecture/tooling/file-inventory.mjs";
+import { evaluateNodeProviderContract } from "../../../tsonic/test/architecture/tooling/node-provider-contract.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const providerRoot = join(repositoryRoot, "nodejs/src/provider");
-const moduleRoot = join(providerRoot, "modules");
 
 const forbiddenEnginePackages = new Set([
   "boa_engine", "deno_core", "javascriptcore-rs", "libquickjs-sys", "mozjs",
@@ -57,101 +46,15 @@ test("engine dependency checks retain actual package identity through aliases an
   assert.throws(() => forbiddenRuntimeDependencies({ packages: [{}] }), /actual name/u);
 });
 
-test("Rust Node provider declarations are owned by semantic modules", () => {
-  assert.equal(existsSync(join(providerRoot, "nodejs-package.ts")), false);
-  assert.deepEqual(
-    readdirSync(providerRoot).sort(),
-    ["model.ts", "modules", "package.ts"],
-  );
-  assert.deepEqual(
-    readdirSync(moduleRoot).sort(),
-    [
-      "assert.ts",
-      "buffer.ts",
-      "child-process.ts",
-      "crypto.ts",
-      "dns.ts",
-      "events.ts",
-      "filesystem",
-      "http.ts",
-      "https.ts",
-      "net.ts",
-      "os.ts",
-      "path.ts",
-      "performance.ts",
-      "process-metrics.ts",
-      "process-signals.ts",
-      "process.ts",
-      "readline.ts",
-      "stream.ts",
-      "timers.ts",
-      "tls.ts",
-      "url.ts",
-      "util.ts",
-      "v8.ts",
-      "worker-threads.ts",
-      "zlib.ts",
-    ],
-  );
-  assert.deepEqual(readdirSync(join(moduleRoot, "filesystem")).sort(), [
-    "calls.ts", "descriptors.ts", "paths.ts", "promises.ts", "realpath.ts",
-  ]);
-});
-
-test("Rust Node package assembly contains no module declaration policy", () => {
-  const assembly = readFileSync(join(providerRoot, "package.ts"), "utf8");
-  assert.doesNotMatch(assembly, /providerModuleId|RustProviderModuleDefinition/u);
-  const fragments = new Map([
-    ["filesystem/descriptors.ts", "filesystem/calls.ts"],
-    ["filesystem/paths.ts", "filesystem/calls.ts"],
-    ["filesystem/realpath.ts", "filesystem/calls.ts"],
-    ["process-metrics.ts", "process.ts"],
-    ["process-signals.ts", "process.ts"],
-  ]);
-  const moduleFiles = [...readSourceInventory(moduleRoot, { extensions: [".ts"] }).keys()];
-  for (const moduleFile of moduleFiles) {
-    const source = readFileSync(join(moduleRoot, moduleFile), "utf8");
-    const owner = fragments.get(moduleFile);
-    if (owner === undefined) {
-      assert.match(source, /providerModuleId/u, moduleFile);
-    } else {
-      assert.doesNotMatch(source, /providerModuleId/u, moduleFile);
-      const ownerSource = readFileSync(join(moduleRoot, owner), "utf8");
-      const specifier = `./${relative(dirname(owner), moduleFile).slice(0, -3)}.js`;
-      assert.ok(ownerSource.includes(`from "${specifier}"`), `${moduleFile} has no owning module import`);
-    }
-    assert.ok(source.split("\n").length <= 600, `${moduleFile} exceeds 600 lines`);
-  }
-});
-
-test("Rust Node capability composes only the canonical package owner", () => {
-  const capability = readFileSync(
-    join(repositoryRoot, "nodejs/src/capability.ts"),
-    "utf8",
-  );
-  assert.match(capability, /from "\.\/provider\/package\.js"/u);
-  assert.doesNotMatch(capability, /nodejs-package/u);
-});
-
-test("Rust Node provider indexes are barrels and target imports use its provider API", () => {
+test("Rust Node provider follows the shared module, ownership and public SDK contract", () => {
   const sources = readSourceInventory(repositoryRoot, {
     extensions: [".ts"],
+    include: ["nodejs/src"],
     exclude: ["dist", "node_modules", ".analysis", ".temp"],
   });
-  const modules = buildTypeScriptModuleAnalysis(sources);
-  const findings = evaluateBarrelModules(modules.modules, {
-    allowedImplementationFiles: new Set(["nodejs/src/index.ts"]),
-  });
-  assert.deepEqual(findings, [], formatArchitectureFindings(findings));
-  assert.deepEqual(
-    modules.edges
-      .filter((edge) =>
-        edge.kind === "package" &&
-        (edge.specifier === "@tsonic/target-rust" ||
-          edge.specifier.startsWith("@tsonic/target-rust/")) &&
-        edge.specifier !== "@tsonic/target-rust/provider"
-      )
-      .map((edge) => `${edge.source}: ${edge.specifier}`),
-    [],
-  );
+  const providerSources = new Map([...sources].filter(([path]) => path.startsWith("nodejs/src/")));
+  assert.deepEqual(evaluateNodeProviderContract(providerSources, {
+    targetPackage: "@tsonic/target-rust",
+    factoryName: "createRustProviderPackage",
+  }), []);
 });

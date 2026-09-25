@@ -1,5 +1,7 @@
-import { numberType, float64Carrier, providerRef, propertyMember } from "../model.js";
-import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../model.js";
+import { numberType } from "../model/source-types.js";
+import { float64Carrier } from "../model/carriers.js";
+import { providerRef, propertyMember } from "../declarations/builders.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 const moduleSpecifier = "node:perf_hooks";
 const performanceId = `${moduleSpecifier}::Performance`;

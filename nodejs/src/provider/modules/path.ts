@@ -1,20 +1,10 @@
-import {
-  boolCarrier,
-  booleanType,
-  fnExport,
-  noneArgument,
-  providerNativeFallibility,
-  rustBorrowedStrToStringValueConversion,
-  stringArrayType,
-  stringCarrier,
-  stringType,
-  valueExport,
-} from "../model.js";
+import { boolCarrier, stringCarrier } from "../model/carriers.js";
+import { booleanType, stringArrayType, stringType } from "../model/source-types.js";
+import { fnExport, valueExport } from "../declarations/builders.js";
+import { noneArgument, providerNativeFallibility } from "../model/operations.js";
+import { rustBorrowedStrToStringValueConversion } from "@tsonic/target-rust/provider";
 
-import type {
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-} from "../model.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function pathModule(): RustProviderModuleDefinition {
   const m = "node:path";
   return {

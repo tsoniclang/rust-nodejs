@@ -1,23 +1,10 @@
-import {
-  fnExport,
-  makeDirectoryOptionsCarrier,
-  providerNativeFallibility,
-  providerRef,
-  rmOptionsCarrier,
-  statsCarrier,
-  stringArrayCarrier,
-  stringArrayType,
-  stringCarrier,
-  stringType,
-  voidType,
-} from "../../model.js";
+import { fnExport, providerRef } from "../../declarations/builders.js";
+import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier } from "./carriers.js";
+import { providerNativeFallibility } from "../../model/operations.js";
+import { stringArrayCarrier, stringCarrier } from "../../model/carriers.js";
+import { stringArrayType, stringType, voidType } from "../../model/source-types.js";
 
-import type {
-  RustProviderConstantArgument,
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-  RustTargetTypeRef,
-} from "../../model.js";
+import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 export function fsPromisesModule(): RustProviderModuleDefinition {
   const m = "node:fs/promises";
   return {

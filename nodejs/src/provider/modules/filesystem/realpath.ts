@@ -1,8 +1,10 @@
-import {
-  bufferCarrier, propertyMember, providerNativeFallibility, providerRef,
-  stringCarrier, stringType, unitCarrier,
-} from "../../model.js";
-import type { ProviderTypeExpr, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "../../model.js";
+import { bufferCarrier } from "../buffer/carriers.js";
+import { propertyMember, providerRef } from "../../declarations/builders.js";
+import { providerNativeFallibility } from "../../model/operations.js";
+import { stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { stringType } from "../../model/source-types.js";
+import type { ProviderTypeExpr } from "../../model/source-types.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 const moduleSpecifier = "node:fs";
 const callableId = `${moduleSpecifier}::realpathSync`;

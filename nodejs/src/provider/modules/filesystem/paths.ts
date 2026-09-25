@@ -1,14 +1,12 @@
-import {
-  int32Carrier, uint32Carrier,
-  boolCarrier, booleanType, bufferCarrier, float64Carrier,
-  methodMember, numberType, propertyMember, providerNativeFallibility,
-  providerRef, rustOptionTargetType, rustStringToBorrowedStrValueConversion, statsCarrier, stringArrayCarrier,
-  stringArrayType, stringCarrier, stringType, unitCarrier, valueExport, voidType,
-} from "../../model.js";
+import { int32Carrier, uint32Carrier, boolCarrier, float64Carrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { booleanType, numberType, stringArrayType, stringType, voidType } from "../../model/source-types.js";
+import { bufferCarrier } from "../buffer/carriers.js";
+import { methodMember, propertyMember, providerRef, valueExport } from "../../declarations/builders.js";
+import { providerNativeFallibility } from "../../model/operations.js";
+import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
+import { statsCarrier } from "./carriers.js";
 import { rustJsArrayTargetType } from "@tsonic/target-rust/provider";
-import type {
-  RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef,
-} from "../../model.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 const moduleId = "node:fs";
 const statOptionsId = `${moduleId}::StatOptions`;

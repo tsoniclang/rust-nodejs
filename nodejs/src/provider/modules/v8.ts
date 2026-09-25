@@ -1,20 +1,8 @@
-import {
-  fnExport,
-  float64Carrier,
-  numberType,
-  propertyMember,
-  providerNativeFallibility,
-  providerRef,
-  stringCarrier,
-  stringType,
-  unitCarrier,
-  voidType,
-} from "../model.js";
-import type {
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-  RustTargetTypeRef,
-} from "../model.js";
+import { fnExport, propertyMember, providerRef } from "../declarations/builders.js";
+import { float64Carrier, stringCarrier, unitCarrier } from "../model/carriers.js";
+import { numberType, stringType, voidType } from "../model/source-types.js";
+import { providerNativeFallibility } from "../model/operations.js";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 export const v8HeapInfoCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HeapInfo" };
 

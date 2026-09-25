@@ -1,40 +1,13 @@
-import {
-  uint64Carrier, uint32Carrier, nativeUintCarrier,
-  boolCarrier,
-  booleanType,
-  bufferCarrier,
-  float64Carrier,
-  fileWatchCallbackCarrier,
-  fileStatWatchCallbackCarrier,
-  fnExport,
-  makeDirectoryOptionsCarrier,
-  methodMember,
-  numberType,
-  propertyMember,
-  providerNativeFallibility,
-  providerRef,
-  readStreamCarrier,
-  readStreamOptionsCarrier,
-  fsWatcherCarrier,
-  httpServerResponseCarrier,
-  rmOptionsCarrier,
-  rustOptionTargetType,
-  rustStringToBorrowedStrValueConversion,
-  statsCarrier,
-  stringCarrier,
-  stringType,
-  unitCarrier,
-  voidType,
-  writeStreamCarrier,
-  writeStreamOptionsCarrier,
-} from "../../model.js";
+import { uint64Carrier, uint32Carrier, nativeUintCarrier, boolCarrier, float64Carrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { booleanType, numberType, stringType, voidType } from "../../model/source-types.js";
+import { bufferCarrier } from "../buffer/carriers.js";
+import { fileWatchCallbackCarrier, fileStatWatchCallbackCarrier, makeDirectoryOptionsCarrier, readStreamCarrier, readStreamOptionsCarrier, fsWatcherCarrier, rmOptionsCarrier, statsCarrier, writeStreamCarrier, writeStreamOptionsCarrier } from "./carriers.js";
+import { fnExport, methodMember, propertyMember, providerRef } from "../../declarations/builders.js";
+import { providerNativeFallibility } from "../../model/operations.js";
+import { httpServerResponseCarrier } from "../http/carriers.js";
+import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
 
-import type {
-  RustProviderConstantArgument,
-  RustProviderModuleDefinition,
-  RustProviderOperationDefinition,
-  RustTargetTypeRef,
-} from "../../model.js";
+import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { fileDescriptorExports, fileDescriptorRows } from "./descriptors.js";
 import { filePathExports, filePathRows } from "./paths.js";
 import { realpathExports, realpathRows } from "./realpath.js";
