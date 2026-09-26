@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tsonic_rust_node::{
     buffer::Buffer,
     fs_promises::{self, FsReadResult},
+    run_event_loop,
 };
 
 #[test]
@@ -274,15 +275,17 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap();
     assert_eq!(readable_web_with_options.chunks().len(), 1);
     assert!(!handle.writable_web_stream().closed());
-    let mut read_stream = handle.create_read_stream().unwrap();
+    let read_stream = handle.create_read_stream().unwrap();
+    run_event_loop().unwrap();
     assert!(read_stream.read().unwrap().is_some());
-    let mut ranged_stream = handle
+    let ranged_stream = handle
         .create_read_stream_with_options(fs_promises::ReadStreamOptions {
             start: Some(0),
             end: Some(4),
             ..fs_promises::ReadStreamOptions::default()
         })
         .unwrap();
+    run_event_loop().unwrap();
     assert_eq!(
         ranged_stream
             .read()
@@ -292,7 +295,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
             .unwrap(),
         "hello"
     );
-    let mut write_stream = handle
+    let write_stream = handle
         .create_write_stream_with_options(fs_promises::WriteStreamOptions {
             start: Some(14),
             ..fs_promises::WriteStreamOptions::default()
@@ -302,11 +305,12 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .write(Buffer::from_string("stream", Some("utf8")).unwrap())
         .unwrap());
     write_stream.close().unwrap();
-    let mut write_stream_with_options = handle
+    let write_stream_with_options = handle
         .create_write_stream_with_options(fs_promises::WriteStreamOptions::default())
         .unwrap();
     assert!(!write_stream_with_options.closed());
     write_stream_with_options.close().unwrap();
+    run_event_loop().unwrap();
     assert_eq!(
         handle.read_lines("utf8").unwrap(),
         vec!["hello rust!!?#stream".to_string()]

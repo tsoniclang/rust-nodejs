@@ -1,51 +1,5 @@
-use std::collections::BTreeMap;
-
 use crate::buffer::Buffer;
 use crate::error::NodeResult;
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StreamEventState {
-    listeners: BTreeMap<String, usize>,
-}
-
-impl StreamEventState {
-    pub fn add_listener(&mut self, event: &str) {
-        *self.listeners.entry(event.to_string()).or_default() += 1;
-    }
-
-    pub fn remove_listener(&mut self, event: &str) {
-        if let Some(count) = self.listeners.get_mut(event) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.listeners.remove(event);
-            }
-        }
-    }
-
-    pub fn remove_all_listeners(&mut self, event: Option<&str>) {
-        if let Some(event) = event {
-            self.listeners.remove(event);
-        } else {
-            self.listeners.clear();
-        }
-    }
-
-    pub fn listener_count(&self, event: &str) -> usize {
-        self.listeners.get(event).copied().unwrap_or(0)
-    }
-
-    pub fn listeners(&self, event: &str) -> Vec<String> {
-        vec![event.to_string(); self.listener_count(event)]
-    }
-
-    pub fn event_names(&self) -> Vec<String> {
-        self.listeners.keys().cloned().collect()
-    }
-
-    pub fn emit(&self, event: &str) -> bool {
-        self.listener_count(event) > 0
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamOptions {
@@ -152,4 +106,17 @@ impl Default for FinishedOptions {
             cleanup: false,
         }
     }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stream {
+    Readable(Readable),
+    Writable(Writable),
+}
+
+pub fn readable_as_stream(value: &Readable) -> Stream {
+    Stream::Readable(value.clone())
+}
+
+pub fn writable_as_stream(value: &Writable) -> Stream {
+    Stream::Writable(value.clone())
 }

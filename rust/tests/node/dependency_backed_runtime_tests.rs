@@ -72,7 +72,7 @@ fn https_and_http2_validate_closed_request_shapes() {
         tsonic_rust_runtime::Callable::new(
             |(_request, _response): (
                 tsonic_rust_node::http::IncomingMessage,
-                tsonic_rust_node::http::ServerResponseHandle,
+                tsonic_rust_node::http::ServerResponse,
             )| Ok::<(), tsonic_rust_node::error::NodeError>(()),
         ),
     );

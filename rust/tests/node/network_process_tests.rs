@@ -386,7 +386,7 @@ fn accept_eventually(server: &mut net::Server) -> net::Socket {
 }
 
 #[test]
-fn http_server_shapes_handle_in_memory_requests_without_dynamic_runtime() {
+fn http_request_shape_uses_exact_headers_and_one_body_stream() {
     assert!(http::methods().contains(&"GET"));
     assert_eq!(http::status_codes().get(&201), Some(&"Created"));
     assert_eq!(http::MAX_HEADER_SIZE, 16 * 1024);
@@ -395,190 +395,25 @@ fn http_server_shapes_handle_in_memory_requests_without_dynamic_runtime() {
     assert!(http::validate_header_name("bad header").is_err());
     assert!(http::validate_header_value("x-token", "bad\nvalue").is_err());
 
-    let mut server = http::create_server(|request, response| {
-        assert_eq!(request.method, "POST");
-        assert_eq!(request.url, "/submit");
-        assert_eq!(request.http_version, "1.1");
-        assert!(request.complete);
-        let mut request = request;
-        request.on("data").prepend_once_listener("data");
-        assert_eq!(request.listener_count("data"), 2);
-        assert!(request.emit("data"));
-        request.off("data");
-        assert_eq!(request.raw_listeners("data").len(), 1);
-        request.remove_all_listeners(Some("data"));
-        assert!(request.listeners("data").is_empty());
-        assert_eq!(
-            request.read().unwrap().to_string(Some("utf8")).unwrap(),
-            "payload"
-        );
-        assert_eq!(
-            request.get_header("content-type"),
-            Some("text/plain".to_string())
-        );
-        assert_eq!(
-            request.headers_distinct().get("content-type").unwrap(),
-            &vec!["text/plain".to_string()]
-        );
-        response.set_header("content-type", "text/plain");
-        response.add_listener("finish").once("finish");
-        assert_eq!(response.listener_count("finish"), 2);
-        assert!(response.emit("finish"));
-        response.remove_listener("finish");
-        assert_eq!(response.listeners("finish"), vec!["finish"]);
-        response.remove_all_listeners(None);
-        assert!(!response.emit("finish"));
-        response.assign_socket(net::SocketAddress::new("127.0.0.1", 80).unwrap());
-        assert_eq!(response.socket().unwrap().port, 80);
-        assert_eq!(response.connection().unwrap().port, 80);
-        assert_eq!(response.detach_socket().unwrap().family, "IPv4");
-        response.chunked_encoding = true;
-        response.use_chunked_encoding_by_default = false;
-        response.req = Some("POST /submit".to_string());
-        assert!(response.chunked_encoding);
-        assert!(!response.use_chunked_encoding_by_default);
-        assert_eq!(response.req.as_deref(), Some("POST /submit"));
-        response.set_status_code(202);
-        assert_eq!(response.status_code, 202);
-        response.set_status_message("Created");
-        assert_eq!(response.status_message, "Created");
-        response.append_header("vary", "accept");
-        response.append_header("vary", "encoding");
-        assert_eq!(response.get_header("vary").unwrap(), "accept, encoding");
-        assert!(response.has_header("content-type"));
-        let mut extra = BTreeMap::new();
-        extra.insert("x-extra".to_string(), "1".to_string());
-        response.set_headers(&extra);
-        assert!(response.get_header_names().contains(&"x-extra".to_string()));
-        let mut hints = BTreeMap::new();
-        hints.insert("link".to_string(), "</style.css>; rel=preload".to_string());
-        let hinted = std::cell::Cell::new(false);
-        response.write_early_hints(&hints, Some(|| hinted.set(true)));
-        assert!(hinted.get());
-        response.write_head(201, &[("x-powered-by", "tsonic")]);
-        response.flush_headers();
-        assert!(response.headers_sent);
-        let mut trailers = BTreeMap::new();
-        trailers.insert("x-trailer".to_string(), "done".to_string());
-        response.add_trailers(&trailers);
-        let timed = std::cell::Cell::new(false);
-        response.set_timeout(500, Some(|| timed.set(true)));
-        assert_eq!(response.timeout(), Some(500));
-        assert!(timed.get());
-        response.write_continue(Some(|| {}));
-        response.write_processing(Some(|| {}));
-        response.end(Some(
-            tsonic_rust_node::buffer::Buffer::from_string("created", Some("utf8")).unwrap(),
-        ));
-        assert!(response.finished());
-        assert!(response.writable_ended());
-    });
-
-    let mut request = http::IncomingMessage::new("POST", "/submit", b"payload".to_vec());
-    request.set_header("content-type", "text/plain");
-    request.trailers_distinct.insert(
-        "x-trailer".to_string(),
-        vec!["one".to_string(), "two".to_string()],
-    );
-    request.socket = Some(net::SocketAddress::new("127.0.0.1", 1234).unwrap());
-    assert_eq!(request.socket.as_ref().unwrap().family, "IPv4");
-    assert_eq!(request.socket().unwrap().port, 1234);
-    assert_eq!(request.connection().unwrap().port, 1234);
-    assert_eq!(request.raw_headers, vec!["content-type", "text/plain"]);
-    let incoming_timed = std::cell::Cell::new(false);
-    request.set_timeout(250, Some(|| incoming_timed.set(true)));
-    assert_eq!(request.timeout(), Some(250));
-    assert!(incoming_timed.get());
-    let response = server.handle(request);
-    assert_eq!(response.status_code, 201);
-    assert_eq!(response.status_message, "Created");
-    assert_eq!(response.headers.get("content-type").unwrap(), "text/plain");
-    assert_eq!(response.headers.get("x-powered-by").unwrap(), "tsonic");
+    let request = http::IncomingMessage::new("POST", "/submit", b"payload".to_vec());
+    assert_eq!(request.method(), Some("POST".to_string()));
+    assert_eq!(request.url(), Some("/submit".to_string()));
+    assert_eq!(request.http_version(), "1.1");
+    assert!(request.complete());
+    assert!(request
+        .headers_distinct()
+        .get_values("missing")
+        .unwrap()
+        .is_none());
+    assert!(request.headers_distinct().get_values("bad header").is_err());
     assert_eq!(
-        response.headers.get("link").unwrap(),
-        "</style.css>; rel=preload"
+        request.read().unwrap().to_string(Some("utf8")).unwrap(),
+        "payload"
     );
-    assert_eq!(response.text().unwrap(), "created");
-    server.add_listener("request").prepend_listener("request");
-    assert_eq!(server.listener_count("request"), 2);
-    assert!(server.emit("request"));
-    server.remove_listener("request");
-    assert_eq!(server.raw_listeners("request"), vec!["request"]);
-    server.close_idle_connections();
-    server.close_all_connections();
-    server.close();
-    let mut configured_server = http::Server::with_options(
-        http::ServerOptions {
-            incoming_message: Some("IncomingMessage".to_string()),
-            server_response: Some("ServerResponse".to_string()),
-            high_water_mark: Some(64 * 1024),
-            insecure_http_parser: true,
-            max_header_size: Some(32 * 1024),
-            no_delay: false,
-            keep_alive: false,
-            keep_alive_initial_delay: Some(1_000),
-            keep_alive_timeout: 7_500,
-            keep_alive_timeout_buffer: 250,
-            request_timeout: 120_000,
-            headers_timeout: 30_000,
-            connections_checking_interval: Some(15_000),
-            join_duplicate_headers: true,
-            unique_headers: vec!["set-cookie".to_string()],
-            require_host_header: false,
-            reject_non_standard_body_writes: true,
-            optimize_empty_requests: true,
-            should_upgrade_callback: true,
-        },
-        |_request, response| response.set_status_code(204),
-    );
-    assert_eq!(configured_server.options.high_water_mark, Some(64 * 1024));
-    assert!(configured_server.options.insecure_http_parser);
-    assert_eq!(configured_server.options.max_header_size, Some(32 * 1024));
-    assert!(!configured_server.options.no_delay);
-    assert!(!configured_server.options.keep_alive);
-    assert_eq!(
-        configured_server.options.keep_alive_initial_delay,
-        Some(1_000)
-    );
-    assert_eq!(configured_server.keep_alive_timeout, 7_500);
-    assert_eq!(configured_server.keep_alive_timeout_buffer, 250);
-    assert_eq!(configured_server.request_timeout, 120_000);
-    assert_eq!(configured_server.headers_timeout, 30_000);
-    assert_eq!(
-        configured_server.options.connections_checking_interval,
-        Some(15_000)
-    );
-    assert!(configured_server.options.join_duplicate_headers);
-    assert_eq!(
-        configured_server.options.unique_headers,
-        vec!["set-cookie".to_string()]
-    );
-    assert!(!configured_server.options.require_host_header);
-    assert!(configured_server.options.reject_non_standard_body_writes);
-    assert!(configured_server.options.optimize_empty_requests);
-    assert!(configured_server.options.should_upgrade_callback);
-    configured_server.max_requests_per_socket = Some(100);
-    configured_server.max_headers_count = Some(128);
-    assert_eq!(configured_server.max_requests_per_socket, Some(100));
-    assert_eq!(configured_server.max_headers_count, Some(128));
-    let server_timed = std::cell::Cell::new(false);
-    configured_server.set_timeout(2_500, Some(|| server_timed.set(true)));
-    assert_eq!(configured_server.timeout, 2_500);
-    assert!(server_timed.get());
-    assert_eq!(
-        configured_server
-            .handle(http::IncomingMessage::new("GET", "/", Vec::new()))
-            .status_code,
-        204
-    );
-
-    let mut destroyed = http::IncomingMessage::new("GET", "/aborted", Vec::new());
-    destroyed.destroy();
-    assert!(destroyed.destroyed());
-    assert!(destroyed.aborted);
-    assert!(!destroyed.complete);
+    assert!(request.read().is_none());
+    request.destroy_chain(None).unwrap();
+    assert!(request.destroyed());
 }
-
 #[test]
 fn http_agent_and_client_request_expose_common_state() {
     let agent = http::Agent::new(Some(http::AgentOptions {
@@ -716,7 +551,7 @@ fn http_agent_and_client_request_expose_common_state() {
         http_version: "1.1".to_string(),
         http_version_major: 1,
         http_version_minor: 1,
-        headers: BTreeMap::from([("link".to_string(), "</style.css>".to_string())]),
+        headers: http::IncomingHttpHeaders::default(),
         raw_headers: vec!["link".to_string(), "</style.css>".to_string()],
     };
     assert_eq!(info.status_code, 103);

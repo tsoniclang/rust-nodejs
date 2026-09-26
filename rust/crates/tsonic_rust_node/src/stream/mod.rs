@@ -1,4 +1,5 @@
 include!("types.rs");
+include!("events.rs");
 include!("readable.rs");
 include!("writable.rs");
 include!("duplex_transform.rs");

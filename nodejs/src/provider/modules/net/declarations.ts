@@ -1,9 +1,10 @@
-import { uint8Carrier, uint64Carrier, boolCarrier, emptyCallbackCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { boolCarrier, emptyCallbackCarrier, int32Carrier, stringCarrier, uint8Carrier, uint64Carrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, numberType, stringType, voidType } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
 import { netConnectionCallbackCarrier, netServerCarrier, netSocketCarrier } from "./carriers.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 
 const moduleSpecifier = "node:net";
@@ -80,6 +81,10 @@ export function netModule(): RustProviderModuleDefinition {
           propertyMember(socketId, "bytesWritten", numberType),
           propertyMember(socketId, "destroyed", booleanType),
           propertyMember(socketId, "pending", booleanType),
+          propertyMember(socketId, "localAddress", { kind: "union", types: [stringType, { kind: "undefined" }] }),
+          propertyMember(socketId, "localPort", { kind: "union", types: [numberType, { kind: "undefined" }] }),
+          propertyMember(socketId, "remoteAddress", { kind: "union", types: [stringType, { kind: "undefined" }] }),
+          propertyMember(socketId, "remotePort", { kind: "union", types: [numberType, { kind: "undefined" }] }),
         ],
       },
       {
@@ -242,6 +247,14 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     ["bytesWritten", "bytes_written", uint64Carrier],
     ["destroyed", "destroyed", boolCarrier],
     ["pending", "pending", boolCarrier],
+  ] as const) {
+    rows.push({ exportId: socketId, memberId: `${socketId}.${memberName}`, operationKind: "property", target: { form: "receiver-method", name: methodName }, resultCarrier, receiverCarrier: netSocketCarrier });
+  }
+  for (const [memberName, methodName, resultCarrier] of [
+    ["localAddress", "local_address_optional", rustOptionTargetType(stringCarrier)],
+    ["localPort", "local_port_optional", rustOptionTargetType(int32Carrier)],
+    ["remoteAddress", "remote_address_optional", rustOptionTargetType(stringCarrier)],
+    ["remotePort", "remote_port_optional", rustOptionTargetType(int32Carrier)],
   ] as const) {
     rows.push({ exportId: socketId, memberId: `${socketId}.${memberName}`, operationKind: "property", target: { form: "receiver-method", name: methodName }, resultCarrier, receiverCarrier: netSocketCarrier });
   }

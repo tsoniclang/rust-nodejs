@@ -192,7 +192,7 @@ test("required Node capability families expose exact provider operations", () =>
     ["node:events", (row) => row.memberId === "node:events::EventEmitter.on" &&
       row.signatureId === "node:events::EventEmitter.on(1)"],
     ["node:stream", (row) => row.memberId === "node:stream::Readable.pipe" &&
-      row.signatureId === "node:stream::Readable.pipe(writable)"],
+      row.signatureId === "node:stream::Readable.pipe(destination)"],
     ["node:fs", (row) => row.exportId === "node:fs::watch" &&
       row.signatureId === "node:fs::watch(path,listener)"],
     ["node:https", (row) => row.exportId === "node:https::createServer"],
@@ -225,7 +225,20 @@ test("provider type relations carry exact closed target carriers", () => {
   const plugin = createTsonicPlugin();
   const [contribution] = plugin.createTargetContributions({});
   assert.equal(contribution.kind, "rust-provider-policy");
-  assert.deepEqual(contribution.definition.types, [
+  const { types, carrierPaths } = contribution.definition;
+  const carrierId = (carrier) => carrier.kind === "target-specific" ? carrier.value.id : carrier.id;
+  const namedRelations = types.map((relation) => {
+    const carrier = relation.targetCarrier;
+    if (carrier.kind !== "target-specific") return relation;
+    assert.equal(carrier.target, "rust");
+    assert.equal(carrier.name, "named-type");
+    assert.equal(carrier.value.path, carrierPaths[carrier.value.id]);
+    assert.deepEqual(carrier.value.genericArguments, []);
+    assert.deepEqual(carrier.value.genericDefaults, []);
+    assert.deepEqual(carrier.value.traits, { implementations: [] });
+    return { ...relation, targetCarrier: { kind: "target-named", id: carrier.value.id } };
+  });
+  assert.deepEqual(namedRelations, [
     ["node:process::Process", "rust.node.Process"],
     ["node:child_process::SpawnSyncError", "rust.node.NodeError"],
     ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
@@ -248,14 +261,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:process::MemoryUsage", "rust.node.MemoryUsage"],
     ["node:v8::HeapInfo", "rust.node.HeapInfo"],
     ["node:process::ProcessWriteStream", "rust.node.Writable"],
-    ["node:buffer::Buffer", {
-      kind: "target-specific", target: "rust", name: "named-type", value: {
-        id: "rust.node.Buffer", path: "tsonic_rust_node::buffer::Buffer",
-        genericArguments: [], genericDefaults: [], traits: { implementations: [] },
-        upcasts: [{ target: { kind: "target-named", id: "rust.js.Uint8Array" },
-          path: "tsonic_rust_node::buffer::Buffer::as_uint8_array" }],
-      },
-    }],
+    ["node:buffer::Buffer", "rust.node.Buffer"],
     ["node:url::URL", "rust.node.Url"],
     ["node:url::UrlObject", "rust.node.UrlObject"],
     ["node:url::Url", "rust.node.UrlObject"],
@@ -266,11 +272,18 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::IncomingMessage", "rust.node.HttpIncomingMessage"],
     ["node:http::ServerResponse", "rust.node.HttpServerResponse"],
     ["node:http::Server", "rust.node.HttpServer"],
+    ["node:http::IncomingHttpHeaders", "rust.node.IncomingHttpHeaders"],
+    ["node:http::OutgoingHttpHeaders", "rust.node.OutgoingHttpHeaders"],
+    ["node:http::AddressInfo", "rust.node.HttpAddressInfo"],
+    ["node:http::ServerAddress", "rust.node.HttpServerAddress"],
     ["node:timers::Timeout", "rust.node.Timeout"],
     ["node:util::TextDecoder", "rust.node.TextDecoder"],
     ["node:events::EventEmitter", "rust.node.EventEmitter"],
+    ["node:stream::Stream", "rust.node.Stream"],
     ["node:stream::Readable", "rust.node.Readable"],
     ["node:stream::Writable", "rust.node.Writable"],
+    ["node:stream::Duplex", "rust.node.Duplex"],
+    ["node:stream::Transform", "rust.node.Transform"],
     ["node:fs::ReadStream", "rust.node.ReadStream"],
     ["node:fs::WriteStream", "rust.node.WriteStream"],
     ["node:fs::ReadStreamOptions", "rust.node.ReadStreamOptions", "struct-default"],
@@ -278,7 +291,8 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:fs::FSWatcher", "rust.node.FsWatcher"],
     ["node:dns::LookupAddress", "rust.node.DnsLookupAddress"],
     ["node:zlib::ZlibOptions", "rust.node.ZlibOptions", "struct-default"],
-    ["node:zlib::Zlib", "rust.node.ZlibTransform"],
+    ["node:zlib::BrotliOptions", "rust.node.BrotliOptions", "struct-default"],
+    ["node:zlib::ZlibTransform", "rust.node.ZlibTransform"],
     ["node:net::Socket", "rust.node.NetSocket"],
     ["node:net::Server", "rust.node.NetServer"],
     ["node:tls::ConnectionOptions", "rust.node.TlsConnectOptions", "struct-default"],
@@ -302,6 +316,28 @@ test("provider type relations carry exact closed target carriers", () => {
       ? {}
       : { objectLiteralConstruction: { kind: objectLiteralConstruction } }),
   })));
+  const expectedUpcasts = new Map([
+    ["node:process::ProcessWriteStream", [["rust.node.Stream", "tsonic_rust_node::stream::writable_as_stream"]]],
+    ["node:buffer::Buffer", [["rust.js.Uint8Array", "tsonic_rust_node::buffer::Buffer::as_uint8_array"]]],
+    ["node:http::IncomingMessage", [["rust.node.Stream", "tsonic_rust_node::http::incoming_message_as_stream"], ["rust.node.Readable", "tsonic_rust_node::http::incoming_message_as_readable"]]],
+    ["node:http::ServerResponse", [["rust.node.Stream", "tsonic_rust_node::http::server_response_as_stream"], ["rust.node.Writable", "tsonic_rust_node::http::server_response_as_writable"]]],
+    ["node:stream::Readable", [["rust.node.Stream", "tsonic_rust_node::stream::readable_as_stream"]]],
+    ["node:stream::Writable", [["rust.node.Stream", "tsonic_rust_node::stream::writable_as_stream"]]],
+    ["node:stream::Duplex", [["rust.node.Stream", "tsonic_rust_node::stream::duplex_as_stream"], ["rust.node.Readable", "tsonic_rust_node::stream::duplex_as_readable"], ["rust.node.Writable", "tsonic_rust_node::stream::duplex_as_writable"]]],
+    ["node:stream::Transform", [["rust.node.Stream", "tsonic_rust_node::stream::transform_as_stream"], ["rust.node.Readable", "tsonic_rust_node::stream::transform_as_readable"], ["rust.node.Writable", "tsonic_rust_node::stream::transform_as_writable"], ["rust.node.Duplex", "tsonic_rust_node::stream::transform_as_duplex"]]],
+    ["node:fs::ReadStream", [["rust.node.Stream", "tsonic_rust_node::fs::read_stream_as_stream"], ["rust.node.Readable", "tsonic_rust_node::fs::read_stream_as_readable"]]],
+    ["node:fs::WriteStream", [["rust.node.Stream", "tsonic_rust_node::fs::write_stream_as_stream"], ["rust.node.Writable", "tsonic_rust_node::fs::write_stream_as_writable"]]],
+    ["node:zlib::ZlibTransform", [["rust.node.Stream", "tsonic_rust_node::zlib::zlib_as_stream"], ["rust.node.Readable", "tsonic_rust_node::zlib::zlib_as_readable"], ["rust.node.Writable", "tsonic_rust_node::zlib::zlib_as_writable"], ["rust.node.Duplex", "tsonic_rust_node::zlib::zlib_as_duplex"], ["rust.node.Transform", "tsonic_rust_node::zlib::zlib_as_transform"]]],
+  ]);
+  for (const relation of types) {
+    const carrier = relation.targetCarrier;
+    if (carrier.kind !== "target-specific") continue;
+    assert.deepEqual(
+      carrier.value.upcasts.map((upcast) => [carrierId(upcast.target), upcast.path]),
+      expectedUpcasts.get(relation.exportId) ?? [],
+      relation.exportId,
+    );
+  }
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
     implementations: [
       {
@@ -827,11 +863,13 @@ test("provider package maps Buffer.from overloads by exact selected signature", 
   const rows = contribution.definition.operations.filter((row) =>
     row.memberId === "node:buffer::Buffer.from");
   assert.deepEqual(rows.map((row) => row.signatureId), [
+    "node:buffer::Buffer.from(buffer)",
     "node:buffer::Buffer.from(string)",
     "node:buffer::Buffer.from(string,encoding)",
     "node:buffer::Buffer.from(numberArray)",
   ]);
   assert.deepEqual(rows.map((row) => row.target.path), [
+    "node_buffer::Buffer::copy_from_buffer",
     "node_buffer::Buffer::from_string",
     "node_buffer::Buffer::from_string_enc",
     "node_buffer::Buffer::from_number_array",
@@ -906,7 +944,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   const statusWrite = operations.find((row) =>
     row.memberId === "node:http::ServerResponse.statusCode" && row.operationKind === "property-set");
   assert.deepEqual(statusRead?.target, { form: "receiver-method", name: "status_code" });
-  assert.deepEqual(statusWrite?.target, { form: "receiver-method", name: "set_status_code" });
+  assert.deepEqual(statusWrite?.target, { form: "receiver-method", name: "set_status_code", argModes: ["value"] });
   assert.deepEqual(statusWrite?.parameterCarriers, [{ kind: "source-primitive", name: "int32" }]);
 
   const endRows = operations.filter((row) => row.memberId === "node:http::ServerResponse.end");
@@ -918,13 +956,15 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
   assert.deepEqual(endRows.map((row) => row.target.name), ["end_empty", "end_string", "end_buffer"]);
 
   const listenRows = operations.filter((row) => row.memberId === "node:http::Server.listen");
-  assert.deepEqual(listenRows.map((row) => row.target.name), ["listen_default_host", "listen"]);
+  assert.deepEqual(listenRows.map((row) => row.target.name), [
+    "listen_default_host_optional", "listen_optional", "listen_with_backlog_optional", "listen_path_optional",
+  ]);
   assert.equal(listenRows.every((row) => row.isFallible === true), true);
-  assert.deepEqual(listenRows.map((row) => row.immediateCallback), [undefined, undefined]);
+  assert.deepEqual(listenRows.map((row) => row.immediateCallback), [undefined, undefined, undefined, undefined]);
   const createServer = operations.find((row) => row.exportId === "node:http::createServer");
   assert.equal(createServer?.immediateCallback, undefined);
   assert.deepEqual(carrierPaths["rust.node.HttpServerResponse"],
-    "tsonic_rust_node::http::ServerResponseHandle");
+    "tsonic_rust_node::http::ServerResponse");
   assert.deepEqual(binaryHooks, [
     {
       id: "node-performance-clock",
@@ -947,6 +987,38 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
       requiredCrate: "tsonic_rust_node",
     },
   ]);
+});
+
+test("distinct incoming headers select one native indexer without rebuilding storage", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const { modules, operations } = contribution.definition;
+  const http = modules.find((entry) => entry.moduleSpecifier === "node:http");
+  assert.ok(http);
+  const values = http.exports.find((entry) => entry.name === "IncomingHttpHeaderValues");
+  assert.deepEqual(values?.members, [{
+    id: "node:http::IncomingHttpHeaderValues.indexer",
+    name: "indexer",
+    kind: "indexer",
+    signatures: [{
+      id: "node:http::IncomingHttpHeaderValues.indexer(name)",
+      parameters: [{ name: "name", type: { kind: "string" } }],
+      returnType: { kind: "union", types: [
+        { kind: "array", elementType: { kind: "string" } },
+        { kind: "undefined" },
+      ] },
+    }],
+  }]);
+  const incoming = http.exports.find((entry) => entry.name === "IncomingMessage");
+  assert.deepEqual(incoming?.members.find((member) => member.name === "headersDistinct")?.type, {
+    kind: "provider-ref", moduleSpecifier: "node:http", exportName: "IncomingHttpHeaderValues",
+  });
+  const rows = operations.filter((row) =>
+    row.memberId === "node:http::IncomingHttpHeaderValues.indexer"
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].operationKind, "indexer");
+  assert.deepEqual(rows[0].target, { form: "receiver-method", name: "get_values", argModes: ["ref"] });
+  assert.equal(rows[0].isFallible, true);
 });
 
 test("provider package maps timers to the shared Node event loop", () => {

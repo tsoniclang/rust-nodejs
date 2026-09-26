@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use crate::error::{NodeError, NodeResult};
-use crate::http::{IncomingMessage, Response, ServerResponseHandle};
+use crate::http::{IncomingMessage, Response, ServerResponse};
 use crate::tls::{SourceServerOptions, TlsServer, TlsSocket};
 
-type RuntimeRequestArguments = (IncomingMessage, ServerResponseHandle);
+type RuntimeRequestArguments = (IncomingMessage, ServerResponse);
 type RuntimeResponseCallback =
     tsonic_rust_runtime::Callable<(IncomingMessage,), tsonic_rust_runtime::TsonicResult<()>>;
 
@@ -87,7 +87,8 @@ impl ClientRequest {
             move |response| {
                 let response = response.map_err(tsonic_rust_runtime::TsonicError::from)?;
                 if let Some(callback) = callback {
-                    callback.call((incoming_response(&response_url, response),))?;
+                    callback.call((incoming_response(&response_url, response)
+                        .map_err(tsonic_rust_runtime::TsonicError::from)?,))?;
                 }
                 Ok(())
             },
@@ -260,10 +261,13 @@ fn map_reqwest_error(error: reqwest::Error) -> NodeError {
     NodeError::new("ERR_NETWORK", error.to_string())
 }
 
-fn incoming_response(url: &str, response: Response) -> IncomingMessage {
-    let mut message = IncomingMessage::new("GET", url, response.body);
-    message.status_code = Some(response.status_code);
-    message.status_message = Some(response.status_message);
-    message.headers = response.headers;
-    message
+fn incoming_response(url: &str, response: Response) -> NodeResult<IncomingMessage> {
+    IncomingMessage::from_client_response(
+        url.to_string(),
+        response.status_code,
+        response.status_message,
+        "1.1".to_string(),
+        response.headers.into_iter().collect(),
+        response.body,
+    )
 }

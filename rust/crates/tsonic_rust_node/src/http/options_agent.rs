@@ -12,7 +12,7 @@ pub struct ClientRequestArgs {
     pub socket_path: Option<String>,
     pub method: Option<String>,
     pub path: Option<String>,
-    pub headers: OutgoingHttpHeaders,
+    pub headers: BTreeMap<String, String>,
     pub auth: Option<String>,
     pub agent: Option<Agent>,
     pub create_connection: bool,

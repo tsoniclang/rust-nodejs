@@ -37,6 +37,23 @@ pub fn index_of_buffer_number(
     }))
 }
 
+pub fn index_of_byte_number(
+    buffer: &Buffer,
+    needle: impl tsonic_rust_runtime::conversions::IntegerInput<u8>,
+    byte_offset: impl tsonic_rust_runtime::conversions::IntegerInput<isize>,
+) -> NodeResult<isize> {
+    let needle = needle.checked_integer().ok_or_else(|| {
+        NodeError::new("ERR_OUT_OF_RANGE", "search byte must be an integer from 0 to 255")
+    })?;
+    let byte_offset = byte_offset.checked_integer().ok_or_else(|| {
+        NodeError::new("ERR_OUT_OF_RANGE", "byteOffset must be an integer")
+    })?;
+    Ok(buffer
+        .index_of(&[needle], byte_offset)
+        .and_then(|index| isize::try_from(index).ok())
+        .unwrap_or(-1))
+}
+
 pub fn copy_open_number(
     source: &Buffer,
     target: &Buffer,

@@ -11,7 +11,7 @@ pub fn access_sync(path: &str) -> NodeResult<()> {
 }
 
 pub fn read_file_sync(path: &str, encoding: Option<&str>) -> NodeResult<FsReadResult> {
-    let bytes = fs::read(path).map_err(map_io_error)?;
+    let bytes = read_file_bytes(path)?;
     if let Some(encoding) = encoding {
         Ok(FsReadResult::String(crate::buffer::decode_bytes(
             bytes,
@@ -20,6 +20,10 @@ pub fn read_file_sync(path: &str, encoding: Option<&str>) -> NodeResult<FsReadRe
     } else {
         Ok(FsReadResult::Buffer(Buffer::from_bytes(bytes)))
     }
+}
+
+pub(crate) fn read_file_bytes(path: &str) -> NodeResult<Vec<u8>> {
+    fs::read(path).map_err(map_io_error)
 }
 
 pub fn read_file_sync_string(path: &str, encoding: &str) -> NodeResult<String> {
@@ -64,8 +68,12 @@ pub fn write_file_sync(
         FsWriteData::Buffer(value) => {
             value.with_bytes(|bytes| fs::write(path, bytes).map_err(map_io_error))
         }
-        FsWriteData::Bytes(value) => fs::write(path, value).map_err(map_io_error),
+        FsWriteData::Bytes(value) => write_file_bytes(path, value),
     }
+}
+
+pub(crate) fn write_file_bytes(path: &str, value: &[u8]) -> NodeResult<()> {
+    fs::write(path, value).map_err(map_io_error)
 }
 
 pub fn write_file_sync_string(path: &str, value: &str, encoding: &str) -> NodeResult<()> {

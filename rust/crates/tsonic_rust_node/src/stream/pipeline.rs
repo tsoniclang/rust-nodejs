@@ -1,40 +1,45 @@
-pub trait WritableTarget {
-    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool>;
-    fn drain_target(&mut self) -> NodeResult<()>;
-    fn finish_target(&mut self) -> NodeResult<()>;
+pub trait WritableTarget: Clone {
+    fn writable_handle(&self) -> Writable;
 }
 
 impl WritableTarget for Writable {
-    fn write_target_chunk(&mut self, chunk: Buffer) -> NodeResult<bool> {
-        Ok(self.write(chunk))
-    }
-
-    fn drain_target(&mut self) -> NodeResult<()> {
-        self.flush();
-        Ok(())
-    }
-
-    fn finish_target(&mut self) -> NodeResult<()> {
-        self.end();
-        Ok(())
+    fn writable_handle(&self) -> Writable {
+        self.clone()
     }
 }
 
-pub fn pipe_chunks<W, F>(mut next: F, writable: &mut W) -> NodeResult<()>
+pub(crate) fn install_pipeline<W>(readable: Readable, destination: W) -> NodeResult<()>
 where
-    W: WritableTarget,
-    F: FnMut() -> NodeResult<Option<Buffer>>,
+    W: WritableTarget + Clone + 'static,
 {
-    while let Some(chunk) = next()? {
-        if !writable.write_target_chunk(chunk)? {
-            writable.drain_target()?;
+    let writable = destination.writable_handle();
+    let finish_writable = writable.clone();
+    readable.on_end_internal(move || {
+        finish_writable.end_checked()
+    });
+
+    let flow_readable = readable.clone();
+    let flow_writable = writable.clone();
+    readable.on_data_internal(move |chunk| {
+        if flow_writable.write_buffer(&chunk)? {
+            return Ok(());
         }
-    }
-    writable.finish_target()
+        flow_readable.pause();
+        let resume_readable = flow_readable.clone();
+        flow_writable.on_drain_internal(move || {
+            resume_readable.resume();
+            Ok(())
+        });
+        Ok(())
+    })?;
+    Ok(())
 }
 
-pub fn pipeline<W: WritableTarget>(readable: &mut Readable, writable: &mut W) -> NodeResult<()> {
-    pipe_chunks(|| readable.read_result(), writable)
+pub fn pipeline<W: WritableTarget + Clone + 'static>(
+    readable: &Readable,
+    writable: &W,
+) -> NodeResult<()> {
+    install_pipeline(readable.clone(), writable.clone())
 }
 
 pub fn finished(readable: &Readable, writable: &Writable) -> bool {
@@ -78,7 +83,7 @@ pub fn compose(readable: Readable, next: impl Fn(Readable) -> Readable) -> Reada
     readable.compose(next)
 }
 
-pub fn add_abort_signal(readable: &mut Readable, signal_aborted: bool) {
+pub fn add_abort_signal(readable: &Readable, signal_aborted: bool) {
     if signal_aborted {
         readable.destroy_with_error("aborted");
     }

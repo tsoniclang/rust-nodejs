@@ -56,8 +56,9 @@ mod numeric_bounds {
             &options,
         )
         .unwrap();
-        assert_eq!(result.remaining, Some(u64::MAX));
-        assert_eq!(result.chunk_size, usize::MAX);
+        let state = result.state.borrow();
+        assert_eq!(state.remaining, Some(u64::MAX));
+        assert_eq!(state.chunk_size, usize::MAX);
     }
 
     #[test]

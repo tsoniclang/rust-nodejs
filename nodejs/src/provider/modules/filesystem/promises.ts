@@ -3,23 +3,46 @@ import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier } from "./c
 import { providerNativeFallibility } from "../../model/operations.js";
 import { stringArrayCarrier, stringCarrier } from "../../model/carriers.js";
 import { stringArrayType, stringType, voidType } from "../../model/source-types.js";
+import { bufferCarrier } from "../buffer/carriers.js";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 export function fsPromisesModule(): RustProviderModuleDefinition {
   const m = "node:fs/promises";
+  const bufferType = providerRef("node:buffer", "Buffer");
   return {
     moduleSpecifier: m,
     providerModuleId: "tsonic.rust.node.fs-promises",
-    imports: [{ moduleSpecifier: "node:fs", namedImports: [
-      { exportedName: "Stats" },
-      { exportedName: "MakeDirectoryOptions" },
-      { exportedName: "RmOptions" },
-    ] }],
+    imports: [
+      { moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] },
+      { moduleSpecifier: "node:fs", namedImports: [
+        { exportedName: "Stats" },
+        { exportedName: "MakeDirectoryOptions" },
+        { exportedName: "RmOptions" },
+      ] },
+    ],
     exports: [
-      fnExport(m, "readFile", [{ name: "path", type: stringType }, { name: "encoding", type: stringType }], stringType),
-      fnExport(m, "writeFile", [{ name: "path", type: stringType }, { name: "data", type: stringType }, { name: "encoding", type: stringType }], voidType),
+      {
+        id: `${m}::readFile`,
+        name: "readFile",
+        kind: "function",
+        signatures: [
+          { id: `${m}::readFile(path)`, parameters: [{ name: "path", type: stringType }], returnType: bufferType },
+          { id: `${m}::readFile(path,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "encoding", type: stringType }], returnType: stringType },
+        ],
+      },
+      {
+        id: `${m}::writeFile`,
+        name: "writeFile",
+        kind: "function",
+        signatures: [
+          { id: `${m}::writeFile(path,buffer)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: bufferType }], returnType: voidType },
+          { id: `${m}::writeFile(path,string,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: stringType }, { name: "encoding", type: stringType }], returnType: voidType },
+        ],
+      },
       fnExport(m, "readdir", [{ name: "path", type: stringType }], stringArrayType),
       fnExport(m, "stat", [{ name: "path", type: stringType }], providerRef("node:fs", "Stats")),
+      fnExport(m, "lstat", [{ name: "path", type: stringType }], providerRef("node:fs", "Stats")),
+      fnExport(m, "realpath", [{ name: "path", type: stringType }], stringType),
       {
         id: `${m}::mkdir`,
         name: "mkdir",
@@ -62,10 +85,32 @@ export function fsPromisesRows(): readonly RustProviderOperationDefinition[] {
   });
   const unit: RustTargetTypeRef = { kind: "tuple", elements: [] };
   return [
-    row("readFile", "node_fs_promises::read_file_string_async", stringCarrier, 2),
-    row("writeFile", "node_fs_promises::write_file_string_async", unit, 3),
+    {
+      ...row("readFile", "node_fs_promises::read_file_buffer_async", bufferCarrier, 1),
+      signatureId: "node:fs/promises::readFile(path)",
+    },
+    {
+      ...row("readFile", "node_fs_promises::read_file_string_async", stringCarrier, 2),
+      signatureId: "node:fs/promises::readFile(path,encoding)",
+    },
+    {
+      exportId: "node:fs/promises::writeFile",
+      signatureId: "node:fs/promises::writeFile(path,buffer)",
+      operationKind: "method",
+      target: { form: "call", path: "node_fs_promises::write_file_buffer_async", argModes: ["ref", "ref"] },
+      resultCarrier: unit,
+      parameterCarriers: [stringCarrier, bufferCarrier],
+      ...providerNativeFallibility,
+      isAsync: true,
+    },
+    {
+      ...row("writeFile", "node_fs_promises::write_file_string_async", unit, 3),
+      signatureId: "node:fs/promises::writeFile(path,string,encoding)",
+    },
     row("readdir", "node_fs_promises::readdir_async", stringArrayCarrier, 1),
     row("stat", "node_fs_promises::stat_async", statsCarrier, 1),
+    row("lstat", "node_fs_promises::lstat_async", statsCarrier, 1),
+    row("realpath", "node_fs_promises::realpath_async", stringCarrier, 1),
     {
       ...row("mkdir", "node_fs_promises::mkdir_async", unit, 1),
       signatureId: "node:fs/promises::mkdir(path)",

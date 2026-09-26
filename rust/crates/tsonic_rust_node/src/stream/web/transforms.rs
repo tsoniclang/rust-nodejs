@@ -173,7 +173,7 @@ pub fn writable_to_web(writable: Writable) -> WritableStream {
 }
 
 pub fn writable_from_web(stream: WritableStream) -> Writable {
-    let mut writable = Writable::new();
+    let writable = Writable::new();
     for chunk in stream.chunks {
         writable.write(chunk);
     }

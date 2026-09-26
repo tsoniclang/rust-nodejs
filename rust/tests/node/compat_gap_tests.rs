@@ -88,14 +88,24 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     fs::unlink_callback(&renamed_text, |result| unlink_result = Some(result));
     unlink_result.unwrap().unwrap();
 
-    let mut readable = fs::create_read_stream(&file_text).unwrap();
-    assert_eq!(readable.text(Some("utf8")).unwrap(), "hello");
-    let mut writable = fs::create_write_stream(&file_text).unwrap();
+    let readable = fs::create_read_stream(&file_text).unwrap();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert_eq!(
+        readable
+            .read()
+            .unwrap()
+            .unwrap()
+            .to_string(Some("utf8"))
+            .unwrap(),
+        "hello"
+    );
+    let writable = fs::create_write_stream(&file_text).unwrap();
     assert!(writable
         .write(buffer::Buffer::from_string("x", Some("utf8")).unwrap())
         .unwrap());
-    assert_eq!(writable.bytes_written, 1);
     writable.close().unwrap();
+    tsonic_rust_node::run_event_loop().unwrap();
+    assert_eq!(writable.bytes_written(), 1);
 
     fs::rm_sync_with_options(
         &root_text,
@@ -109,12 +119,12 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
 
 #[test]
 fn process_stdio_helpers_are_closed_stream_shapes() {
-    let mut stdout = process::stdout();
+    let stdout = process::stdout();
     assert_eq!(stdout.fd(), 1);
     assert!(stdout
         .write_buffer(&buffer::Buffer::from_bytes(Vec::new()))
         .unwrap());
-    let mut stderr = process::stderr();
+    let stderr = process::stderr();
     assert_eq!(stderr.fd(), 2);
     assert!(stderr.write_string("").unwrap());
     let _ = stdout.is_tty();

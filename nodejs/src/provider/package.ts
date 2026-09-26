@@ -6,7 +6,15 @@ import type { RustProviderPackageImplementation } from "@tsonic/target-rust/prov
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
 import { hashCarrier, hmacCarrier, cryptoCarrier } from "./modules/crypto/carriers.js";
-import { httpIncomingMessageCarrier, httpServerCarrier, httpServerResponseCarrier } from "./modules/http/carriers.js";
+import {
+  httpAddressInfoCarrier,
+  httpIncomingMessageCarrier,
+  httpServerAddressCarrier,
+  httpServerCarrier,
+  httpServerResponseCarrier,
+  incomingHttpHeadersCarrier,
+  outgoingHttpHeadersCarrier,
+} from "./modules/http/carriers.js";
 import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier, readStreamCarrier, readStreamOptionsCarrier, writeStreamCarrier, writeStreamOptionsCarrier, fsWatcherCarrier } from "./modules/filesystem/carriers.js";
 import { nodeErrorCarrier } from "./model/carriers.js";
 import { processEnvCarrier, processMemoryUsageCarrier } from "./modules/process/carriers.js";
@@ -14,9 +22,15 @@ import { searchParamsCarrier, urlCarrier, urlObjectCarrier } from "./modules/url
 import { timeoutCarrier } from "./modules/timers/carriers.js";
 import { textDecoderCarrier, textEncoderCarrier } from "./modules/util/carriers.js";
 import { eventEmitterCarrier } from "./modules/events/carriers.js";
-import { readableCarrier, writableCarrier } from "./modules/stream/carriers.js";
+import {
+  duplexCarrier,
+  readableCarrier,
+  streamCarrier,
+  transformCarrier,
+  writableCarrier,
+} from "./modules/stream/carriers.js";
 import { dnsLookupAddressCarrier } from "./modules/dns/carriers.js";
-import { zlibOptionsCarrier, zlibTransformCarrier } from "./modules/zlib/carriers.js";
+import { brotliOptionsCarrier, zlibOptionsCarrier, zlibTransformCarrier } from "./modules/zlib/carriers.js";
 import { netSocketCarrier, netServerCarrier } from "./modules/net/carriers.js";
 import { tlsConnectOptionsCarrier, tlsServerOptionsCarrier, tlsSocketCarrier, tlsServerCarrier } from "./modules/tls/carriers.js";
 import { httpsServerCarrier, httpsClientRequestCarrier } from "./modules/https/carriers.js";
@@ -170,6 +184,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { exportId: "node:http::IncomingMessage", targetCarrier: httpIncomingMessageCarrier },
       { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
       { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
+      { exportId: "node:http::IncomingHttpHeaders", targetCarrier: incomingHttpHeadersCarrier },
+      { exportId: "node:http::OutgoingHttpHeaders", targetCarrier: outgoingHttpHeadersCarrier },
+      { exportId: "node:http::AddressInfo", targetCarrier: httpAddressInfoCarrier },
+      { exportId: "node:http::ServerAddress", targetCarrier: httpServerAddressCarrier },
       { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
       { exportId: "node:util::TextDecoder", targetCarrier: textDecoderCarrier },
       ...(typedArrays ? [
@@ -177,8 +195,11 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
         { exportId: "node:crypto::Crypto", targetCarrier: cryptoCarrier },
       ] : []),
       { exportId: "node:events::EventEmitter", targetCarrier: eventEmitterCarrier },
+      { exportId: "node:stream::Stream", targetCarrier: streamCarrier },
       { exportId: "node:stream::Readable", targetCarrier: readableCarrier },
       { exportId: "node:stream::Writable", targetCarrier: writableCarrier },
+      { exportId: "node:stream::Duplex", targetCarrier: duplexCarrier },
+      { exportId: "node:stream::Transform", targetCarrier: transformCarrier },
       { exportId: "node:fs::ReadStream", targetCarrier: readStreamCarrier },
       { exportId: "node:fs::WriteStream", targetCarrier: writeStreamCarrier },
       {
@@ -198,7 +219,12 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
         targetCarrier: zlibOptionsCarrier,
         objectLiteralConstruction: { kind: "struct-default" },
       },
-      { exportId: "node:zlib::Zlib", targetCarrier: zlibTransformCarrier },
+      {
+        exportId: "node:zlib::BrotliOptions",
+        targetCarrier: brotliOptionsCarrier,
+        objectLiteralConstruction: { kind: "struct-default" },
+      },
+      { exportId: "node:zlib::ZlibTransform", targetCarrier: zlibTransformCarrier },
       { exportId: "node:net::Socket", targetCarrier: netSocketCarrier },
       { exportId: "node:net::Server", targetCarrier: netServerCarrier },
       {
@@ -310,15 +336,22 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
       "rust.node.Performance": "tsonic_rust_node::perf_hooks::Performance",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
-      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
+      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponse",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
+      "rust.node.IncomingHttpHeaders": "tsonic_rust_node::http::IncomingHttpHeaders",
+      "rust.node.OutgoingHttpHeaders": "tsonic_rust_node::http::OutgoingHttpHeaders",
+      "rust.node.HttpAddressInfo": "tsonic_rust_node::http::AddressInfo",
+      "rust.node.HttpServerAddress": "tsonic_rust_node::http::ServerAddress",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
       "rust.node.TextDecoder": "tsonic_rust_node::util::TextDecoder",
       "rust.node.TextEncoder": "tsonic_rust_node::util::TextEncoder",
       "rust.node.Crypto": "tsonic_rust_node::crypto::webcrypto::Crypto",
       "rust.node.EventEmitter": "tsonic_rust_node::events::EventEmitter",
+      "rust.node.Stream": "tsonic_rust_node::stream::Stream",
       "rust.node.Readable": "tsonic_rust_node::stream::Readable",
       "rust.node.Writable": "tsonic_rust_node::stream::Writable",
+      "rust.node.Duplex": "tsonic_rust_node::stream::Duplex",
+      "rust.node.Transform": "tsonic_rust_node::stream::Transform",
       "rust.node.ReadStream": "tsonic_rust_node::fs::ReadStream",
       "rust.node.WriteStream": "tsonic_rust_node::fs::WriteStream",
       "rust.node.ReadStreamOptions": "tsonic_rust_node::fs::ReadStreamOptions",
@@ -326,6 +359,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.FsWatcher": "tsonic_rust_node::fs::FsWatcher",
       "rust.node.DnsLookupAddress": "tsonic_rust_node::dns::LookupAddress",
       "rust.node.ZlibOptions": "tsonic_rust_node::zlib::SourceZlibOptions",
+      "rust.node.BrotliOptions": "tsonic_rust_node::zlib::SourceBrotliOptions",
       "rust.node.ZlibTransform": "tsonic_rust_node::zlib::Zlib",
       "rust.node.NetSocket": "tsonic_rust_node::net::Socket",
       "rust.node.NetServer": "tsonic_rust_node::net::Server",
@@ -370,14 +404,29 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
+      "rust.node.IncomingHttpHeaders": cloneOnlyCarrierTraits,
+      "rust.node.OutgoingHttpHeaders": cloneOnlyCarrierTraits,
+      "rust.node.HttpAddressInfo": cloneOnlyCarrierTraits,
+      "rust.node.HttpServerAddress": cloneOnlyCarrierTraits,
       "rust.node.Timeout": cloneOnlyCarrierTraits,
       "rust.node.TextDecoder": cloneOnlyCarrierTraits,
       "rust.node.TextEncoder": copyDefaultCarrierTraits,
       "rust.node.Crypto": copyDefaultCarrierTraits,
       "rust.node.NodeError": cloneOnlyCarrierTraits,
+      "rust.node.Stream": cloneOnlyCarrierTraits,
+      "rust.node.Readable": cloneOnlyCarrierTraits,
+      "rust.node.Writable": cloneOnlyCarrierTraits,
+      "rust.node.Duplex": cloneOnlyCarrierTraits,
+      "rust.node.Transform": cloneOnlyCarrierTraits,
+      "rust.node.ReadStream": cloneOnlyCarrierTraits,
+      "rust.node.WriteStream": cloneOnlyCarrierTraits,
+      "rust.node.ZlibTransform": cloneOnlyCarrierTraits,
+      "rust.node.NetSocket": cloneOnlyCarrierTraits,
+      "rust.node.NetServer": cloneOnlyCarrierTraits,
       "rust.node.FsWatcher": cloneOnlyCarrierTraits,
       "rust.node.DnsLookupAddress": cloneOnlyCarrierTraits,
       "rust.node.ZlibOptions": cloneOnlyCarrierTraits,
+      "rust.node.BrotliOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsConnectOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsServerOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsServer": cloneOnlyCarrierTraits,

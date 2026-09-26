@@ -113,7 +113,7 @@ impl ClientRequest {
         self.finished
     }
 
-    pub fn body(&self) -> &[Buffer] {
+    pub fn body(&self) -> Vec<Buffer> {
         self.body.chunks()
     }
 
@@ -183,123 +183,36 @@ impl ClientRequest {
     }
 }
 
-type RequestHandler = dyn Fn(IncomingMessage, &mut ServerResponse) + Send + Sync;
+type HttpListenerMap = BTreeMap<String, Vec<String>>;
 
-pub struct Server {
-    pub options: ServerOptions,
-    pub timeout: u64,
-    pub request_timeout: u64,
-    pub headers_timeout: u64,
-    pub keep_alive_timeout: u64,
-    pub keep_alive_timeout_buffer: u64,
-    pub max_headers_count: Option<usize>,
-    pub max_requests_per_socket: Option<usize>,
-    handler: Box<RequestHandler>,
-    listeners: HttpListenerMap,
-}
-
-impl Server {
-    pub fn new(
-        handler: impl Fn(IncomingMessage, &mut ServerResponse) + Send + Sync + 'static,
-    ) -> Self {
-        Self::with_options(ServerOptions::default(), handler)
-    }
-
-    pub fn with_options(
-        options: ServerOptions,
-        handler: impl Fn(IncomingMessage, &mut ServerResponse) + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            timeout: 0,
-            request_timeout: options.request_timeout,
-            headers_timeout: options.headers_timeout,
-            keep_alive_timeout: options.keep_alive_timeout,
-            keep_alive_timeout_buffer: options.keep_alive_timeout_buffer,
-            max_headers_count: Some(2_000),
-            max_requests_per_socket: None,
-            options,
-            handler: Box::new(handler),
-            listeners: BTreeMap::new(),
-        }
-    }
-
-    pub fn handle(&self, request: IncomingMessage) -> Response {
-        let mut response = ServerResponse::new();
-        (self.handler)(request, &mut response);
-        response.to_response()
-    }
-
-    pub fn close(&self) {}
-
-    pub fn close_idle_connections(&self) {}
-
-    pub fn close_all_connections(&self) {}
-
-    pub fn set_timeout(&mut self, msecs: u64, callback: Option<impl FnOnce()>) -> &mut Self {
-        self.timeout = msecs;
-        if let Some(callback) = callback {
-            callback();
-        }
-        self
-    }
-
-    pub fn add_listener(&mut self, event: &str) -> &mut Self {
-        http_add_listener(&mut self.listeners, event, false);
-        self
-    }
-
-    pub fn on(&mut self, event: &str) -> &mut Self {
-        self.add_listener(event)
-    }
-
-    pub fn once(&mut self, event: &str) -> &mut Self {
-        self.add_listener(event)
-    }
-
-    pub fn prepend_listener(&mut self, event: &str) -> &mut Self {
-        http_add_listener(&mut self.listeners, event, true);
-        self
-    }
-
-    pub fn prepend_once_listener(&mut self, event: &str) -> &mut Self {
-        self.prepend_listener(event)
-    }
-
-    pub fn remove_listener(&mut self, event: &str) -> &mut Self {
-        http_remove_listener(&mut self.listeners, event);
-        self
-    }
-
-    pub fn off(&mut self, event: &str) -> &mut Self {
-        self.remove_listener(event)
-    }
-
-    pub fn remove_all_listeners(&mut self, event: Option<&str>) -> &mut Self {
-        http_remove_all_listeners(&mut self.listeners, event);
-        self
-    }
-
-    pub fn listeners(&self, event: &str) -> Vec<String> {
-        http_listeners(&self.listeners, event)
-    }
-
-    pub fn raw_listeners(&self, event: &str) -> Vec<String> {
-        self.listeners(event)
-    }
-
-    pub fn listener_count(&self, event: &str) -> usize {
-        self.listeners.get(event).map_or(0, Vec::len)
-    }
-
-    pub fn emit(&self, event: &str) -> bool {
-        self.listener_count(event) > 0
+fn http_add_listener(listeners: &mut HttpListenerMap, event: &str, prepend: bool) {
+    let entry = listeners.entry(event.to_string()).or_default();
+    if prepend {
+        entry.insert(0, event.to_string());
+    } else {
+        entry.push(event.to_string());
     }
 }
 
-pub fn create_server(
-    handler: impl Fn(IncomingMessage, &mut ServerResponse) + Send + Sync + 'static,
-) -> Server {
-    Server::new(handler)
+fn http_remove_listener(listeners: &mut HttpListenerMap, event: &str) {
+    if let Some(values) = listeners.get_mut(event) {
+        values.pop();
+        if values.is_empty() {
+            listeners.remove(event);
+        }
+    }
+}
+
+fn http_remove_all_listeners(listeners: &mut HttpListenerMap, event: Option<&str>) {
+    if let Some(event) = event {
+        listeners.remove(event);
+    } else {
+        listeners.clear();
+    }
+}
+
+fn http_listeners(listeners: &HttpListenerMap, event: &str) -> Vec<String> {
+    listeners.get(event).cloned().unwrap_or_default()
 }
 
 pub fn request(options: &RequestOptions, body: &[u8]) -> NodeResult<Response> {

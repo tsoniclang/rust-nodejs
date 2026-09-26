@@ -4,7 +4,6 @@ import { bufferCarrier } from "../buffer/carriers.js";
 import { fileWatchCallbackCarrier, fileStatWatchCallbackCarrier, makeDirectoryOptionsCarrier, readStreamCarrier, readStreamOptionsCarrier, fsWatcherCarrier, rmOptionsCarrier, statsCarrier, writeStreamCarrier, writeStreamOptionsCarrier } from "./carriers.js";
 import { fnExport, methodMember, propertyMember, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
-import { httpServerResponseCarrier } from "../http/carriers.js";
 import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
@@ -29,8 +28,11 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
     imports: [
       { moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] },
       {
-        moduleSpecifier: "node:http",
-        namedImports: [{ exportedName: "ServerResponse" }],
+        moduleSpecifier: "node:stream",
+        namedImports: [
+          { exportedName: "Readable" },
+          { exportedName: "Writable" },
+        ],
       },
     ],
     exports: [
@@ -187,31 +189,8 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
         id: readStreamId,
         name: "ReadStream",
         kind: "class" as const,
+        heritage: [{ kind: "extends", type: providerRef("node:stream", "Readable") }],
         members: [
-          methodMember(readStreamId, "read", [], { kind: "union", types: [bufferType, { kind: "undefined" }] }),
-          {
-            id: `${readStreamId}.pipe`,
-            name: "pipe",
-            kind: "method" as const,
-            signatures: [
-              {
-                id: `${readStreamId}.pipe(writeStream)`,
-                parameters: [{
-                  name: "destination",
-                  type: providerRef(m, "WriteStream"),
-                }],
-                returnType: providerRef(m, "WriteStream"),
-              },
-              {
-                id: `${readStreamId}.pipe(serverResponse)`,
-                parameters: [{
-                  name: "destination",
-                  type: providerRef("node:http", "ServerResponse"),
-                }],
-                returnType: providerRef("node:http", "ServerResponse"),
-              },
-            ],
-          },
           methodMember(readStreamId, "close", [], voidType),
           propertyMember(readStreamId, "path", stringType),
           propertyMember(readStreamId, "bytesRead", numberType),
@@ -221,8 +200,8 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
         id: writeStreamId,
         name: "WriteStream",
         kind: "class" as const,
+        heritage: [{ kind: "extends", type: providerRef("node:stream", "Writable") }],
         members: [
-          methodMember(writeStreamId, "write", [{ name: "chunk", type: bufferType }], booleanType),
           methodMember(writeStreamId, "close", [], voidType),
           propertyMember(writeStreamId, "path", stringType),
           propertyMember(writeStreamId, "bytesWritten", numberType),
@@ -467,36 +446,12 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     ...streamOptionRows(writeStreamOptionsId, writeStreamOptionsCarrier, false),
     { exportId: writeStreamOptionsId, memberId: `${writeStreamOptionsId}.flush`, operationKind: "property", target: { form: "field", name: "flush" }, resultCarrier: rustOptionTargetType(boolCarrier), receiverCarrier: writeStreamOptionsCarrier },
     { exportId: writeStreamOptionsId, memberId: `${writeStreamOptionsId}.flush`, operationKind: "property-set", target: { form: "field", name: "flush" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(boolCarrier)], receiverCarrier: writeStreamOptionsCarrier },
-    { exportId: readStreamId, memberId: `${readStreamId}.read`, operationKind: "method", target: { form: "receiver-method", name: "read", mutatesReceiver: true }, resultCarrier: rustOptionTargetType(bufferCarrier), receiverCarrier: readStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
-    {
-      exportId: readStreamId,
-      memberId: `${readStreamId}.pipe`,
-      signatureId: `${readStreamId}.pipe(writeStream)`,
-      operationKind: "method",
-      target: { form: "receiver-method", name: "pipe_to", argModes: ["mut-ref"], mutatesReceiver: true },
-      resultCarrier: { kind: "reference", referent: writeStreamCarrier, mutable: true },
-      receiverCarrier: readStreamCarrier,
-      parameterCarriers: [writeStreamCarrier],
-      ...providerNativeFallibility,
-    },
-    {
-      exportId: readStreamId,
-      memberId: `${readStreamId}.pipe`,
-      signatureId: `${readStreamId}.pipe(serverResponse)`,
-      operationKind: "method",
-      target: { form: "receiver-method", name: "pipe_to", argModes: ["mut-ref"], mutatesReceiver: true },
-      resultCarrier: { kind: "reference", referent: httpServerResponseCarrier, mutable: true },
-      receiverCarrier: readStreamCarrier,
-      parameterCarriers: [httpServerResponseCarrier],
-      ...providerNativeFallibility,
-    },
-    { exportId: readStreamId, memberId: `${readStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: readStreamCarrier, parameterCarriers: [] },
-    { exportId: readStreamId, memberId: `${readStreamId}.path`, operationKind: "property", target: { form: "field", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: readStreamCarrier },
-    { exportId: readStreamId, memberId: `${readStreamId}.bytesRead`, operationKind: "property", target: { form: "field", name: "bytes_read" }, resultCarrier: nativeUintCarrier, receiverCarrier: readStreamCarrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, operationKind: "method", target: { form: "receiver-method", name: "write", argModes: ["value"], mutatesReceiver: true }, resultCarrier: boolCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.path`, operationKind: "property", target: { form: "field", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: writeStreamCarrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "field", name: "bytes_written" }, resultCarrier: nativeUintCarrier, receiverCarrier: writeStreamCarrier },
+    { exportId: readStreamId, memberId: `${readStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: readStreamCarrier, parameterCarriers: [] },
+    { exportId: readStreamId, memberId: `${readStreamId}.path`, operationKind: "property", target: { form: "receiver-method", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: readStreamCarrier },
+    { exportId: readStreamId, memberId: `${readStreamId}.bytesRead`, operationKind: "property", target: { form: "receiver-method", name: "bytes_read" }, resultCarrier: nativeUintCarrier, receiverCarrier: readStreamCarrier },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.path`, operationKind: "property", target: { form: "receiver-method", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: writeStreamCarrier },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "receiver-method", name: "bytes_written" }, resultCarrier: nativeUintCarrier, receiverCarrier: writeStreamCarrier },
     { exportId: watcherId, memberId: `${watcherId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: watcherId, memberId: `${watcherId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: watcherId, memberId: `${watcherId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
