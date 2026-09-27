@@ -51,6 +51,10 @@ name = "process_cpu_tests"
 path = "../../tests/node/process_cpu_tests.rs"
 
 [[test]]
+name = "timer_ownership_tests"
+path = "../../tests/node/timer_ownership_tests.rs"
+
+[[test]]
 name = "native_numeric_results"
 path = "../../tests/node/native_numeric_results.rs"
 
