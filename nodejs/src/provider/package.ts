@@ -27,7 +27,7 @@ import { bufferModule, bufferRows } from "./modules/buffer/declarations.js";
 import { cryptoModule, cryptoRows } from "./modules/crypto/declarations.js";
 import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
 import { fsModule, fsRows } from "./modules/filesystem/calls.js";
-import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics } from "./modules/filesystem/paths.js";
+import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics, direntNameParameter } from "./modules/filesystem/paths.js";
 import { bufferEncodingOptionsCarrier } from "./modules/filesystem/realpath.js";
 import {
   fsPromisesModule,
@@ -144,7 +144,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { exportId: "node:fs::BufferDirectoryOptions", targetCarrier: directoryOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::BufferEncodingOptions", targetCarrier: bufferEncodingOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
       { exportId: "node:fs::FsConstants", targetCarrier: fsConstantsCarrier },
-      { exportId: "node:fs::Dirent", targetCarrier: direntCarrier({ kind: "type-parameter", name: "Name" }), genericParameters: direntGenerics },
+      { exportId: "node:fs::Dirent", targetCarrier: direntCarrier(direntNameParameter), genericParameters: direntGenerics },
       {
         exportId: "node:fs::MakeDirectoryOptions",
         targetCarrier: makeDirectoryOptionsCarrier,

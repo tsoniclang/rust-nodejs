@@ -72,7 +72,7 @@ export function childProcessModule(typedArrays: boolean): RustProviderModuleDefi
 }
 
 export function childProcessRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
-  const argumentsCarrier = { kind: "type-parameter", name: "Arguments" } as const;
+  const argumentsCarrier = { kind: "type-parameter", identity: "node:child_process:spawnSync:Arguments", name: "Arguments" } as const;
   const fields = [
     ...["stdout", "stderr"].map(name => ({ owner: resultId, name, field: name, carrier: rustOptionTargetType(bufferCarrier) })),
     { owner: resultId, name: "status", field: "status", carrier: rustOptionTargetType(int32Carrier) },
@@ -90,7 +90,7 @@ export function childProcessRows(typedArrays: boolean): readonly RustProviderOpe
         argModes: ["ref" as const, "ref" as const, ...(options ? ["value" as const] : [])] },
       resultCarrier: spawnSyncResultCarrier,
       parameterCarriers: [stringCarrier, argumentsCarrier, ...(options ? [spawnOptionsCarrier] : [])],
-      genericParameters: [{ kind: "type" as const, sourceName: argumentsCarrier.name }],
+      genericParameters: [{ kind: "type" as const, targetIdentity: argumentsCarrier.identity, sourceName: argumentsCarrier.name }],
       ...providerNativeFallibility,
     })),
     ...fields.flatMap(field => [
