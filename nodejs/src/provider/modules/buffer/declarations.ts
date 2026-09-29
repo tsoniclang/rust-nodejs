@@ -76,8 +76,8 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
   return bufferNumericMembers.flatMap((member): readonly RustProviderOperationDefinition[] => {
     const memberId = `${bufferId}.${member.sourceName}`;
     const valueCarriers: readonly RustTargetTypeRef[] = member.mode === "read" ? []
-      : [member.integerInput ? { kind: "type-parameter", name: "Value" } : float64Carrier];
-    const valueGenerics = member.integerInput ? [{ kind: "type" as const, sourceName: "Value" }] : [];
+      : [member.integerInput ? { kind: "type-parameter", identity: "node:buffer:numeric:Value", name: "Value" } : float64Carrier];
+    const valueGenerics = member.integerInput ? [{ kind: "type" as const, targetIdentity: "node:buffer:numeric:Value", sourceName: "Value" }] : [];
     const target = {
       form: "free-call" as const,
       path: `node_buffer::${member.targetName}`,
@@ -100,8 +100,8 @@ function bufferNumericRows(bufferId: string): readonly RustProviderOperationDefi
       operationKind: "method",
       target,
       resultCarrier: member.resultCarrier,
-      parameterCarriers: [...valueCarriers, { kind: "type-parameter", name: "Offset" }],
-      genericParameters: [...valueGenerics, { kind: "type", sourceName: "Offset" }],
+      parameterCarriers: [...valueCarriers, { kind: "type-parameter", identity: "node:buffer:numeric:Offset", name: "Offset" }],
+      genericParameters: [...valueGenerics, { kind: "type", targetIdentity: "node:buffer:numeric:Offset", sourceName: "Offset" }],
       ...providerNativeFallibility,
     }];
   });
@@ -254,7 +254,7 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
     },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(string,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_string_enc", argModes: ["ref", "ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
-    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType({ kind: "type-parameter", name: "Value" })], genericParameters: [{ kind: "type", sourceName: "Value" }] },
+    { exportId: bufferId, memberId: `${bufferId}.from`, signatureId: `${bufferId}.from(numberArray)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::from_number_array", argModes: ["ref"] }, resultCarrier: bufferCarrier, parameterCarriers: [rustJsArrayTargetType({ kind: "type-parameter", identity: "node:buffer:numeric:Value", name: "Value" })], genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:Value", sourceName: "Value" }] },
     { exportId: bufferId, memberId: `${bufferId}.alloc`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::alloc" }, resultCarrier: bufferCarrier, parameterCarriers: [nativeUintCarrier] },
     { exportId: bufferId, memberId: `${bufferId}.byteLength`, signatureId: `${bufferId}.byteLength(value)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length", argModes: ["ref"], trailingArguments: [noneArgument] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
     { exportId: bufferId, memberId: `${bufferId}.byteLength`, signatureId: `${bufferId}.byteLength(value,encoding)`, operationKind: "method", target: { form: "call", path: "node_buffer::Buffer::byte_length_enc", argModes: ["ref", "ref"] }, resultCarrier: nativeUintCarrier, parameterCarriers: [stringCarrier, stringCarrier], ...providerNativeFallibility },
@@ -285,8 +285,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value"], trailingArguments: [zeroIntegerArgument] },
       resultCarrier: nativeUintCarrier,
-      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }],
-      genericParameters: [{ kind: "type", sourceName: "TargetStart" }],
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", identity: "node:buffer:numeric:TargetStart", name: "TargetStart" }],
+      genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:TargetStart", sourceName: "TargetStart" }],
       ...providerNativeFallibility,
     },
     {
@@ -296,8 +296,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::copy_open_number", receiverMode: "ref", argModes: ["ref", "value", "value"] },
       resultCarrier: nativeUintCarrier,
-      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }, { kind: "type-parameter", name: "SourceStart" }],
-      genericParameters: [{ kind: "type", sourceName: "TargetStart" }, { kind: "type", sourceName: "SourceStart" }],
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", identity: "node:buffer:numeric:TargetStart", name: "TargetStart" }, { kind: "type-parameter", identity: "node:buffer:numeric:SourceStart", name: "SourceStart" }],
+      genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:TargetStart", sourceName: "TargetStart" }, { kind: "type", targetIdentity: "node:buffer:numeric:SourceStart", sourceName: "SourceStart" }],
       ...providerNativeFallibility,
     },
     {
@@ -307,8 +307,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::copy_closed_number", receiverMode: "ref", argModes: ["ref", "value", "value", "value"] },
       resultCarrier: nativeUintCarrier,
-      parameterCarriers: [bufferCarrier, { kind: "type-parameter", name: "TargetStart" }, { kind: "type-parameter", name: "SourceStart" }, { kind: "type-parameter", name: "SourceEnd" }],
-      genericParameters: [{ kind: "type", sourceName: "TargetStart" }, { kind: "type", sourceName: "SourceStart" }, { kind: "type", sourceName: "SourceEnd" }],
+      parameterCarriers: [bufferCarrier, { kind: "type-parameter", identity: "node:buffer:numeric:TargetStart", name: "TargetStart" }, { kind: "type-parameter", identity: "node:buffer:numeric:SourceStart", name: "SourceStart" }, { kind: "type-parameter", identity: "node:buffer:numeric:SourceEnd", name: "SourceEnd" }],
+      genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:TargetStart", sourceName: "TargetStart" }, { kind: "type", targetIdentity: "node:buffer:numeric:SourceStart", sourceName: "SourceStart" }, { kind: "type", targetIdentity: "node:buffer:numeric:SourceEnd", sourceName: "SourceEnd" }],
       ...providerNativeFallibility,
     },
     ...["slice", "subarray"].flatMap((name): readonly RustProviderOperationDefinition[] => [{
@@ -326,8 +326,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::slice_open_number", receiverMode: "ref" },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [{ kind: "type-parameter", name: "Start" }],
-      genericParameters: [{ kind: "type", sourceName: "Start" }],
+      parameterCarriers: [{ kind: "type-parameter", identity: "node:buffer:numeric:Start", name: "Start" }],
+      genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:Start", sourceName: "Start" }],
     }, {
       exportId: bufferId,
       memberId: `${bufferId}.${name}`,
@@ -335,8 +335,8 @@ export function bufferRows(typedArrays: boolean): readonly RustProviderOperation
       operationKind: "method",
       target: { form: "free-call", path: "node_buffer::slice_closed_number", receiverMode: "ref" },
       resultCarrier: bufferCarrier,
-      parameterCarriers: [{ kind: "type-parameter", name: "Start" }, { kind: "type-parameter", name: "End" }],
-      genericParameters: [{ kind: "type", sourceName: "Start" }, { kind: "type", sourceName: "End" }],
+      parameterCarriers: [{ kind: "type-parameter", identity: "node:buffer:numeric:Start", name: "Start" }, { kind: "type-parameter", identity: "node:buffer:numeric:End", name: "End" }],
+      genericParameters: [{ kind: "type", targetIdentity: "node:buffer:numeric:Start", sourceName: "Start" }, { kind: "type", targetIdentity: "node:buffer:numeric:End", sourceName: "End" }],
     }]),
     ...["swap16", "swap32", "swap64"].map((name): RustProviderOperationDefinition => ({
       exportId: bufferId,

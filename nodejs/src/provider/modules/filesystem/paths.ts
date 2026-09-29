@@ -13,8 +13,9 @@ const statOptionsId = `${moduleId}::StatOptions`;
 const directoryOptionsId = `${moduleId}::BufferDirectoryOptions`;
 const direntId = `${moduleId}::Dirent`;
 const constantsId = `${moduleId}::FsConstants`;
-const nameParameter = { kind: "type-parameter", name: "Name" } as const;
-export const direntGenerics = [{ kind: "type", sourceName: "Name", defaultArgument: { kind: "type", type: stringCarrier } }] as const;
+export const direntNameParameter = { kind: "type-parameter", identity: `${direntId}:0`, name: "Name" } as const;
+export const direntGenerics = [{ kind: "type", targetIdentity: direntNameParameter.identity,
+  sourceName: "Name", defaultArgument: { kind: "type", type: stringCarrier } }] as const;
 export const statOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.StatOptions" };
 export const directoryOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.BufferDirectoryOptions" };
 export const fsConstantsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.FsConstants" };
@@ -67,7 +68,7 @@ export function filePathExports(): RustProviderModuleDefinition["exports"] {
     {
       id: direntId, name: "Dirent", kind: "class",
       typeParameters: [{ name: "Name", defaultType: stringType }],
-      members: [propertyMember(direntId, "name", nameParameter), ...kinds.map(kind => methodMember(direntId, kind.name, [], booleanType))],
+      members: [propertyMember(direntId, "name", { kind: "type-parameter", name: "Name" }), ...kinds.map(kind => methodMember(direntId, kind.name, [], booleanType))],
     },
     {
       id: `${moduleId}::readdirSync`, name: "readdirSync", kind: "function",
@@ -130,11 +131,11 @@ export function filePathRows(): readonly RustProviderOperationDefinition[] {
       property(field.owner, field.name, field.field, field.receiver, field.carrier),
       { exportId: field.owner, memberId: `${field.owner}.${field.name}`, operationKind: "property-set" as const, target: { form: "field" as const, name: field.field }, receiverCarrier: field.receiver, resultCarrier: unitCarrier, parameterCarriers: [field.carrier] },
     ]),
-    { ...property(direntId, "name", "name", direntCarrier(nameParameter), nameParameter), genericParameters: direntGenerics },
+    { ...property(direntId, "name", "name", direntCarrier(direntNameParameter), direntNameParameter), genericParameters: direntGenerics },
     ...kinds.map(kind => ({
       exportId: direntId, memberId: `${direntId}.${kind.name}`, signatureId: `${direntId}.${kind.name}()`, operationKind: "method" as const,
       target: { form: "method" as const, name: kind.method },
-      resultCarrier: boolCarrier, receiverCarrier: direntCarrier(nameParameter), genericParameters: direntGenerics,
+      resultCarrier: boolCarrier, receiverCarrier: direntCarrier(direntNameParameter), genericParameters: direntGenerics,
     })),
     { exportId: `${moduleId}::constants`, operationKind: "property", target: { form: "call", path: "node_fs::constants" }, resultCarrier: fsConstantsCarrier },
     ...constants.map(value => property(constantsId, value.name, value.field, fsConstantsCarrier, int32Carrier)),

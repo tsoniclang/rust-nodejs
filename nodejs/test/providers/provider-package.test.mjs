@@ -251,8 +251,8 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:fs::FsConstants", "rust.node.FsConstants"],
     ["node:fs::Dirent", {
       kind: "target-named", id: "rust.node.Dirent",
-      genericArguments: [{ kind: "type", type: { kind: "type-parameter", name: "Name" } }],
-    }, undefined, [{ kind: "type", sourceName: "Name", defaultArgument: {
+      genericArguments: [{ kind: "type", type: { kind: "type-parameter", identity: "node:fs::Dirent:0", name: "Name" } }],
+    }, undefined, [{ kind: "type", targetIdentity: "node:fs::Dirent:0", sourceName: "Name", defaultArgument: {
       kind: "type", type: { kind: "target-named", id: "rust.std.String" },
     } }]],
     ["node:fs::MakeDirectoryOptions", "rust.node.MakeDirectoryOptions", "struct-default"],
@@ -419,9 +419,9 @@ test("provider package closes child-process and text-decoder operations", () => 
     resultCarrier: { kind: "target-named", id: "rust.node.SpawnSyncResult" },
     parameterCarriers: [
       { kind: "target-named", id: "rust.std.String" },
-      { kind: "type-parameter", name: "Arguments" },
+      { kind: "type-parameter", identity: "node:child_process:spawnSync:Arguments", name: "Arguments" },
     ],
-    genericParameters: [{ kind: "type", sourceName: "Arguments" }],
+    genericParameters: [{ kind: "type", targetIdentity: "node:child_process:spawnSync:Arguments", sourceName: "Arguments" }],
     isFallible: true,
     errorBoundary: "provider-native",
     errorCarrier: { kind: "target-named", id: "rust.node.NodeError" },
