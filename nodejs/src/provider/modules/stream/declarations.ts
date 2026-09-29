@@ -47,7 +47,8 @@ const bufferArrayType = { kind: "array", elementType: bufferType } as const;
 const emptyListenerCarrier = rustCallableTargetType([], unitCarrier);
 const dataListenerCarrier = rustCallableTargetType([bufferCarrier], unitCarrier);
 const errorListenerCarrier = rustCallableTargetType([nodeErrorCarrier], unitCarrier);
-const destinationCarrier: RustTargetTypeRef = { kind: "type-parameter", name: "TDestination" };
+const destinationIdentity = "node:stream:Readable:pipe:TDestination";
+const destinationCarrier: RustTargetTypeRef = { kind: "type-parameter", identity: destinationIdentity, name: "TDestination" };
 const optionalErrorCarrier = rustOptionTargetType(nodeErrorCarrier);
 
 export function streamModule(): RustProviderModuleDefinition {
@@ -281,8 +282,9 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: destinationCarrier,
       receiverCarrier: readableCarrier,
       parameterCarriers: [destinationCarrier],
-      genericParameters: [{ kind: "type", sourceName: "TDestination" }],
+      genericParameters: [{ kind: "type", targetIdentity: destinationIdentity, sourceName: "TDestination" }],
       typeRequirements: [{
+        identity: destinationIdentity,
         name: "TDestination",
         requirements: [
           "clone",
