@@ -3,7 +3,7 @@ import { booleanType, numberType, stringArrayType, stringType, undefinedType, vo
 import { cloneDefaultCarrierTraits, cloneOnlyCarrierTraits, providerNativeFallibility } from "../../model/operations.js";
 import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./carriers.js";
 import { propertyMember, providerRef, valueExport } from "../../declarations/builders.js";
-import { rustJsPromiseTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
+import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
@@ -183,9 +183,10 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
         "terminate",
         workerCarrier,
         [],
-        rustJsPromiseTargetType(int32Carrier),
+        int32Carrier,
         true,
       ),
+      isAsync: true,
       ...providerNativeFallibility,
     },
     receiverMethod(workerId, "ref", "ref_chain", workerCarrier, [], mutableReference(workerCarrier), true),

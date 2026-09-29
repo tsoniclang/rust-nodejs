@@ -443,6 +443,13 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       path: "tsonic_rust_node::perf_hooks::initialize_clock",
       requiredCrate: "tsonic_rust_node",
     }, {
+      id: "node-async-executor",
+      phase: "async-execution",
+      path: "tsonic_rust_node::block_on",
+      requiredCrate: "tsonic_rust_node",
+      isFallible: true,
+      errorBoundary: "target-runtime",
+    }, {
       id: "node-event-loop",
       phase: "after-entry",
       path: "tsonic_rust_node::run_event_loop",

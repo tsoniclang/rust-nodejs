@@ -49,4 +49,4 @@ pub mod worker_threads;
 pub mod zlib;
 
 pub use error::{NodeError, NodeResult};
-pub use event_loop::run_event_loop;
+pub use event_loop::{block_on, run_event_loop};

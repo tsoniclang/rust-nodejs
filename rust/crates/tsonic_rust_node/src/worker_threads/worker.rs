@@ -171,7 +171,7 @@ impl Worker {
         state.transport.send(WorkerFrameKind::Message, &payload)
     }
 
-    pub fn terminate(&mut self) -> NodeResult<tsonic_rust_js::JsPromise<'static, i32>> {
+    pub async fn terminate(&mut self) -> NodeResult<i32> {
         let exit_code = {
             let mut state = self.state.borrow_mut();
             if let Some(exit_code) = state.exit_code {
@@ -184,7 +184,7 @@ impl Worker {
                 exit_code
             }
         };
-        Ok(tsonic_rust_js::JsPromise::resolved(exit_code))
+        Ok(exit_code)
     }
 
     pub fn ref_chain(&mut self) -> &mut Self {
