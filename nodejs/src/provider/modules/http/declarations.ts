@@ -395,9 +395,9 @@ function addressRows(): readonly RustProviderOperationDefinition[] {
     field(addressInfoId, "address", httpAddressInfoCarrier, stringCarrier),
     field(addressInfoId, "family", httpAddressInfoCarrier, stringCarrier),
     field(addressInfoId, "port", httpAddressInfoCarrier, int32Carrier),
-    receiver(serverAddressId, "address", "address", httpServerAddressCarrier, optionalAddressCarrier, []),
-    receiver(serverAddressId, "path", "path", httpServerAddressCarrier, optionalStringCarrier, []),
-    receiver(serverAddressId, "port", "port", httpServerAddressCarrier, optionalInt32Carrier, []),
+    receiver(serverAddressId, "address", "address", httpServerAddressCarrier, optionalAddressCarrier, [], "property"),
+    receiver(serverAddressId, "path", "path", httpServerAddressCarrier, optionalStringCarrier, [], "property"),
+    receiver(serverAddressId, "port", "port", httpServerAddressCarrier, optionalInt32Carrier, [], "property"),
   ];
 }
 
