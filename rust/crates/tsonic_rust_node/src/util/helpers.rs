@@ -49,6 +49,15 @@ fn format_number(value: &JsValue) -> String {
     let number = match value {
         JsValue::Integer(value) => return value.to_string(),
         JsValue::UnsignedInteger(value) => return value.to_string(),
+        JsValue::Int8(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Uint8(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Int16(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Uint16(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Int32(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Uint32(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::NativeInt(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::NativeUint(value) => return tsonic_rust_js::number::to_string(*value),
+        JsValue::Float32(value) => return tsonic_rust_js::number::to_string(*value),
         JsValue::Number(value) => *value,
         JsValue::Bool(value) => {
             if *value {

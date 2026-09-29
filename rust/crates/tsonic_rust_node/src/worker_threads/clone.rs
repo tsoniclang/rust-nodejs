@@ -1,11 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
 
 use crate::error::{NodeError, NodeResult};
 
-const FORMAT_VERSION: u8 = 1;
+mod wire;
+pub(crate) use wire::{decode, encode};
 const MAXIMUM_DEPTH: usize = 128;
 const MAXIMUM_ENTRIES: usize = 1 << 20;
 const MAXIMUM_STRING_UNITS: usize = 1 << 24;
@@ -23,6 +24,15 @@ enum ClonedSlot {
     Number(f64),
     Integer(i64),
     UnsignedInteger(u64),
+    Int8(i8),
+    Uint8(u8),
+    Int16(i16),
+    Uint16(u16),
+    Int32(i32),
+    Uint32(u32),
+    NativeInt(isize),
+    NativeUint(usize),
+    Float32(f32),
     NativeString(String),
     String(JsString),
     Reference(usize),
@@ -105,6 +115,15 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
         JsValue::Number(value) => Ok(ClonedSlot::Number(*value)),
         JsValue::Integer(value) => Ok(ClonedSlot::Integer(*value)),
         JsValue::UnsignedInteger(value) => Ok(ClonedSlot::UnsignedInteger(*value)),
+        JsValue::Int8(value) => Ok(ClonedSlot::Int8(*value)),
+        JsValue::Uint8(value) => Ok(ClonedSlot::Uint8(*value)),
+        JsValue::Int16(value) => Ok(ClonedSlot::Int16(*value)),
+        JsValue::Uint16(value) => Ok(ClonedSlot::Uint16(*value)),
+        JsValue::Int32(value) => Ok(ClonedSlot::Int32(*value)),
+        JsValue::Uint32(value) => Ok(ClonedSlot::Uint32(*value)),
+        JsValue::NativeInt(value) => Ok(ClonedSlot::NativeInt(*value)),
+        JsValue::NativeUint(value) => Ok(ClonedSlot::NativeUint(*value)),
+        JsValue::Float32(value) => Ok(ClonedSlot::Float32(*value)),
         JsValue::String(value) => {
             reserve_native_string(value.len(), state)?;
             Ok(ClonedSlot::NativeString(value.clone()))
@@ -175,142 +194,19 @@ fn materialize_slot(value: &ClonedSlot, containers: &[JsValue]) -> JsValue {
         ClonedSlot::Number(value) => JsValue::Number(*value),
         ClonedSlot::Integer(value) => JsValue::Integer(*value),
         ClonedSlot::UnsignedInteger(value) => JsValue::UnsignedInteger(*value),
+        ClonedSlot::Int8(value) => JsValue::Int8(*value),
+        ClonedSlot::Uint8(value) => JsValue::Uint8(*value),
+        ClonedSlot::Int16(value) => JsValue::Int16(*value),
+        ClonedSlot::Uint16(value) => JsValue::Uint16(*value),
+        ClonedSlot::Int32(value) => JsValue::Int32(*value),
+        ClonedSlot::Uint32(value) => JsValue::Uint32(*value),
+        ClonedSlot::NativeInt(value) => JsValue::NativeInt(*value),
+        ClonedSlot::NativeUint(value) => JsValue::NativeUint(*value),
+        ClonedSlot::Float32(value) => JsValue::Float32(*value),
         ClonedSlot::NativeString(value) => JsValue::String(value.clone()),
         ClonedSlot::String(value) => JsValue::Utf16String(value.clone()),
         ClonedSlot::Reference(index) => containers[*index].clone(),
     }
-}
-
-pub(crate) fn encode(value: &ClonedValue) -> NodeResult<Vec<u8>> {
-    validate_graph(value)?;
-    let mut output = vec![FORMAT_VERSION];
-    write_count(&mut output, value.containers.len())?;
-    encode_slot(&value.root, &mut output)?;
-    for container in &value.containers {
-        match container {
-            ClonedContainer::Object(entries) => {
-                output.push(0);
-                write_count(&mut output, entries.len())?;
-                for (key, value) in entries {
-                    write_string(&mut output, key)?;
-                    encode_slot(value, &mut output)?;
-                }
-            }
-            ClonedContainer::Array { length, entries } => {
-                output.push(1);
-                write_count(&mut output, *length)?;
-                write_count(&mut output, entries.len())?;
-                for (index, value) in entries {
-                    write_count(&mut output, *index)?;
-                    encode_slot(value, &mut output)?;
-                }
-            }
-        }
-    }
-    Ok(output)
-}
-
-pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
-    let mut reader = Reader::new(input);
-    if reader.byte()? != FORMAT_VERSION {
-        return Err(data_clone_error(
-            "structured-clone payload version is unsupported",
-        ));
-    }
-    let container_count = reader.count()?;
-    let root = reader.slot()?;
-    let mut containers = Vec::with_capacity(container_count);
-    let mut entries = container_count;
-    for _ in 0..container_count {
-        match reader.byte()? {
-            0 => {
-                let count = reader.count()?;
-                reserve_decoded_entries(count, &mut entries)?;
-                let mut values = Vec::with_capacity(count);
-                let mut keys = HashSet::with_capacity(count);
-                for _ in 0..count {
-                    let key = reader.string()?;
-                    if !keys.insert(key.clone()) {
-                        return Err(data_clone_error(
-                            "structured-clone object contains a duplicate key",
-                        ));
-                    }
-                    values.push((key, reader.slot()?));
-                }
-                containers.push(ClonedContainer::Object(values));
-            }
-            1 => {
-                let length = reader.count()?;
-                reserve_decoded_entries(length, &mut entries)?;
-                let count = reader.count()?;
-                if count > length {
-                    return Err(data_clone_error(
-                        "structured-clone array has more entries than its length",
-                    ));
-                }
-                let mut values = Vec::with_capacity(count);
-                let mut indexes = BTreeSet::new();
-                for _ in 0..count {
-                    let index = reader.count()?;
-                    if index >= length || !indexes.insert(index) {
-                        return Err(data_clone_error("structured-clone array index is invalid"));
-                    }
-                    values.push((index, reader.slot()?));
-                }
-                containers.push(ClonedContainer::Array {
-                    length,
-                    entries: values,
-                });
-            }
-            _ => {
-                return Err(data_clone_error(
-                    "structured-clone payload contains an unknown container tag",
-                ));
-            }
-        }
-    }
-    if !reader.is_complete() {
-        return Err(data_clone_error(
-            "structured-clone payload contains trailing bytes",
-        ));
-    }
-    let value = ClonedValue { root, containers };
-    validate_graph(&value)?;
-    Ok(value)
-}
-
-fn encode_slot(value: &ClonedSlot, output: &mut Vec<u8>) -> NodeResult<()> {
-    match value {
-        ClonedSlot::Null => output.push(1),
-        ClonedSlot::Bool(false) => output.push(2),
-        ClonedSlot::Bool(true) => output.push(3),
-        ClonedSlot::Number(value) => {
-            output.push(4);
-            output.extend_from_slice(&value.to_bits().to_be_bytes());
-        }
-        ClonedSlot::Integer(value) => {
-            output.push(8);
-            output.extend_from_slice(&value.to_be_bytes());
-        }
-        ClonedSlot::UnsignedInteger(value) => {
-            output.push(9);
-            output.extend_from_slice(&value.to_be_bytes());
-        }
-        ClonedSlot::NativeString(value) => {
-            output.push(7);
-            write_count(output, value.len())?;
-            output.extend_from_slice(value.as_bytes());
-        }
-        ClonedSlot::String(value) => {
-            output.push(5);
-            write_string(output, value)?;
-        }
-        ClonedSlot::Reference(index) => {
-            output.push(6);
-            write_count(output, *index)?;
-        }
-    }
-    Ok(())
 }
 
 fn validate_graph(value: &ClonedValue) -> NodeResult<()> {
@@ -373,26 +269,6 @@ fn collect_reference(
     Ok(())
 }
 
-fn write_count(output: &mut Vec<u8>, value: usize) -> NodeResult<()> {
-    let value = u32::try_from(value)
-        .map_err(|_| data_clone_error("structured-clone count exceeds the finite limit"))?;
-    output.extend_from_slice(&value.to_be_bytes());
-    Ok(())
-}
-
-fn write_string(output: &mut Vec<u8>, value: &JsString) -> NodeResult<()> {
-    if value.len() > MAXIMUM_STRING_UNITS {
-        return Err(data_clone_error(
-            "structured-clone string exceeds the finite limit",
-        ));
-    }
-    write_count(output, value.len())?;
-    for unit in value.units() {
-        output.extend_from_slice(&unit.to_be_bytes());
-    }
-    Ok(())
-}
-
 fn reserve_entries(count: usize, state: &mut EncodingState) -> NodeResult<()> {
     state.entries = state
         .entries
@@ -423,18 +299,6 @@ fn reserve_native_string(length: usize, state: &mut EncodingState) -> NodeResult
     Ok(())
 }
 
-fn reserve_decoded_entries(count: usize, entries: &mut usize) -> NodeResult<()> {
-    *entries = entries
-        .checked_add(count)
-        .ok_or_else(|| data_clone_error("structured-clone entry count overflowed"))?;
-    if *entries > MAXIMUM_ENTRIES {
-        return Err(data_clone_error(
-            "structured-clone entry count exceeds the finite limit",
-        ));
-    }
-    Ok(())
-}
-
 fn data_clone_error(message: &str) -> NodeError {
     NodeError::new("DATA_CLONE_ERR", message)
 }
@@ -445,112 +309,4 @@ struct EncodingState {
     containers: Vec<ClonedContainer>,
     entries: usize,
     string_units: usize,
-}
-
-struct Reader<'a> {
-    input: &'a [u8],
-    position: usize,
-    string_units: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(input: &'a [u8]) -> Self {
-        Self {
-            input,
-            position: 0,
-            string_units: 0,
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        self.position == self.input.len()
-    }
-
-    fn bytes(&mut self, count: usize) -> NodeResult<&'a [u8]> {
-        let end = self
-            .position
-            .checked_add(count)
-            .ok_or_else(|| data_clone_error("structured-clone payload position overflowed"))?;
-        if end > self.input.len() {
-            return Err(data_clone_error("structured-clone payload is truncated"));
-        }
-        let result = &self.input[self.position..end];
-        self.position = end;
-        Ok(result)
-    }
-
-    fn byte(&mut self) -> NodeResult<u8> {
-        Ok(self.bytes(1)?[0])
-    }
-
-    fn u32(&mut self) -> NodeResult<u32> {
-        let bytes: [u8; 4] = self.bytes(4)?.try_into().expect("exact byte count");
-        Ok(u32::from_be_bytes(bytes))
-    }
-
-    fn u64(&mut self) -> NodeResult<u64> {
-        let bytes: [u8; 8] = self.bytes(8)?.try_into().expect("exact byte count");
-        Ok(u64::from_be_bytes(bytes))
-    }
-
-    fn count(&mut self) -> NodeResult<usize> {
-        let value = usize::try_from(self.u32()?)
-            .map_err(|_| data_clone_error("structured-clone count is not representable"))?;
-        if value > MAXIMUM_ENTRIES {
-            return Err(data_clone_error(
-                "structured-clone count exceeds the finite limit",
-            ));
-        }
-        Ok(value)
-    }
-
-    fn string(&mut self) -> NodeResult<JsString> {
-        let count = self.count()?;
-        self.string_units = self
-            .string_units
-            .checked_add(count)
-            .ok_or_else(|| data_clone_error("structured-clone string budget overflowed"))?;
-        if self.string_units > MAXIMUM_STRING_UNITS {
-            return Err(data_clone_error(
-                "structured-clone string budget exceeds the finite limit",
-            ));
-        }
-        let mut units = Vec::with_capacity(count);
-        for _ in 0..count {
-            let bytes: [u8; 2] = self.bytes(2)?.try_into().expect("exact byte count");
-            units.push(u16::from_be_bytes(bytes));
-        }
-        Ok(JsString::from_units(units))
-    }
-
-    fn slot(&mut self) -> NodeResult<ClonedSlot> {
-        match self.byte()? {
-            1 => Ok(ClonedSlot::Null),
-            2 => Ok(ClonedSlot::Bool(false)),
-            3 => Ok(ClonedSlot::Bool(true)),
-            4 => Ok(ClonedSlot::Number(f64::from_bits(self.u64()?))),
-            8 => Ok(ClonedSlot::Integer(i64::from_be_bytes(
-                self.bytes(8)?.try_into().expect("exact byte count"),
-            ))),
-            9 => Ok(ClonedSlot::UnsignedInteger(self.u64()?)),
-            5 => Ok(ClonedSlot::String(self.string()?)),
-            6 => Ok(ClonedSlot::Reference(self.count()?)),
-            7 => {
-                let length = self.count()?;
-                self.string_units = self
-                    .string_units
-                    .checked_add(length)
-                    .filter(|total| *total <= MAXIMUM_STRING_UNITS)
-                    .ok_or_else(|| {
-                        data_clone_error("structured-clone string budget exceeds the finite limit")
-                    })?;
-                let text = std::str::from_utf8(self.bytes(length)?)
-                    .map_err(|_| data_clone_error("structured-clone native string is not UTF-8"))?;
-                Ok(ClonedSlot::NativeString(text.to_owned()))
-            }
-            _ => Err(data_clone_error(
-                "structured-clone payload contains an unknown value tag",
-            )),
-        }
-    }
 }

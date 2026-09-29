@@ -139,18 +139,14 @@ fn byte_payloads_keep_integer_slots_in_closed_values() {
     let json = buffer::Buffer::from_bytes(vec![0, 127, 255]).to_json();
     let data = json.as_object().unwrap().borrow().get("data");
     let bytes = data.as_array().unwrap();
-    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
-        assert!(
-            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
-        );
+    for (index, value) in [0_u8, 127, 255].into_iter().enumerate() {
+        assert!(matches!(bytes.get(index), Some(JsValue::Uint8(actual)) if actual == value));
     }
     let database = tsonic_rust_node::sqlite::DatabaseSync::open(":memory:").unwrap();
     let rows = database.all("SELECT X'007FFF' AS bytes", &[]).unwrap();
     let bytes = rows[0]["bytes"].as_array().unwrap();
-    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
-        assert!(
-            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
-        );
+    for (index, value) in [0_u8, 127, 255].into_iter().enumerate() {
+        assert!(matches!(bytes.get(index), Some(JsValue::Uint8(actual)) if actual == value));
     }
 }
 

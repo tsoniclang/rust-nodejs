@@ -128,10 +128,7 @@ pub mod types {
     }
 
     pub fn is_number(value: &JsValue) -> bool {
-        matches!(
-            value,
-            JsValue::Number(_) | JsValue::Integer(_) | JsValue::UnsignedInteger(_)
-        )
+        value.numeric_ref().is_some()
     }
 
     pub fn is_string(value: &JsValue) -> bool {
@@ -203,10 +200,7 @@ pub mod types {
     }
 
     pub fn is_number_object(value: &JsValue) -> bool {
-        matches!(
-            value,
-            JsValue::Number(_) | JsValue::Integer(_) | JsValue::UnsignedInteger(_)
-        )
+        value.numeric_ref().is_some()
     }
 
     pub fn is_string_object(value: &JsValue) -> bool {
