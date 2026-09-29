@@ -52,9 +52,10 @@ export function fileDescriptorExports(typedArrays: boolean): RustProviderModuleD
 }
 
 export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderOperationDefinition[] {
-  const positionCarrier = { kind: "type-parameter", name: "Position" } as const;
-  const numericCarrier = (name: string): RustTargetTypeRef => ({ kind: "type-parameter", name });
-  const numericGenerics = (...names: string[]) => names.map(sourceName => ({ kind: "type" as const, sourceName }));
+  const positionCarrier = { kind: "type-parameter", identity: "node:fs:descriptor:Position", name: "Position" } as const;
+  const numericCarrier = (name: string): RustTargetTypeRef => ({ kind: "type-parameter", identity: `node:fs:descriptor:${name}`, name });
+  const numericGenerics = (...names: string[]) => names.map(sourceName => ({ kind: "type" as const,
+    targetIdentity: `node:fs:descriptor:${sourceName}`, sourceName }));
   const operation = (
     name: string, path: string, parameters: readonly RustTargetTypeRef[],
     modes: readonly ("ref" | "value")[], result: RustTargetTypeRef = nativeUintCarrier,
@@ -83,7 +84,8 @@ export function fileDescriptorRows(typedArrays: boolean): readonly RustProviderO
         numericCarrier("Descriptor"), buffer.carrier, numericCarrier("Offset"), numericCarrier("Length"),
         rustOptionTargetType(positionCarrier),
       ], ["value", "ref", "value", "value", "value"]),
-      genericParameters: [...numericGenerics("Descriptor", "Offset", "Length"), { kind: "type" as const, sourceName: positionCarrier.name,
+      genericParameters: [...numericGenerics("Descriptor", "Offset", "Length"), { kind: "type" as const,
+        targetIdentity: positionCarrier.identity, sourceName: positionCarrier.name,
         defaultArgument: { kind: "type" as const, type: position.carrier } }],
       signatureId: `${moduleId}::${action}Sync(${buffer.name}${position.suffix})`,
     })))),
