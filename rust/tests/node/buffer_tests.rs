@@ -3,6 +3,17 @@ use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
 #[test]
+fn closed_string_conversion_reads_the_native_buffer_without_inspecting_or_copying_bytes() {
+    use tsonic_rust_js::{abi, JsValue};
+    let buffer = Buffer::from_string("left:text😀:right", None).unwrap();
+    let view = buffer.subarray(5, Some(13));
+    let value = JsValue::closed(view);
+    assert_eq!(abi::closed_value_string(&value).unwrap(), "text😀");
+    let invalid = JsValue::closed(Buffer::from_bytes(vec![0xff]));
+    assert!(abi::closed_value_string(&invalid).is_err());
+}
+
+#[test]
 fn encoding_labels_preserve_case_insensitive_aliases_and_exact_rejections() {
     use tsonic_rust_node::buffer::{decode_bytes, is_encoding};
 

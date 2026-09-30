@@ -121,4 +121,13 @@ impl tsonic_rust_js::value::JsClosedValueCarrier for Buffer {
     fn project_json(&self) -> tsonic_rust_js::JsResult<JsValue> {
         Ok(self.to_json())
     }
+
+    fn write_string(&self, output: &mut String) -> tsonic_rust_js::JsResult<()> {
+        self.with_bytes(|bytes| {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|error| tsonic_rust_js::errors::type_error(error.to_string()))?;
+            output.push_str(text);
+            Ok(())
+        })
+    }
 }
