@@ -1,13 +1,3 @@
-pub trait WritableTarget: Clone {
-    fn writable_handle(&self) -> Writable;
-}
-
-impl WritableTarget for Writable {
-    fn writable_handle(&self) -> Writable {
-        self.clone()
-    }
-}
-
 pub(crate) fn install_pipeline<W>(readable: Readable, destination: W) -> NodeResult<()>
 where
     W: WritableTarget + Clone + 'static,

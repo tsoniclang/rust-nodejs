@@ -30,7 +30,7 @@ import {
   writableCarrier,
 } from "./modules/stream/carriers.js";
 import { dnsLookupAddressCarrier } from "./modules/dns/carriers.js";
-import { brotliOptionsCarrier, zlibOptionsCarrier, zlibTransformCarrier } from "./modules/zlib/carriers.js";
+import { brotliOptionsCarrier, zlibOptionsCarrier, zlibTransformCarrier, zlibTransformTraits } from "./modules/zlib/carriers.js";
 import { netSocketCarrier, netServerCarrier } from "./modules/net/carriers.js";
 import { tlsConnectOptionsCarrier, tlsServerOptionsCarrier, tlsSocketCarrier, tlsServerCarrier } from "./modules/tls/carriers.js";
 import { httpsServerCarrier, httpsClientRequestCarrier } from "./modules/https/carriers.js";
@@ -420,7 +420,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Transform": cloneOnlyCarrierTraits,
       "rust.node.ReadStream": cloneOnlyCarrierTraits,
       "rust.node.WriteStream": cloneOnlyCarrierTraits,
-      "rust.node.ZlibTransform": cloneOnlyCarrierTraits,
+      "rust.node.ZlibTransform": zlibTransformTraits,
       "rust.node.NetSocket": cloneOnlyCarrierTraits,
       "rust.node.NetServer": cloneOnlyCarrierTraits,
       "rust.node.FsWatcher": cloneOnlyCarrierTraits,

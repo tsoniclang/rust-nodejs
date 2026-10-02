@@ -3,6 +3,7 @@ include!("events.rs");
 include!("readable.rs");
 include!("writable.rs");
 include!("duplex_transform.rs");
+include!("writable_target.rs");
 include!("pipeline.rs");
 pub mod consumers;
 pub mod promises;

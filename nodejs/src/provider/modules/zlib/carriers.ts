@@ -8,12 +8,17 @@ export const zlibOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id:
 
 export const brotliOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.BrotliOptions" };
 
+export const zlibTransformTraits = {
+  implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
+    .map(traitPath => ({ traitPath, requirements: [] })),
+};
+
 export const zlibTransformCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.ZlibTransform",
   "tsonic_rust_node::zlib::Zlib",
   [],
   [],
-  undefined,
+  zlibTransformTraits,
   [
     { target: streamCarrier, path: "tsonic_rust_node::zlib::zlib_as_stream" },
     { target: readableCarrier, path: "tsonic_rust_node::zlib::zlib_as_readable" },

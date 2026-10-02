@@ -37,3 +37,18 @@ test("Readable pipe preserves its destination binding through parameters, result
     "clone", { kind: "trait", path: "tsonic_rust_node::stream::WritableTarget", genericArguments: [], associatedConstraints: [] },
   ] }]);
 });
+
+test("Zlib native equality traits agree at the binding and operation producers", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const traits = { implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
+    .map(traitPath => ({ traitPath, requirements: [] })) };
+  assert.deepEqual(contribution.definition.carrierTraits["rust.node.ZlibTransform"], traits);
+  const binding = contribution.definition.types.find(row => row.exportId === "node:zlib::ZlibTransform");
+  assert.ok(binding);
+  assert.deepEqual(binding.targetCarrier.value.traits, traits);
+  for (const signature of ["node:zlib::createGzip()", "node:zlib::createGzip(options)"]) {
+    const operation = contribution.definition.operations.find(row => row.signatureId === signature);
+    assert.ok(operation, signature);
+    assert.deepEqual(operation.resultCarrier.value.traits, traits, signature);
+  }
+});
