@@ -412,6 +412,9 @@ impl Buffer {
     }
 
     fn concat_dense_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
+        if buffers.is_empty() {
+            return Buffer::alloc(0);
+        }
         let mut out = Vec::with_capacity(total_length);
         for buffer in buffers {
             buffer.with_bytes(|bytes| {

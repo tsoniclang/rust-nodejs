@@ -106,6 +106,14 @@ fn buffer_compare_equals_concat_and_json() {
     assert_eq!(concat.as_bytes(), vec![1, 2, 3]);
     let padded = Buffer::concat_with_total_length(&buffers, 5).unwrap();
     assert_eq!(padded.as_bytes(), vec![1, 2, 3, 0, 0]);
+    let empty = JsArray::from_dense(Vec::new());
+    assert_eq!(Buffer::concat(&empty).unwrap().len(), 0);
+    assert_eq!(
+        Buffer::concat_with_total_length(&empty, usize::MAX)
+            .unwrap()
+            .len(),
+        0
+    );
     let dense = JsArray::from_dense(vec![one.clone()]);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dense.set(2, two.clone())))
