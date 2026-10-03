@@ -137,6 +137,47 @@ fn worker_structured_clone_preserves_cycles_and_repeated_aliases() {
 }
 
 #[test]
+fn worker_structured_clone_preserves_native_records_cycles_and_aliases() {
+    use tsonic_rust_runtime::Record;
+    let record = Record::from_entries([
+        (String::from("wide"), JsValue::UnsignedInteger(u64::MAX)),
+        (String::from("present"), JsValue::Null),
+    ]);
+    let value = JsValue::from(record.clone());
+    assert!(tsonic_rust_node::util::types::is_object(&value));
+    assert!(!tsonic_rust_node::util::types::is_object(&JsValue::Null));
+    record.set(String::from("self"), value.clone());
+    let root = JsValue::array(JsArray::from_dense(vec![value.clone(), value.clone()]));
+    let graph = worker_threads::StructuredCloneValue::from_js(&root).unwrap();
+    let received = graph.to_js();
+    let received = received.as_array().unwrap();
+    let first = received.get(0).unwrap();
+    let second = received.get(1).unwrap();
+    assert!(first.strict_equal(&second));
+    assert!(!first.strict_equal(&value));
+    let copied = first.as_record().unwrap();
+    assert!(first.strict_equal(&copied.get("self")));
+    assert_eq!(copied.get("wide"), JsValue::UnsignedInteger(u64::MAX));
+    assert!(copied.contains_key("present"));
+    assert!(!copied.contains_key("missing"));
+    copied.set(String::from("wide"), JsValue::Int32(7));
+    assert_eq!(record.get("wide"), JsValue::UnsignedInteger(u64::MAX));
+    assert_eq!(second.as_record().unwrap().get("wide"), JsValue::Int32(7));
+    copied.remove("self");
+    record.remove("self");
+    let unsupported = JsValue::from(Record::from_entries([(
+        String::from("symbol"),
+        JsValue::Symbol(tsonic_rust_js::JsSymbol::create()),
+    )]));
+    assert_eq!(
+        worker_threads::StructuredCloneValue::from_js(&unsupported)
+            .unwrap_err()
+            .code(),
+        "DATA_CLONE_ERR"
+    );
+}
+
+#[test]
 fn worker_message_port_round_trips_structure_without_identity() {
     let sparse = JsArray::with_length(3);
     sparse.set(0, JsValue::Number(1.0));

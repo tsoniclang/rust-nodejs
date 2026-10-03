@@ -6,7 +6,7 @@ use crate::error::NodeResult;
 use std::collections::{BTreeSet, HashSet};
 use tsonic_rust_js::JsString;
 
-pub(super) const FORMAT_VERSION: u8 = 2;
+pub(super) const FORMAT_VERSION: u8 = 3;
 
 pub(crate) fn encode(value: &ClonedValue) -> NodeResult<Vec<u8>> {
     validate_graph(value)?;
@@ -29,6 +29,14 @@ pub(crate) fn encode(value: &ClonedValue) -> NodeResult<Vec<u8>> {
                 write_count(&mut output, entries.len())?;
                 for (index, value) in entries {
                     write_count(&mut output, *index)?;
+                    encode_slot(value, &mut output)?;
+                }
+            }
+            ClonedContainer::Record(entries) => {
+                output.push(2);
+                write_count(&mut output, entries.len())?;
+                for (key, value) in entries {
+                    write_native_string(&mut output, key)?;
                     encode_slot(value, &mut output)?;
                 }
             }
@@ -88,6 +96,22 @@ pub(crate) fn decode(input: &[u8]) -> NodeResult<ClonedValue> {
                     length,
                     entries: values,
                 });
+            }
+            2 => {
+                let count = reader.count()?;
+                reserve_decoded_entries(count, &mut entries)?;
+                let mut values = Vec::with_capacity(count);
+                let mut keys = HashSet::with_capacity(count);
+                for _ in 0..count {
+                    let key = reader.native_string()?;
+                    if !keys.insert(key.clone()) {
+                        return Err(data_clone_error(
+                            "structured-clone record contains a duplicate key",
+                        ));
+                    }
+                    values.push((key, reader.slot()?));
+                }
+                containers.push(ClonedContainer::Record(values));
             }
             _ => {
                 return Err(data_clone_error(
@@ -161,8 +185,7 @@ fn encode_slot(value: &ClonedSlot, output: &mut Vec<u8>) -> NodeResult<()> {
         }
         ClonedSlot::NativeString(value) => {
             output.push(7);
-            write_count(output, value.len())?;
-            output.extend_from_slice(value.as_bytes());
+            write_native_string(output, value)?;
         }
         ClonedSlot::String(value) => {
             output.push(5);
@@ -193,6 +216,17 @@ fn write_string(output: &mut Vec<u8>, value: &JsString) -> NodeResult<()> {
     for unit in value.units() {
         output.extend_from_slice(&unit.to_be_bytes());
     }
+    Ok(())
+}
+
+fn write_native_string(output: &mut Vec<u8>, value: &str) -> NodeResult<()> {
+    if value.len() > MAXIMUM_STRING_UNITS {
+        return Err(data_clone_error(
+            "structured-clone native string exceeds the finite limit",
+        ));
+    }
+    write_count(output, value.len())?;
+    output.extend_from_slice(value.as_bytes());
     Ok(())
 }
 
@@ -284,6 +318,20 @@ impl<'a> Reader<'a> {
         Ok(JsString::from_units(units))
     }
 
+    fn native_string(&mut self) -> NodeResult<String> {
+        let length = self.count()?;
+        self.string_units = self
+            .string_units
+            .checked_add(length)
+            .filter(|total| *total <= MAXIMUM_STRING_UNITS)
+            .ok_or_else(|| {
+                data_clone_error("structured-clone string budget exceeds the finite limit")
+            })?;
+        let text = std::str::from_utf8(self.bytes(length)?)
+            .map_err(|_| data_clone_error("structured-clone native string is not UTF-8"))?;
+        Ok(text.to_owned())
+    }
+
     fn slot(&mut self) -> NodeResult<ClonedSlot> {
         match self.byte()? {
             1 => Ok(ClonedSlot::Null),
@@ -328,19 +376,7 @@ impl<'a> Reader<'a> {
             ))),
             5 => Ok(ClonedSlot::String(self.string()?)),
             6 => Ok(ClonedSlot::Reference(self.count()?)),
-            7 => {
-                let length = self.count()?;
-                self.string_units = self
-                    .string_units
-                    .checked_add(length)
-                    .filter(|total| *total <= MAXIMUM_STRING_UNITS)
-                    .ok_or_else(|| {
-                        data_clone_error("structured-clone string budget exceeds the finite limit")
-                    })?;
-                let text = std::str::from_utf8(self.bytes(length)?)
-                    .map_err(|_| data_clone_error("structured-clone native string is not UTF-8"))?;
-                Ok(ClonedSlot::NativeString(text.to_owned()))
-            }
+            7 => Ok(ClonedSlot::NativeString(self.native_string()?)),
             _ => Err(data_clone_error(
                 "structured-clone payload contains an unknown value tag",
             )),

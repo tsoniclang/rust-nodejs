@@ -136,7 +136,7 @@ pub mod types {
     }
 
     pub fn is_object(value: &JsValue) -> bool {
-        matches!(value, JsValue::Object(_))
+        matches!(value, JsValue::Object(_) | JsValue::Record(_))
     }
 
     pub fn is_array(value: &JsValue) -> bool {

@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use tsonic_rust_js::{JsArray, JsObject, JsString, JsValue};
+use tsonic_rust_runtime::Record;
 
 use crate::error::{NodeError, NodeResult};
 
@@ -41,6 +42,7 @@ enum ClonedSlot {
 #[derive(Debug, Clone, PartialEq)]
 enum ClonedContainer {
     Object(Vec<(JsString, ClonedSlot)>),
+    Record(Vec<(String, ClonedSlot)>),
     Array {
         length: usize,
         entries: Vec<(usize, ClonedSlot)>,
@@ -50,6 +52,7 @@ enum ClonedContainer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum SourceIdentity {
     Object(usize),
+    Record(usize),
     Array(usize),
 }
 
@@ -71,6 +74,7 @@ impl ClonedValue {
             .iter()
             .map(|container| match container {
                 ClonedContainer::Object(_) => JsValue::object(JsObject::new()),
+                ClonedContainer::Record(_) => JsValue::from(Record::default()),
                 ClonedContainer::Array { length, .. } => {
                     JsValue::array(JsArray::with_length(*length))
                 }
@@ -86,6 +90,14 @@ impl ClonedValue {
                     let mut object = object.borrow_mut();
                     for (key, value) in entries {
                         object.set_exact(key.clone(), materialize_slot(value, &containers));
+                    }
+                }
+                ClonedContainer::Record(entries) => {
+                    let record = containers[index]
+                        .as_record()
+                        .expect("validated structured-clone record");
+                    for (key, value) in entries {
+                        record.set(key.clone(), materialize_slot(value, &containers));
                     }
                 }
                 ClonedContainer::Array { entries, .. } => {
@@ -158,6 +170,27 @@ fn clone_slot(value: &JsValue, depth: usize, state: &mut EncodingState) -> NodeR
             state.containers[index] = ClonedContainer::Object(entries);
             Ok(ClonedSlot::Reference(index))
         }
+        JsValue::Record(record) => {
+            let identity = SourceIdentity::Record(record.storage_identity_key());
+            if let Some(index) = state.identities.get(&identity) {
+                return Ok(ClonedSlot::Reference(*index));
+            }
+            reserve_entries(1, state)?;
+            let index = state.containers.len();
+            state.identities.insert(identity, index);
+            state.containers.push(ClonedContainer::Record(Vec::new()));
+            let entries = record.with_entries(|source| {
+                reserve_entries(source.len(), state)?;
+                let mut entries = Vec::with_capacity(source.len());
+                for (key, value) in source {
+                    reserve_native_string(key.len(), state)?;
+                    entries.push((key.clone(), clone_slot(value, depth + 1, state)?));
+                }
+                Ok::<_, NodeError>(entries)
+            })?;
+            state.containers[index] = ClonedContainer::Record(entries);
+            Ok(ClonedSlot::Reference(index))
+        }
         JsValue::Array(values) => {
             let identity = SourceIdentity::Array(values.identity());
             if let Some(index) = state.identities.get(&identity) {
@@ -225,6 +258,11 @@ fn validate_graph(value: &ClonedValue) -> NodeResult<()> {
         }
         match &value.containers[index] {
             ClonedContainer::Object(entries) => {
+                for (_, slot) in entries {
+                    collect_reference(slot, container_count, &mut pending)?;
+                }
+            }
+            ClonedContainer::Record(entries) => {
                 for (_, slot) in entries {
                     collect_reference(slot, container_count, &mut pending)?;
                 }

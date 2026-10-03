@@ -477,20 +477,18 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
                         "WorkerOptions.env key is not a native string",
                     )
                 })?;
-                match value {
-                    JsValue::Null => {}
-                    JsValue::String(value) => {
-                        command.env(key, value);
-                    }
-                    _ => {
-                        return Err(NodeError::new(
-                            "ERR_WORKER_OPTIONS",
-                            "WorkerOptions.env values must be strings or undefined",
-                        ));
-                    }
-                }
+                apply_environment_value(command, &key, &value)?;
             }
             Ok(())
+        }
+        JsValue::Record(record) => {
+            command.env_clear();
+            record.with_entries(|entries| {
+                for (key, value) in entries {
+                    apply_environment_value(command, key, value)?;
+                }
+                Ok(())
+            })
         }
         _ => Err(NodeError::new(
             "ERR_WORKER_OPTIONS",
@@ -498,6 +496,24 @@ fn apply_environment(command: &mut Command, value: &JsValue) -> NodeResult<()> {
         )),
     }
 }
+
+fn apply_environment_value(command: &mut Command, key: &str, value: &JsValue) -> NodeResult<()> {
+    match value {
+        JsValue::Null => Ok(()),
+        JsValue::String(value) => {
+            command.env(key, value);
+            Ok(())
+        }
+        _ => Err(NodeError::new(
+            "ERR_WORKER_OPTIONS",
+            "WorkerOptions.env values must be strings or undefined",
+        )),
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../../tests/node/worker_environment_tests.rs"]
+mod environment_tests;
 
 fn encode_token(token: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
