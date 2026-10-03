@@ -29,6 +29,6 @@ export const zlibTransformCarrier: RustTargetTypeRef = rustNamedTargetType(
 );
 
 export const zlibCallbackCarrier = rustCallableTargetType(
-  [rustOptionTargetType(nodeErrorCarrier), bufferCarrier],
+  [rustOptionTargetType(nodeErrorCarrier), rustOptionTargetType(bufferCarrier)],
   unitCarrier,
 );

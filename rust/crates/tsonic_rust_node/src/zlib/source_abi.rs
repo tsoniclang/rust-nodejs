@@ -9,6 +9,9 @@ use super::{
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
 
+type CompressionCallback<Failure> =
+    tsonic_rust_runtime::Callable<(Option<NodeError>, Option<Buffer>), Result<(), Failure>>;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceZlibOptions {
     pub flush: Option<i32>,
@@ -167,40 +170,28 @@ pub fn create_brotli_decompress_source(
     Ok(create_brotli_decompress(Some(options.into_runtime()?)))
 }
 
-pub fn gzip_callable<E>(
-    input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-) -> NodeResult<()>
+pub fn gzip_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
 {
     compress_callable(input, callback, gzip_sync)
 }
 
-pub fn gunzip_callable<E>(
-    input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-) -> NodeResult<()>
+pub fn gunzip_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
 {
     compress_callable(input, callback, gunzip_sync)
 }
 
-pub fn deflate_callable<E>(
-    input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-) -> NodeResult<()>
+pub fn deflate_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
 {
     compress_callable(input, callback, deflate_sync)
 }
 
-pub fn inflate_callable<E>(
-    input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
-) -> NodeResult<()>
+pub fn inflate_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
 {
@@ -210,7 +201,7 @@ where
 pub fn gzip_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
@@ -221,7 +212,7 @@ where
 pub fn gunzip_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
@@ -232,7 +223,7 @@ where
 pub fn deflate_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
@@ -243,7 +234,7 @@ where
 pub fn inflate_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
     E: std::fmt::Display + 'static,
@@ -253,7 +244,7 @@ where
 
 fn compress_callable<E>(
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
     compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
@@ -265,22 +256,14 @@ where
             let input = Buffer::from_bytes(input);
             compress(&input).map(|output| output.as_bytes())
         },
-        move |result| {
-            let arguments = match result {
-                Ok(output) => (None, Buffer::from_bytes(output)),
-                Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
-            };
-            callback
-                .call(arguments)
-                .map_err(crate::error::callback_runtime_error)
-        },
+        move |result| complete_compression(result, callback),
     )
 }
 
 fn compress_options_callable<E>(
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<E>,
     compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
@@ -294,16 +277,51 @@ where
             let options = options.into_runtime();
             compress(&input, &options).map(|output| output.as_bytes())
         },
-        move |result| {
-            let arguments = match result {
-                Ok(output) => (None, Buffer::from_bytes(output)),
-                Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
-            };
-            callback
-                .call(arguments)
-                .map_err(crate::error::callback_runtime_error)
-        },
+        move |result| complete_compression(result, callback),
     )
+}
+
+fn complete_compression<Failure: std::fmt::Display>(
+    result: NodeResult<Vec<u8>>,
+    callback: CompressionCallback<Failure>,
+) -> tsonic_rust_runtime::TsonicResult<()> {
+    let arguments = match result {
+        Ok(output) => (None, Some(Buffer::from_bytes(output))),
+        Err(error) => (Some(error), None),
+    };
+    callback
+        .call(arguments)
+        .map_err(crate::error::callback_runtime_error)
+}
+
+#[cfg(test)]
+mod compression_completion {
+    use super::{complete_compression, Buffer, NodeError};
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use tsonic_rust_runtime::Callable;
+
+    #[test]
+    fn failure_moves_the_original_error_without_a_placeholder_buffer() {
+        let error = NodeError::new("compression-code", "native error message");
+        let code_address = error.code().as_ptr() as usize;
+        let source = error.source_error().clone();
+        let observed = Rc::new(Cell::new(false));
+        let callback_observed = Rc::clone(&observed);
+        let callback = Callable::new(
+            move |(error, output): (Option<NodeError>, Option<Buffer>)| {
+                let error = error.expect("original native error");
+                assert_eq!(error.code().as_ptr() as usize, code_address);
+                assert_eq!(error.source_error(), &source);
+                assert!(output.is_none());
+                callback_observed.set(true);
+                Ok::<(), String>(())
+            },
+        );
+
+        complete_compression(Err(error), callback).unwrap();
+        assert!(observed.get());
+    }
 }
 
 #[cfg(test)]

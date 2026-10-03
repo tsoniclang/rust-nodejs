@@ -3,18 +3,18 @@ import { dnsAddressArrayCallbackCarrier, dnsLookupAddressCarrier, dnsLookupCallb
 import { fnExport, propertyMember, providerRef } from "../../declarations/builders.js";
 import { numberType, stringArrayType, stringType, voidType } from "../../model/source-types.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { optionalNodeErrorType } from "../util/node-error.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 
 const dnsModuleSpecifier = "node:dns";
 const dnsPromisesModuleSpecifier = "node:dns/promises";
 const lookupAddressId = `${dnsModuleSpecifier}::LookupAddress`;
-const anyType = { kind: "any" } as const;
 const lookupCallbackType: ProviderTypeExpr = {
   kind: "function",
   id: `${dnsModuleSpecifier}.LookupCallback`,
   parameters: [
-    { name: "error", type: anyType },
+    { name: "error", type: optionalNodeErrorType },
     { name: "address", type: stringType },
     { name: "family", type: numberType },
   ],
@@ -24,7 +24,7 @@ const addressArrayCallbackType: ProviderTypeExpr = {
   kind: "function",
   id: `${dnsModuleSpecifier}.AddressArrayCallback`,
   parameters: [
-    { name: "error", type: anyType },
+    { name: "error", type: optionalNodeErrorType },
     { name: "addresses", type: stringArrayType },
   ],
   returnType: voidType,
@@ -46,6 +46,7 @@ export function dnsModule(): RustProviderModuleDefinition {
   return {
     moduleSpecifier: dnsModuleSpecifier,
     providerModuleId: "tsonic.rust.node.dns",
+    imports: [{ moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] }],
     exports: [
       lookupAddressDeclaration(),
       fnExport(dnsModuleSpecifier, "lookup", [

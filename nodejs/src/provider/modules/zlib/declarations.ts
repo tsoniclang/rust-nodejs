@@ -8,6 +8,7 @@ import { brotliOptionsCarrier, zlibCallbackCarrier, zlibOptionsCarrier, zlibTran
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
+import { nodeErrorType } from "../util/node-error.js";
 
 const moduleSpecifier = "node:zlib";
 const optionsId = `${moduleSpecifier}::ZlibOptions`;
@@ -16,11 +17,11 @@ const transformId = `${moduleSpecifier}::ZlibTransform`;
 const bufferType = providerRef("node:buffer", "Buffer");
 const optionsType = providerRef(moduleSpecifier, "ZlibOptions");
 const brotliOptionsType = providerRef(moduleSpecifier, "BrotliOptions");
-const errorType = { kind: "source-global", name: "Error" } as const;
+const errorType = nodeErrorType;
 const callbackType = (signatureId: string): ProviderTypeExpr =>
   providerCallbackType(signatureId, "callback", [
     { name: "error", type: { kind: "union", types: [errorType, undefinedType] } },
-    { name: "result", type: bufferType },
+    { name: "result", type: { kind: "union", types: [bufferType, undefinedType] } },
   ]);
 
 const syncOperations = [
@@ -59,6 +60,7 @@ export function zlibModule(typedArrays: boolean): RustProviderModuleDefinition {
     moduleSpecifier,
     providerModuleId: "tsonic.rust.node.zlib",
     imports: [
+      { moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] },
       {
         moduleSpecifier: "node:buffer",
         namedImports: [{ exportedName: "Buffer" }],

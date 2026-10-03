@@ -148,6 +148,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       workerThreadsModule(),
     ],
     types: [
+      { exportId: "node:util::NodeError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:process::Process", targetCarrier: processCarrier },
       { exportId: "node:child_process::SpawnSyncError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:child_process::SpawnSyncOptionsWithBufferEncoding", targetCarrier: spawnOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },

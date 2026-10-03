@@ -20,6 +20,13 @@ Authored source then imports standard modules such as `node:fs`. Selecting the
 JavaScript source surface is a separate choice and is not required for Node
 module imports.
 
+## Native callback errors
+
+Error callbacks use `NodeError` from `node:util`, a type-only contract with a
+readonly `message`. Values retain the actual native error; there is no source
+`Error` reconstruction. Compression callbacks expose optional error and output
+independently: a failure has no output, while successful empty output is present.
+
 ## Develop this capability
 
 ```sh

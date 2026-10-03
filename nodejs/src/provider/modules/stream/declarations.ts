@@ -26,6 +26,7 @@ import {
 } from "../../model/source-types.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
+import { nodeErrorType } from "../util/node-error.js";
 import {
   duplexCarrier,
   readableCarrier,
@@ -41,7 +42,7 @@ const writableId = `${moduleSpecifier}::Writable`;
 const duplexId = `${moduleSpecifier}::Duplex`;
 const transformId = `${moduleSpecifier}::Transform`;
 const bufferType = providerRef("node:buffer", "Buffer");
-const errorType = { kind: "source-global", name: "Error" } as const;
+const errorType = nodeErrorType;
 const optionalBufferType = { kind: "union", types: [bufferType, undefinedType] } as const;
 const bufferArrayType = { kind: "array", elementType: bufferType } as const;
 const emptyListenerCarrier = rustCallableTargetType([], unitCarrier);
@@ -57,6 +58,7 @@ export function streamModule(): RustProviderModuleDefinition {
     providerModuleId: "tsonic.rust.node.stream",
     imports: [
       { moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] },
+      { moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] },
     ],
     exports: [
       {

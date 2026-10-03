@@ -28,6 +28,7 @@ import {
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
 import { netSocketCarrier } from "../net/carriers.js";
+import { nodeErrorType } from "../util/node-error.js";
 import {
   httpAddressInfoCarrier,
   httpCloseCallbackCarrier,
@@ -50,7 +51,7 @@ const incomingId = `${moduleSpecifier}::IncomingMessage`;
 const responseId = `${moduleSpecifier}::ServerResponse`;
 const serverId = `${moduleSpecifier}::Server`;
 const bufferType = providerRef("node:buffer", "Buffer");
-const errorType = { kind: "source-global", name: "Error" } as const;
+const errorType = nodeErrorType;
 const optionalStringType = optional(stringType);
 const optionalInt32Type = optional(int32Type);
 const stringArrayType = { kind: "array", elementType: stringType } as const;
@@ -73,6 +74,7 @@ export function httpModule(): RustProviderModuleDefinition {
     moduleSpecifier,
     providerModuleId: "tsonic.rust.node.http",
     imports: [
+      { moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] },
       { moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] },
       { moduleSpecifier: "node:net", namedImports: [{ exportedName: "Socket" }] },
       { moduleSpecifier: "node:stream", namedImports: [{ exportedName: "Readable" }, { exportedName: "Writable" }] },

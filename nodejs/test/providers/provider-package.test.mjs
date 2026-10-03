@@ -235,10 +235,16 @@ test("provider type relations carry exact closed target carriers", () => {
     assert.equal(carrier.value.path, carrierPaths[carrier.value.id]);
     assert.deepEqual(carrier.value.genericArguments, []);
     assert.deepEqual(carrier.value.genericDefaults, []);
-    assert.deepEqual(carrier.value.traits, { implementations: [] });
+    assert.deepEqual(carrier.value.traits, { implementations:
+      relation.exportId === "node:zlib::ZlibTransform"
+        ? ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
+          .map(traitPath => ({ traitPath, requirements: [] }))
+        : [],
+    });
     return { ...relation, targetCarrier: { kind: "target-named", id: carrier.value.id } };
   });
   assert.deepEqual(namedRelations, [
+    ["node:util::NodeError", "rust.node.NodeError"],
     ["node:process::Process", "rust.node.Process"],
     ["node:child_process::SpawnSyncError", "rust.node.NodeError"],
     ["node:child_process::SpawnSyncOptionsWithBufferEncoding", "rust.node.SpawnSyncOptions", "struct-default"],
@@ -971,6 +977,14 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
       phase: "before-initialization",
       path: "tsonic_rust_node::perf_hooks::initialize_clock",
       requiredCrate: "tsonic_rust_node",
+    },
+    {
+      id: "node-async-executor",
+      phase: "async-execution",
+      path: "tsonic_rust_node::block_on",
+      requiredCrate: "tsonic_rust_node",
+      isFallible: true,
+      errorBoundary: "target-runtime",
     },
     {
       id: "node-event-loop",

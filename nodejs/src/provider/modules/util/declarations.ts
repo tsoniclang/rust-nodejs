@@ -6,6 +6,7 @@ import { providerNativeFallibility } from "../../model/operations.js";
 import { rustBorrowedStrToStringValueConversion } from "@tsonic/target-rust/provider";
 import { textDecoderCarrier, textEncoderCarrier } from "./carriers.js";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
+import { nodeErrorDeclaration, nodeErrorRows } from "./node-error.js";
 
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function utilModule(typedArrays: boolean): RustProviderModuleDefinition {
@@ -20,6 +21,7 @@ export function utilModule(typedArrays: boolean): RustProviderModuleDefinition {
       namedImports: [{ exportedName: "Buffer" }],
     }],
     exports: [
+      nodeErrorDeclaration(),
       ...(typedArrays ? [{
         id: textEncoderId,
         name: "TextEncoder",
@@ -78,6 +80,7 @@ export function utilRows(typedArrays: boolean): readonly RustProviderOperationDe
   const textDecoderId = `${m}::TextDecoder`;
   const textEncoderId = `${m}::TextEncoder`;
   return [
+    ...nodeErrorRows(),
     ...(typedArrays ? [
     { exportId: textEncoderId, memberId: `${textEncoderId}.constructor`, signatureId: `${textEncoderId}.constructor()`, operationKind: "constructor", target: { form: "call", path: "node_util::TextEncoder::new" }, resultCarrier: textEncoderCarrier, parameterCarriers: [] },
     { exportId: textEncoderId, memberId: `${textEncoderId}.encode`, signatureId: `${textEncoderId}.encode(input)`, operationKind: "method", target: { form: "receiver-method", name: "encode_uint8", argModes: ["ref"] }, resultCarrier: rustJsTypedArrayTargetType("Uint8Array"), parameterCarriers: [stringCarrier], ...providerNativeFallibility },
