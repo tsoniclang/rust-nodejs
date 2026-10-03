@@ -56,6 +56,12 @@ const optionalStringType = optional(stringType);
 const optionalInt32Type = optional(int32Type);
 const stringArrayType = { kind: "array", elementType: stringType } as const;
 const stringArrayCarrier = rustJsArrayTargetType(stringCarrier);
+const borrowedHeaderValuesType = {
+  kind: "source-global", name: "ReadonlyArray", typeArguments: [stringType],
+} as const;
+const borrowedHeaderValuesCarrier: RustTargetTypeRef = {
+  kind: "reference", mutable: false, referent: { kind: "slice", element: stringCarrier },
+};
 const emptyListenerCarrier = rustCallableTargetType([], unitCarrier);
 const errorListenerCarrier = rustCallableTargetType([nodeErrorCarrier], unitCarrier);
 const dataListenerCarrier = rustCallableTargetType([bufferCarrier], unitCarrier);
@@ -92,7 +98,7 @@ export function httpModule(): RustProviderModuleDefinition {
           signatures: [{
             id: `${incomingHeaderValuesId}.indexer(name)`,
             parameters: [{ name: "name", type: stringType }],
-            returnType: optional(stringArrayType),
+            returnType: optional(borrowedHeaderValuesType),
           }],
         }],
       },
@@ -369,7 +375,7 @@ export function httpRows(): readonly RustProviderOperationDefinition[] {
       operationKind: "indexer",
       target: { form: "receiver-method", name: "get_values", argModes: ["ref"] },
       receiverCarrier: incomingHttpHeadersCarrier,
-      resultCarrier: rustOptionTargetType(stringArrayCarrier),
+      resultCarrier: rustOptionTargetType(borrowedHeaderValuesCarrier),
       parameterCarriers: [stringCarrier],
       ...providerNativeFallibility,
     },

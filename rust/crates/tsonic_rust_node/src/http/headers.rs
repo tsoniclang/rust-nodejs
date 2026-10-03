@@ -202,10 +202,11 @@ impl IncomingHttpHeaders {
             .map(tsonic_rust_js::JsArray::from_dense)
     }
 
-    pub fn get_values(&self, name: &str) -> NodeResult<Option<tsonic_rust_js::JsArray<String>>> {
+    pub fn get_values(&self, name: &str) -> NodeResult<Option<&[String]>> {
         validate_header_name(name)?;
         Ok(self.store.values.get(&name.to_ascii_lowercase())
-            .map(|values| tsonic_rust_js::JsArray::from_dense(values.clone())))
+            .filter(|values| !values.is_empty())
+            .map(Vec::as_slice))
     }
 
     pub fn names(&self) -> tsonic_rust_js::JsArray<String> {
@@ -214,6 +215,29 @@ impl IncomingHttpHeaders {
 
     pub fn entries(&self) -> Vec<(String, Vec<String>)> {
         self.store.entries()
+    }
+}
+
+#[cfg(test)]
+mod borrowed_header_tests {
+    use super::IncomingHttpHeaders;
+
+    #[test]
+    fn indexer_borrows_exact_backing_and_snapshot_is_independent() {
+        let headers = IncomingHttpHeaders::from_pairs([
+            ("x-item".to_owned(), "one".to_owned()),
+            ("x-item".to_owned(), "two".to_owned()),
+        ]).unwrap();
+        let view = headers.get_values("X-ITEM").unwrap().unwrap();
+        let backing = headers.store.values.get("x-item").unwrap();
+        assert_eq!(view.as_ptr(), backing.as_ptr());
+        assert_eq!(view, ["one", "two"]);
+        let snapshot = headers.get_all("x-item").unwrap();
+        snapshot.with_values(|values| assert_ne!(values.as_ptr(), view.as_ptr()));
+        assert!(headers.get_values("missing").unwrap().is_none());
+        assert!(headers.get_values("bad header").is_err());
+        let cloned_owner = headers.clone();
+        assert_eq!(cloned_owner.get_values("x-item").unwrap().unwrap().as_ptr(), view.as_ptr());
     }
 }
 
