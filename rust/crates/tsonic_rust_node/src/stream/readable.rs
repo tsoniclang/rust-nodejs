@@ -11,12 +11,12 @@ struct ReadableState {
     options: StreamOptions,
     paused: bool,
     destroyed: bool,
-    errored: Option<NodeError>,
+    errored: Option<tsonic_rust_runtime::RetainedError>,
     encoding: Option<String>,
     did_read: bool,
     data_event: StreamEvent<Buffer>,
     end_event: StreamEvent<()>,
-    error_event: StreamEvent<NodeError>,
+    error_event: StreamEvent<tsonic_rust_runtime::RetainedError>,
     close_event: StreamEvent<()>,
     source: Option<ReadableSource>,
     producer_ended: bool,
@@ -276,15 +276,15 @@ impl Readable {
     }
 
     pub fn destroy_with_error(&self, error: impl Into<String>) {
-        let _ = self.destroy_result(Some(NodeError::new("ERR_STREAM_DESTROYED", error)));
+        let _ = self.destroy_result(Some(NodeError::new("ERR_STREAM_DESTROYED", error).into()));
     }
 
-    pub fn destroy_chain(&self, error: Option<NodeError>) -> NodeResult<Self> {
+    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
         self.destroy_result(error)?;
         Ok(self.clone())
     }
 
-    fn destroy_result(&self, error: Option<NodeError>) -> NodeResult<()> {
+    fn destroy_result(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<()> {
         let (error_callbacks, close_callbacks, emitted_error) = {
             let mut state = self.state.borrow_mut();
             if state.destroyed {
@@ -472,7 +472,7 @@ impl Readable {
     }
 
     pub(crate) fn fail_input(&self, error: NodeError) -> NodeResult<()> {
-        self.destroy_result(Some(error))
+        self.destroy_result(Some(error.into()))
     }
 
     pub(crate) fn set_capacity_handler(
@@ -587,7 +587,7 @@ impl Readable {
     pub fn on_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.add_error_listener(event, listener, false)
     }
@@ -595,7 +595,7 @@ impl Readable {
     pub fn once_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.add_error_listener(event, listener, true)
     }
@@ -603,7 +603,7 @@ impl Readable {
     pub fn off_error<E>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         ensure_stream_event(event, "error")?;
         self.state
@@ -680,7 +680,7 @@ impl Readable {
     fn add_error_listener<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
         once: bool,
     ) -> NodeResult<Self> {
         ensure_stream_event(event, "error")?;

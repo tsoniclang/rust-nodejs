@@ -2,6 +2,7 @@ import {
   rustCallableTargetType,
   rustJsArrayTargetType,
   rustOptionTargetType,
+  rustRetainedErrorTargetType,
 } from "@tsonic/target-rust/provider";
 import type {
   RustProviderModuleDefinition,
@@ -20,6 +21,7 @@ import {
 import { providerNativeFallibility } from "../../model/operations.js";
 import {
   booleanType,
+  errorType as retainedErrorType,
   int32Type,
   stringType,
   undefinedType,
@@ -64,8 +66,10 @@ const borrowedHeaderValuesCarrier: RustTargetTypeRef = {
 };
 const emptyListenerCarrier = rustCallableTargetType([], unitCarrier);
 const errorListenerCarrier = rustCallableTargetType([nodeErrorCarrier], unitCarrier);
+const retainedErrorCarrier = rustRetainedErrorTargetType();
+const retainedErrorListenerCarrier = rustCallableTargetType([retainedErrorCarrier], unitCarrier);
 const dataListenerCarrier = rustCallableTargetType([bufferCarrier], unitCarrier);
-const optionalErrorCarrier = rustOptionTargetType(nodeErrorCarrier);
+const optionalErrorCarrier = rustOptionTargetType(retainedErrorCarrier);
 const optionalStringCarrier = rustOptionTargetType(stringCarrier);
 const optionalInt32Carrier = rustOptionTargetType(int32Carrier);
 const optionalAddressCarrier = rustOptionTargetType(httpAddressInfoCarrier);
@@ -179,12 +183,12 @@ function incomingMessageDeclaration(): RustProviderModuleDefinition["exports"][n
       property(incomingId, "statusCode", optionalInt32Type),
       property(incomingId, "statusMessage", optionalStringType),
       property(incomingId, "socket", providerRef("node:net", "Socket")),
-      method(incomingId, "destroy", [{ name: "error", type: errorType, optional: true }], classType),
+      method(incomingId, "destroy", [{ name: "error", type: retainedErrorType, optional: true }], classType),
       ...eventMembers(incomingId, classType, [
         ["data", [{ name: "chunk", type: bufferType }]],
         ["end", []],
         ["aborted", []],
-        ["error", [{ name: "error", type: errorType }]],
+        ["error", [{ name: "error", type: retainedErrorType }]],
         ["close", []],
       ]),
     ],
@@ -280,11 +284,11 @@ function serverResponseDeclaration(): RustProviderModuleDefinition["exports"][nu
           { id: `${responseId}.end(buffer)`, parameters: [{ name: "chunk", type: bufferType }], returnType: classType },
         ],
       },
-      method(responseId, "destroy", [{ name: "error", type: errorType, optional: true }], classType),
+      method(responseId, "destroy", [{ name: "error", type: retainedErrorType, optional: true }], classType),
       ...eventMembers(responseId, classType, [
         ["drain", []],
         ["finish", []],
-        ["error", [{ name: "error", type: errorType }]],
+        ["error", [{ name: "error", type: retainedErrorType }]],
         ["close", []],
       ]),
     ],
@@ -428,7 +432,7 @@ function incomingRows(): readonly RustProviderOperationDefinition[] {
     ["data", dataListenerCarrier],
     ["end", emptyListenerCarrier],
     ["aborted", emptyListenerCarrier],
-    ["error", errorListenerCarrier],
+    ["error", retainedErrorListenerCarrier],
     ["close", emptyListenerCarrier],
   ]));
   return rows;
@@ -469,7 +473,7 @@ function responseRows(): readonly RustProviderOperationDefinition[] {
   rows.push(...eventRows(responseId, httpServerResponseCarrier, [
     ["drain", emptyListenerCarrier],
     ["finish", emptyListenerCarrier],
-    ["error", errorListenerCarrier],
+    ["error", retainedErrorListenerCarrier],
     ["close", emptyListenerCarrier],
   ]));
   return rows;

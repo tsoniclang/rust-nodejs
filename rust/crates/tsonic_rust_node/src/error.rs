@@ -36,6 +36,40 @@ impl fmt::Display for NodeError {
 
 impl std::error::Error for NodeError {}
 
+impl tsonic_rust_runtime::ErrorObject for NodeError {
+    fn error_name(&self) -> tsonic_rust_runtime::ErrorField<'_> {
+        self.source.error_name()
+    }
+
+    fn error_message(&self) -> tsonic_rust_runtime::ErrorField<'_> {
+        self.source.error_message()
+    }
+
+    fn error_stack(&self) -> Option<tsonic_rust_runtime::ErrorField<'_>> {
+        self.source.error_stack()
+    }
+
+    fn error_kind(&self) -> JsErrorKind {
+        self.source.error_kind()
+    }
+
+    fn error_identity_key(&self) -> usize {
+        self.source.error_identity_key()
+    }
+}
+
+impl tsonic_rust_runtime::ErrorStack for NodeError {
+    fn set_stack(&self, value: Option<String>) {
+        tsonic_rust_runtime::ErrorStack::set_stack(&self.source, value);
+    }
+}
+
+impl tsonic_rust_runtime::ToSourceString for NodeError {
+    fn to_source_string(&self) -> String {
+        self.to_string()
+    }
+}
+
 pub type NodeResult<T> = Result<T, NodeError>;
 
 impl From<NodeError> for tsonic_rust_runtime::TsonicError {
@@ -44,6 +78,12 @@ impl From<NodeError> for tsonic_rust_runtime::TsonicError {
             code: value.code,
             source: value.source,
         }
+    }
+}
+
+impl From<NodeError> for tsonic_rust_runtime::RetainedError {
+    fn from(value: NodeError) -> Self {
+        Self::from(tsonic_rust_runtime::TsonicError::from(value))
     }
 }
 

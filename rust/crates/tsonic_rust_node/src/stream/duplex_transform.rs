@@ -178,7 +178,7 @@ impl Duplex {
         self.writable.destroy();
     }
 
-    pub fn destroy_chain(&self, error: Option<NodeError>) -> NodeResult<Self> {
+    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
         self.readable.destroy_chain(error.clone())?;
         self.writable.destroy_chain(error)?;
         Ok(self.clone())

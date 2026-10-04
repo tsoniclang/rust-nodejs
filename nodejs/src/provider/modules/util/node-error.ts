@@ -13,6 +13,9 @@ export function nodeErrorDeclaration(): RustProviderModuleDefinition["exports"][
     id: exportId,
     name: "NodeError",
     kind: "interface",
+    heritage: [{ kind: "extends", type: { kind: "source-global", name: "Readonly", typeArguments: [
+      { kind: "source-global", name: "Error" },
+    ] } }],
     members: [propertyMember(exportId, "message", stringType)],
   };
 }

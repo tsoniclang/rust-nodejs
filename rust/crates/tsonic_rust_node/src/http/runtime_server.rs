@@ -909,10 +909,10 @@ fn poll_connection(
                 if let Err(error) = handler.call((request.clone(), response.clone())) {
                     let node_error = NodeError::new("ERR_HTTP_HANDLER", error.to_string());
                     response
-                        .destroy_chain(Some(node_error.clone()))
+                        .destroy_chain(Some(node_error.clone().into()))
                         .map_err(tsonic_rust_runtime::TsonicError::from)?;
                     request
-                        .abort(Some(node_error))
+                        .abort(Some(node_error.into()))
                         .map_err(tsonic_rust_runtime::TsonicError::from)?;
                     return Err(error);
                 }
@@ -934,7 +934,7 @@ fn poll_connection(
             }
             ConnectionAction::AbortRequest { request, error } => {
                 request
-                    .abort(Some(error))
+                    .abort(Some(error.into()))
                     .map_err(tsonic_rust_runtime::TsonicError::from)?;
             }
             ConnectionAction::WritableProgress(writable) => writable
@@ -1396,7 +1396,7 @@ fn release_connection(
                 .abort(Some(failure.clone().unwrap_or_else(|| NodeError::new(
                     "ECONNRESET",
                     "HTTP connection closed before request completion",
-                ))))
+                )).into()))
                 .map_err(tsonic_rust_runtime::TsonicError::from)?;
         }
     }
@@ -1406,7 +1406,7 @@ fn release_connection(
                 .destroy_chain(Some(failure.unwrap_or_else(|| NodeError::new(
                     "ECONNRESET",
                     "HTTP connection closed before response completion",
-                ))))
+                )).into()))
                 .map_err(tsonic_rust_runtime::TsonicError::from)?;
         }
     }

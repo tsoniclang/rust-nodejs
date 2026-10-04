@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTsonicPlugin } from "../../../dist/index.js";
 
-test("native NodeError exposes only its readonly native message contract", () => {
+test("native NodeError exposes its readonly native Error contract", () => {
   const [contribution] = createTsonicPlugin().createTargetContributions({});
   const { modules, types, operations } = contribution.definition;
   const declaration = modules.find(module => module.moduleSpecifier === "node:util")
     .exports.find(entry => entry.name === "NodeError");
   assert.equal(declaration.kind, "interface");
+  assert.deepEqual(declaration.heritage, [{ kind: "extends", type: { kind: "source-global", name: "Readonly",
+    typeArguments: [{ kind: "source-global", name: "Error" }] } }]);
   assert.deepEqual(declaration.members, [{
     id: "node:util::NodeError.message", name: "message", kind: "property",
     readonly: true, type: { kind: "string" },

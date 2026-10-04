@@ -40,7 +40,8 @@ test("native callback throwing requires exact operand, carrier and registration"
   assert.equal(fact.error.expression, Node_Expression(ast, statement));
   assert.deepEqual(fact.error.conversion.source, { kind: "target-specific", target: "rust", name: "named-type", value: {
     id: "rust.node.NodeError", path: "tsonic_rust_node::NodeError",
-    traits: { implementations: [{ traitPath: "core::clone::Clone", requirements: [] }] },
+    traits: { implementations: ["core::clone::Clone", "tsonic_rust_runtime::ErrorObject",
+      "tsonic_rust_runtime::ErrorStack", "tsonic_rust_runtime::ToSourceString"].map(traitPath => ({ traitPath, requirements: [] })) },
     genericArguments: [], genericDefaults: [], upcasts: [],
   } });
   assert.deepEqual(program.providerErrorCarriers, [fact.error.conversion.source]);
@@ -67,10 +68,10 @@ test("native callback errors do not promise mutable source Error storage", () =>
   for (const source of [
     `import type { NodeError } from "node:util";
      export function change(error: NodeError): void { error.message = "changed"; }`,
-    `import type { Readable } from "node:stream";
-     export function observe(source: Readable): void {
-       source.on("error", (error: Error) => { console.log(error.stack); });
-     }`,
+    `import type { NodeError } from "node:util";
+     export function change(error: NodeError): void { error.name = "changed"; }`,
+    `import type { NodeError } from "node:util";
+     export function change(error: NodeError): void { error.stack = "changed"; }`,
   ]) {
     assert.throws(() => compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
       files: { "index.ts": source } }), /TypeScript diagnostics:/u);

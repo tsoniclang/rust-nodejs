@@ -2,6 +2,7 @@ import {
   rustCallableTargetType,
   rustJsArrayTargetType,
   rustOptionTargetType,
+  rustRetainedErrorTargetType,
 } from "@tsonic/target-rust/provider";
 import type {
   RustProviderModuleDefinition,
@@ -12,13 +13,13 @@ import { providerCallbackType, providerRef } from "../../declarations/builders.j
 import {
   boolCarrier,
   int32Carrier,
-  nodeErrorCarrier,
   stringCarrier,
   unitCarrier,
 } from "../../model/carriers.js";
 import { providerNativeFallibility } from "../../model/operations.js";
 import {
   booleanType,
+  errorType,
   int32Type,
   stringType,
   undefinedType,
@@ -26,7 +27,6 @@ import {
 } from "../../model/source-types.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
-import { nodeErrorType } from "../util/node-error.js";
 import {
   duplexCarrier,
   readableCarrier,
@@ -42,15 +42,15 @@ const writableId = `${moduleSpecifier}::Writable`;
 const duplexId = `${moduleSpecifier}::Duplex`;
 const transformId = `${moduleSpecifier}::Transform`;
 const bufferType = providerRef("node:buffer", "Buffer");
-const errorType = nodeErrorType;
 const optionalBufferType = { kind: "union", types: [bufferType, undefinedType] } as const;
 const bufferArrayType = { kind: "array", elementType: bufferType } as const;
 const emptyListenerCarrier = rustCallableTargetType([], unitCarrier);
 const dataListenerCarrier = rustCallableTargetType([bufferCarrier], unitCarrier);
-const errorListenerCarrier = rustCallableTargetType([nodeErrorCarrier], unitCarrier);
+const errorCarrier = rustRetainedErrorTargetType();
+const errorListenerCarrier = rustCallableTargetType([errorCarrier], unitCarrier);
 const destinationIdentity = "node:stream:Readable:pipe:TDestination";
 const destinationCarrier: RustTargetTypeRef = { kind: "type-parameter", identity: destinationIdentity, name: "TDestination" };
-const optionalErrorCarrier = rustOptionTargetType(nodeErrorCarrier);
+const optionalErrorCarrier = rustOptionTargetType(errorCarrier);
 
 export function streamModule(): RustProviderModuleDefinition {
   return {
@@ -58,7 +58,6 @@ export function streamModule(): RustProviderModuleDefinition {
     providerModuleId: "tsonic.rust.node.stream",
     imports: [
       { moduleSpecifier: "node:buffer", namedImports: [{ exportedName: "Buffer" }] },
-      { moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] },
     ],
     exports: [
       {

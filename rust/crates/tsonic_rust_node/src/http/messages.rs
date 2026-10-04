@@ -222,7 +222,7 @@ impl IncomingMessage {
         self.readable.is_paused()
     }
 
-    pub fn destroy_chain(&self, error: Option<NodeError>) -> NodeResult<Self> {
+    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
         self.abort(error)?;
         Ok(self.clone())
     }
@@ -284,7 +284,7 @@ impl IncomingMessage {
     pub fn on_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.readable.on_error(event, listener)?;
         Ok(self.clone())
@@ -293,7 +293,7 @@ impl IncomingMessage {
     pub fn once_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.readable.once_error(event, listener)?;
         Ok(self.clone())
@@ -302,7 +302,7 @@ impl IncomingMessage {
     pub fn off_error<E>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.readable.off_error(event, listener)?;
         Ok(self.clone())
@@ -407,7 +407,7 @@ impl IncomingMessage {
         self.readable.set_capacity_handler(callback);
     }
 
-    pub(crate) fn abort(&self, error: Option<NodeError>) -> NodeResult<()> {
+    pub(crate) fn abort(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<()> {
         let callbacks = {
             let mut state = self.state.borrow_mut();
             if state.destroyed {
@@ -688,7 +688,7 @@ impl ServerResponse {
         Ok(self.clone())
     }
 
-    pub fn destroy_chain(&self, error: Option<NodeError>) -> NodeResult<Self> {
+    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
         self.writable.destroy_chain(error)?;
         Ok(self.clone())
     }
@@ -750,7 +750,7 @@ impl ServerResponse {
     pub fn on_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.writable.on_error(event, listener)?;
         Ok(self.clone())
@@ -759,7 +759,7 @@ impl ServerResponse {
     pub fn once_error<E: std::fmt::Display + 'static>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.writable.once_error(event, listener)?;
         Ok(self.clone())
@@ -768,7 +768,7 @@ impl ServerResponse {
     pub fn off_error<E>(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.writable.off_error(event, listener)?;
         Ok(self.clone())
