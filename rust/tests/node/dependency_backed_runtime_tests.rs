@@ -68,6 +68,8 @@ fn https_and_http2_validate_closed_request_shapes() {
     };
     assert_eq!(server_options.request_cert, Some(true));
     let server = tsonic_rust_node::https::create_server_callable(
+        &tsonic_rust_node::tls::TlsServers::new(),
+        &tsonic_rust_node::background::BackgroundTasks::new(),
         server_options,
         tsonic_rust_runtime::Callable::new(
             |(_request, _response): (

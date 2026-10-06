@@ -26,7 +26,7 @@ impl<TResult, TCallback, TError> BackgroundCompletion<TError>
 where
     TResult: Send + 'static,
     TCallback: FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
-    TError: From<TsonicError>,
+    TError: From<crate::NodeError>,
 {
     fn complete(self: Box<Self>) -> Result<(), TError> {
         let Self {
@@ -34,10 +34,10 @@ where
             callback,
         } = *self;
         let result = result_receiver.recv().map_err(|_| {
-            TError::from(TsonicError::from(crate::NodeError::new(
+            TError::from(crate::NodeError::new(
                 "ERR_NODE_BACKGROUND_RESULT",
                 "background work completed without its exact typed result",
-            )))
+            ))
         })?;
         callback(result)
     }
@@ -122,7 +122,7 @@ impl<TError> BackgroundTasks<TError> {
     }
 }
 
-impl<TError: From<TsonicError>> BackgroundTasks<TError> {
+impl<TError: From<crate::NodeError>> BackgroundTasks<TError> {
     pub fn spawn<TResult>(
         &self,
         work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
@@ -142,7 +142,7 @@ impl<TError: From<TsonicError>> BackgroundTasks<TError> {
     }
 }
 
-impl<TError: From<TsonicError>> BackgroundHandle<TError> {
+impl<TError: From<crate::NodeError>> BackgroundHandle<TError> {
     pub fn spawn<TResult>(
         &self,
         work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
@@ -168,7 +168,7 @@ fn reserve_background_task() -> crate::NodeResult<TaskReservation> {
         .map_err(|error| crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string()))
 }
 
-fn spawn_on_source<TResult, TError: From<TsonicError>>(
+fn spawn_on_source<TResult, TError: From<crate::NodeError>>(
     source: &RefCell<SourceThreadCompletions<TError>>,
     reservation: TaskReservation,
     work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
@@ -245,12 +245,10 @@ pub(crate) fn has_pending_work() -> bool {
     SOURCE_THREAD_COMPLETIONS.with(BackgroundTasks::has_pending_work)
 }
 
-fn poll_completions<TError: From<TsonicError>>(
+fn poll_completions<TError: From<crate::NodeError>>(
     source: &RefCell<SourceThreadCompletions<TError>>,
 ) -> Result<bool, TError> {
-    let boundary = publish_completions(source)
-        .map_err(TsonicError::from)
-        .map_err(TError::from)?;
+    let boundary = publish_completions(source).map_err(TError::from)?;
     let Some(boundary) = boundary else {
         return Ok(false);
     };
@@ -264,7 +262,7 @@ fn poll_completions<TError: From<TsonicError>>(
     Ok(did_work)
 }
 
-fn poll_next_completion<TError: From<TsonicError>>(
+fn poll_next_completion<TError: From<crate::NodeError>>(
     source: &RefCell<SourceThreadCompletions<TError>>,
     boundary: u64,
 ) -> Result<bool, TError> {
@@ -330,7 +328,7 @@ fn publish_completions<TError>(
     Ok(source.ready.back().map(|(ticket, _)| *ticket))
 }
 
-impl<TError: From<TsonicError>> tsonic_rust_runtime::dispatch::DispatchContexts
+impl<TError: From<crate::NodeError>> tsonic_rust_runtime::dispatch::DispatchContexts
     for BackgroundTasks<TError>
 {
     type Error = TError;
@@ -344,9 +342,7 @@ impl<TError: From<TsonicError>> tsonic_rust_runtime::dispatch::DispatchContexts
             return Ok(None);
         }
         self.source.get().map_or(Ok(None), |source| {
-            publish_completions(source)
-                .map_err(TsonicError::from)
-                .map_err(TError::from)
+            publish_completions(source).map_err(TError::from)
         })
     }
 

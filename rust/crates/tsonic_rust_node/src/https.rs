@@ -145,6 +145,8 @@ impl ServerHandle {
 }
 
 pub fn create_server_callable<E>(
+    roots: &crate::tls::TlsServers<tsonic_rust_runtime::TsonicError>,
+    background: &crate::background::BackgroundTasks<tsonic_rust_runtime::TsonicError>,
     options: SourceServerOptions,
     handler: tsonic_rust_runtime::Callable<RuntimeRequestArguments, Result<(), E>>,
 ) -> NodeResult<ServerHandle>
@@ -156,7 +158,7 @@ where
         crate::http::accept_runtime_transport(Box::new(socket), handler.clone())
     });
     Ok(ServerHandle {
-        server: crate::tls::create_server(options, connection_callback)?,
+        server: crate::tls::create_server(roots, background, options, connection_callback)?,
     })
 }
 

@@ -21,7 +21,7 @@ fn has_runtime_work() -> bool {
         || has_runtime_tasks()
         || crate::http::has_active_runtime_servers()
         || crate::net::with_default(DispatchContexts::has_work)
-        || crate::tls::has_refed_runtime_servers()
+        || crate::tls::with_default_tls(DispatchContexts::has_work)
         || crate::timers::has_refed_runtime_timers()
         || crate::fs::with_default_watchers(DispatchContexts::has_work)
         || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
@@ -134,6 +134,12 @@ where
                         phase,
                     )
                 })?,
+                DispatchPhase::Tls => crate::tls::with_default_tls(|native| {
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
                 DispatchPhase::Watchers => crate::fs::with_default_watchers(|native| {
                     tsonic_rust_runtime::dispatch::poll_phase(
                         &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
@@ -206,12 +212,12 @@ fn poll_native_phase(phase: DispatchPhase) -> TsonicResult<bool> {
         | DispatchPhase::Workers
         | DispatchPhase::Ports
         | DispatchPhase::Net
+        | DispatchPhase::Tls
         | DispatchPhase::Watchers
         | DispatchPhase::Signals => {
             unreachable!("native queued work belongs to its composed phase")
         }
         DispatchPhase::Http => crate::http::poll_runtime_servers(),
-        DispatchPhase::Tls => crate::tls::poll_runtime_servers(),
     }
 }
 #[cfg(test)]

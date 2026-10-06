@@ -9,7 +9,6 @@ use super::{
 use crate::background::BackgroundTasks;
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
-use tsonic_rust_runtime::TsonicError;
 
 type CompressionCallback<Failure> =
     tsonic_rust_runtime::Callable<(Option<NodeError>, Option<Buffer>), Result<(), Failure>>;
@@ -178,7 +177,7 @@ pub fn gzip_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_callable(root, input, callback, gzip_sync)
 }
@@ -189,7 +188,7 @@ pub fn gunzip_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_callable(root, input, callback, gunzip_sync)
 }
@@ -200,7 +199,7 @@ pub fn deflate_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_callable(root, input, callback, deflate_sync)
 }
@@ -211,7 +210,7 @@ pub fn inflate_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_callable(root, input, callback, inflate_sync)
 }
@@ -223,7 +222,7 @@ pub fn gzip_options_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_options_callable(root, input, options, callback, gzip_sync_with_options)
 }
@@ -235,7 +234,7 @@ pub fn gunzip_options_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_options_callable(root, input, options, callback, gunzip_sync_with_options)
 }
@@ -247,7 +246,7 @@ pub fn deflate_options_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_options_callable(root, input, options, callback, deflate_sync_with_options)
 }
@@ -259,7 +258,7 @@ pub fn inflate_options_callable<E>(
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     compress_options_callable(root, input, options, callback, inflate_sync_with_options)
 }
@@ -271,7 +270,7 @@ fn compress_callable<E>(
     compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.as_bytes();
     root.spawn(
@@ -291,7 +290,7 @@ fn compress_options_callable<E>(
     compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: From<TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.as_bytes();
     let options = BackgroundZlibOptions::from(options.into_runtime()?);

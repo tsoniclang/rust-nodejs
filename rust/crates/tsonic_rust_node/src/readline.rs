@@ -52,7 +52,7 @@ impl Interface {
         callback: tsonic_rust_runtime::Callable<(String,), Result<(), E>>,
     ) -> NodeResult<()>
     where
-        E: From<tsonic_rust_runtime::TsonicError> + 'static,
+        E: From<NodeError> + 'static,
     {
         self.write_output(query)?;
         if self.input.is_stdin_source() {
@@ -71,9 +71,7 @@ impl Interface {
                     Ok(answer)
                 },
                 move |answer| {
-                    callback.call((answer
-                        .map_err(tsonic_rust_runtime::TsonicError::from)
-                        .map_err(E::from)?,))
+                    callback.call((answer.map_err(E::from)?,))
                 },
             );
         }

@@ -23,24 +23,22 @@ pub async fn reverse_async(address: &str) -> NodeResult<tsonic_rust_js::JsArray<
 pub fn lookup_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
-    callback: tsonic_rust_runtime::Callable<
-        (Option<NodeError>, String, u8),
-        Result<(), E>,
-    >,
+    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, String, u8), Result<(), E>>,
 ) -> NodeResult<()>
 where
-    E: From<tsonic_rust_runtime::TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     let hostname = hostname.to_string();
     root.spawn(
         move || lookup(&hostname),
         move |result| {
-        let arguments = match result {
-            Ok(result) => (None, result.address, result.family),
-            Err(error) => (Some(error), String::new(), 0),
-        };
-        callback.call(arguments)
-    })
+            let arguments = match result {
+                Ok(result) => (None, result.address, result.family),
+                Err(error) => (Some(error), String::new(), 0),
+            };
+            callback.call(arguments)
+        },
+    )
 }
 
 pub fn resolve4_callable<E>(
@@ -52,7 +50,7 @@ pub fn resolve4_callable<E>(
     >,
 ) -> NodeResult<()>
 where
-    E: From<tsonic_rust_runtime::TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     resolve_addresses_callable(root, hostname, callback, resolve4)
 }
@@ -66,7 +64,7 @@ pub fn resolve6_callable<E>(
     >,
 ) -> NodeResult<()>
 where
-    E: From<tsonic_rust_runtime::TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     resolve_addresses_callable(root, hostname, callback, resolve6)
 }
@@ -80,7 +78,7 @@ pub fn reverse_callable<E>(
     >,
 ) -> NodeResult<()>
 where
-    E: From<tsonic_rust_runtime::TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     resolve_addresses_callable(root, address, callback, reverse)
 }
@@ -95,16 +93,17 @@ fn resolve_addresses_callable<E>(
     resolve: fn(&str) -> NodeResult<Vec<String>>,
 ) -> NodeResult<()>
 where
-    E: From<tsonic_rust_runtime::TsonicError> + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.to_string();
     root.spawn(
         move || resolve(&input),
         move |result| {
-        let arguments = match result {
-            Ok(result) => (None, tsonic_rust_js::JsArray::from_dense(result)),
-            Err(error) => (Some(error), tsonic_rust_js::JsArray::new()),
-        };
-        callback.call(arguments)
-    })
+            let arguments = match result {
+                Ok(result) => (None, tsonic_rust_js::JsArray::from_dense(result)),
+                Err(error) => (Some(error), tsonic_rust_js::JsArray::new()),
+            };
+            callback.call(arguments)
+        },
+    )
 }

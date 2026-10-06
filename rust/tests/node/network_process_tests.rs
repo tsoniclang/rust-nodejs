@@ -195,6 +195,8 @@ fn net_source_abi_listen_and_default_host_adapters_are_exact() {
 
 #[test]
 fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = thread::spawn(move || {
@@ -205,6 +207,7 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
     let callback_state = std::rc::Rc::clone(&callback_called);
     let started = Instant::now();
     let mut socket = tls::connect_callable(
+        &background,
         tls::SourceConnectOptions {
             host: Some("127.0.0.1".to_string()),
             servername: Some("localhost".to_string()),
@@ -215,7 +218,7 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
         },
         Callable::new(move |()| {
             callback_state.set(true);
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
     )
     .unwrap();
@@ -234,7 +237,7 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
     assert_eq!(socket.bytes_read(), 0);
     assert_eq!(socket.bytes_written(), 0);
 
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(&background).unwrap();
     assert!(!callback_called.get());
     assert_eq!(socket.write_string("late").unwrap_err().code, "ERR_TLS_IO");
     server.join().unwrap();
@@ -242,8 +245,15 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
 
 #[test]
 fn tls_default_host_listener_uses_the_exact_source_callback_contract() {
-    let connection = Callable::new(|(_socket,): (tls::TlsSocket,)| Ok::<(), String>(()));
-    let mut server = tls::TlsServer::create(
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
+    let roots = tls::TlsServers::<tsonic_rust_runtime::TsonicError>::new();
+    let connection = Callable::new(|(_socket,): (tls::TlsSocket,)| {
+        Ok::<(), tsonic_rust_runtime::TsonicError>(())
+    });
+    let server = tls::TlsServer::create(
+        &roots,
+        &background,
         tls::SourceServerOptions {
             key: Some(TEST_TLS_PRIVATE_KEY.to_string()),
             cert: Some(TEST_TLS_CERTIFICATE.to_string()),
@@ -259,13 +269,17 @@ fn tls_default_host_listener_uses_the_exact_source_callback_contract() {
             0.0,
             Callable::new(move |()| {
                 listening_state.set(true);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             }),
         )
         .unwrap();
     assert!(server.listening());
     server.close();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &roots,
+        &background,
+    ))
+    .unwrap();
     assert!(listening.get());
 }
 

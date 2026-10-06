@@ -69,6 +69,11 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 #[test]
 fn readline_question_retains_non_display_non_send_source_failure() {
     struct Failure(Rc<Cell<i64>>);
+    impl From<tsonic_rust_node::NodeError> for Failure {
+        fn from(_value: tsonic_rust_node::NodeError) -> Self {
+            panic!("buffered readline does not produce a native callback failure")
+        }
+    }
     impl From<TsonicError> for Failure {
         fn from(_value: TsonicError) -> Self {
             panic!("buffered readline does not produce a native callback failure")

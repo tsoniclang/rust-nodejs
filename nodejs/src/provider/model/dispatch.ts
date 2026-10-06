@@ -81,6 +81,18 @@ export const nodeWatcherInput: RustDispatchContextInput = {
   contextId: nodeWatcherContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
 };
 
+export const nodeTlsContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.tls",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.TlsServers", genericArguments: errorArguments },
+  construct: { form: "call", path: "tsonic_rust_node::tls::TlsServers::new", const: true },
+  composedContexts: [],
+};
+
+export const nodeTlsInput: RustDispatchContextInput = {
+  contextId: nodeTlsContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
 export const nodeTimerContext: RustDispatchContextDefinition = {
   id: "tsonic.rust.node.timers",
   requiredCrate: "tsonic_rust_node",
@@ -95,7 +107,7 @@ export const nodeTimerInput: RustDispatchContextInput = {
 
 export function nodeDispatchGroup(targetArgumentIndex: number, jsEnabled: boolean): RustDispatchContextGroupInput {
   return {
-    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id, nodeNetContext.id, nodeWatcherContext.id,
+    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id, nodeNetContext.id, nodeWatcherContext.id, nodeTlsContext.id,
       ...(jsEnabled ? [rustJsTimerDispatchContextId] : [])], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: errorArguments,

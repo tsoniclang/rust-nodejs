@@ -14,6 +14,12 @@ use allocation_counts::measure;
 
 struct Failure(TsonicError);
 
+impl From<tsonic_rust_node::NodeError> for Failure {
+    fn from(value: tsonic_rust_node::NodeError) -> Self {
+        Self(value.into())
+    }
+}
+
 impl From<TsonicError> for Failure {
     fn from(value: TsonicError) -> Self {
         Self(value)

@@ -212,6 +212,12 @@ enum Failure {
     Native(TsonicError),
 }
 
+impl From<crate::NodeError> for Failure {
+    fn from(value: crate::NodeError) -> Self {
+        Self::Native(value.into())
+    }
+}
+
 impl From<TsonicError> for Failure {
     fn from(value: TsonicError) -> Self {
         Self::Native(value)
@@ -219,6 +225,12 @@ impl From<TsonicError> for Failure {
 }
 
 struct OtherFailure(Failure);
+
+impl From<crate::NodeError> for OtherFailure {
+    fn from(value: crate::NodeError) -> Self {
+        Self(value.into())
+    }
+}
 
 impl From<OtherFailure> for Failure {
     fn from(value: OtherFailure) -> Self {
@@ -487,15 +499,15 @@ fn native_failures_lift_once_without_replacing_the_source_identity() {
     assert_eq!(source.message(), "original-native-message");
 }
 
-struct ReentrantFailure(TsonicError);
+struct ReentrantFailure(crate::NodeError);
 
 thread_local! {
     static REENTRANT_NATIVE_FAULT_HANDLE: RefCell<Option<super::BackgroundHandle<ReentrantFailure>>> =
         const { RefCell::new(None) };
 }
 
-impl From<TsonicError> for ReentrantFailure {
-    fn from(value: TsonicError) -> Self {
+impl From<crate::NodeError> for ReentrantFailure {
+    fn from(value: crate::NodeError) -> Self {
         REENTRANT_NATIVE_FAULT_HANDLE.with_borrow(|handle| {
             if let Some(handle) = handle {
                 handle.spawn(|| Ok(()), |_| Ok(())).unwrap();
@@ -539,3 +551,26 @@ fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
 }
 
 mod composition;
+
+#[test]
+fn native_background_domain_needs_only_its_actual_node_error() {
+    let root = super::BackgroundTasks::<crate::NodeError>::new();
+    let observed = Rc::new(Cell::new(false));
+    let recorded = observed.clone();
+    root.spawn(
+        || Ok(()),
+        move |result| {
+            result?;
+            recorded.set(true);
+            Ok(())
+        },
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while root.has_pending_work() && Instant::now() < deadline {
+        root.poll().unwrap();
+        std::thread::yield_now();
+    }
+    assert!(!root.has_pending_work());
+    assert!(observed.get());
+}

@@ -4,6 +4,7 @@ import { httpsClientRequestCarrier, httpsServerCarrier } from "./carriers.js";
 import { httpResponseCallbackCarrier, httpRequestCallbackCarrier } from "../http/carriers.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { nodeBackgroundInput, nodeTlsInput } from "../../model/dispatch.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { tlsServerOptionsCarrier } from "../tls/carriers.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
@@ -152,6 +153,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::create_server_callable", argModes: ["value", "value"] },
       resultCarrier: httpsServerCarrier,
       parameterCarriers: [tlsServerOptionsCarrier, httpRequestCallbackCarrier],
+      dispatchInputs: [nodeTlsInput, { ...nodeBackgroundInput, targetArgumentIndex: 1 }],
       ...providerNativeFallibility,
     },
     {

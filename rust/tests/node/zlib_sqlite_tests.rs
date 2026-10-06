@@ -181,6 +181,11 @@ fn zlib_callback_failure_retains_its_non_display_non_send_native_payload() {
         Runtime(TsonicError),
         Payload(Rc<Cell<i64>>),
     }
+    impl From<tsonic_rust_node::NodeError> for Failure {
+        fn from(error: tsonic_rust_node::NodeError) -> Self {
+            Self::Runtime(error.into())
+        }
+    }
     impl From<TsonicError> for Failure {
         fn from(error: TsonicError) -> Self {
             Self::Runtime(error)
