@@ -11,17 +11,14 @@ struct ReadableState {
     options: StreamOptions,
     paused: bool,
     destroyed: bool,
-    errored: Option<tsonic_rust_runtime::RetainedError>,
+    lifecycle: StreamLifecycle,
     encoding: Option<String>,
     did_read: bool,
     data_event: StreamEvent<Buffer>,
     end_event: StreamEvent<()>,
-    error_event: StreamEvent<tsonic_rust_runtime::RetainedError>,
-    close_event: StreamEvent<()>,
     source: Option<ReadableSource>,
     producer_ended: bool,
     end_emitted: bool,
-    close_emitted: bool,
     capacity_handler: Option<Rc<dyn Fn() -> NodeResult<()>>>,
 }
 
@@ -59,27 +56,31 @@ impl Eq for Readable {}
 
 impl Readable {
     pub(crate) fn open(options: StreamOptions) -> Self {
-        Self {
+        let lifecycle = StreamLifecycle::new(options.emit_close);
+        let readable = Self {
             state: Rc::new(RefCell::new(ReadableState {
                 chunks: VecDeque::new(),
                 queued_bytes: 0,
                 options,
                 paused: false,
                 destroyed: false,
-                errored: None,
+                lifecycle: lifecycle.clone(),
                 encoding: None,
                 did_read: false,
                 data_event: StreamEvent::default(),
                 end_event: StreamEvent::default(),
-                error_event: StreamEvent::default(),
-                close_event: StreamEvent::default(),
                 source: None,
                 producer_ended: false,
                 end_emitted: false,
-                close_emitted: false,
                 capacity_handler: None,
             })),
-        }
+        };
+        lifecycle.bind_readable(&readable);
+        readable
+    }
+
+    pub(crate) fn lifecycle(&self) -> StreamLifecycle {
+        self.state.borrow().lifecycle.clone()
     }
 
     pub fn from_chunks(chunks: Vec<Buffer>) -> Self {
@@ -285,32 +286,16 @@ impl Readable {
     }
 
     fn destroy_result(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<()> {
-        let (error_callbacks, close_callbacks, emitted_error) = {
-            let mut state = self.state.borrow_mut();
-            if state.destroyed {
-                return Ok(());
-            }
-            state.destroyed = true;
-            state.chunks.clear();
-            state.queued_bytes = 0;
-            let emitted_error = error.or_else(|| state.errored.clone());
-            state.errored = emitted_error.clone();
-            let error_callbacks = emitted_error
-                .as_ref()
-                .map(|_| state.error_event.emission())
-                .unwrap_or_default();
-            let close_callbacks = if state.close_emitted {
-                Vec::new()
-            } else {
-                state.close_emitted = true;
-                state.close_event.emission()
-            };
-            (error_callbacks, close_callbacks, emitted_error)
-        };
-        if let Some(error) = emitted_error {
-            invoke_event(error_callbacks, error)?;
-        }
-        invoke_event(close_callbacks, ())
+        let lifecycle = self.state.borrow().lifecycle.clone();
+        lifecycle.destroy(error)
+    }
+
+    fn destroy_storage(&self) {
+        let mut state = self.state.borrow_mut();
+        state.destroyed = true;
+        state.chunks.clear();
+        state.queued_bytes = 0;
+        state.capacity_handler = None;
     }
 
     pub fn destroyed(&self) -> bool {
@@ -318,15 +303,11 @@ impl Readable {
     }
 
     pub fn closed(&self) -> bool {
-        self.state.borrow().close_emitted
+        self.state.borrow().lifecycle.closed()
     }
 
     pub fn errored(&self) -> Option<String> {
-        self.state
-            .borrow()
-            .errored
-            .as_ref()
-            .map(ToString::to_string)
+        self.state.borrow().lifecycle.errored()
     }
 
     pub fn pause(&self) -> Self {
@@ -606,10 +587,7 @@ impl Readable {
         listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         ensure_stream_event(event, "error")?;
-        self.state
-            .borrow_mut()
-            .error_event
-            .remove(listener.identity_key());
+        self.state.borrow().lifecycle.remove_error_listener(listener.identity_key());
         Ok(self.clone())
     }
 
@@ -646,11 +624,8 @@ impl Readable {
                 }
                 emitted
             } else {
-                let emitted = state.close_emitted;
-                if !emitted {
-                    state.close_event.add(entry);
-                }
-                emitted
+                state.lifecycle.add_close_listener(entry);
+                false
             }
         };
         if already_emitted && once {
@@ -672,7 +647,7 @@ impl Readable {
         if expected == "end" {
             state.end_event.remove(identity);
         } else {
-            state.close_event.remove(identity);
+            state.lifecycle.remove_close_listener(identity);
         }
         Ok(self.clone())
     }
@@ -684,10 +659,7 @@ impl Readable {
         once: bool,
     ) -> NodeResult<Self> {
         ensure_stream_event(event, "error")?;
-        self.state
-            .borrow_mut()
-            .error_event
-            .add(value_listener(listener, once));
+        self.state.borrow().lifecycle.add_error_listener(value_listener(listener, once));
         Ok(self.clone())
     }
 
@@ -717,7 +689,7 @@ impl Readable {
     }
 
     fn emit_terminal_if_ready(&self) -> NodeResult<()> {
-        let (end_callbacks, close_callbacks) = {
+        let (end_callbacks, lifecycle) = {
             let mut state = self.state.borrow_mut();
             if state.destroyed || !state.producer_ended || !state.chunks.is_empty() {
                 return Ok(());
@@ -728,16 +700,11 @@ impl Readable {
                 state.end_emitted = true;
                 state.end_event.emission()
             };
-            let close_callbacks = if !state.options.emit_close || state.close_emitted {
-                Vec::new()
-            } else {
-                state.close_emitted = true;
-                state.close_event.emission()
-            };
-            (end_callbacks, close_callbacks)
+            (end_callbacks, state.lifecycle.clone())
         };
-        invoke_event(end_callbacks, ())?;
-        invoke_event(close_callbacks, ())
+        let end = invoke_event(end_callbacks, ());
+        let close = lifecycle.finish_readable();
+        end.and(close)
     }
 
     fn drain_remaining(&self) -> Vec<Buffer> {

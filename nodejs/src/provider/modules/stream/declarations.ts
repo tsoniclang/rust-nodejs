@@ -343,7 +343,10 @@ function writableRows(
       target: { form: "receiver-method", name: "write_string", argModes: ["ref"] },
       ...providerNativeFallibility,
     },
-    receiverMethod(classId, "end", "end", receiverCarrier, receiverCarrier, [], `${classId}.end()`),
+    {
+      ...receiverMethod(classId, "end", "end", receiverCarrier, receiverCarrier, [], `${classId}.end()`),
+      ...providerNativeFallibility,
+    },
     {
       ...receiverMethod(classId, "end", "end_buffer", receiverCarrier, receiverCarrier, [bufferCarrier], `${classId}.end(buffer)`),
       target: { form: "receiver-method", name: "end_buffer", argModes: ["ref"] },
@@ -355,7 +358,10 @@ function writableRows(
       ...providerNativeFallibility,
     },
     receiverMethod(classId, "cork", "cork", receiverCarrier, unitCarrier, []),
-    receiverMethod(classId, "uncork", "uncork", receiverCarrier, unitCarrier, []),
+    {
+      ...receiverMethod(classId, "uncork", "uncork", receiverCarrier, unitCarrier, []),
+      ...providerNativeFallibility,
+    },
     {
       ...receiverMethod(classId, "destroy", "destroy_chain", receiverCarrier, receiverCarrier, [optionalErrorCarrier]),
       ...providerNativeFallibility,

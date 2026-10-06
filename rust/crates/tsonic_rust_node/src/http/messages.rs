@@ -489,6 +489,7 @@ impl ServerResponse {
                 ..Default::default()
             },
             backend(Rc::downgrade(&state)),
+            None,
         );
         Self { state, writable }
     }
@@ -664,7 +665,7 @@ impl ServerResponse {
     }
 
     pub fn end_empty(&self) -> NodeResult<Self> {
-        self.writable.end_checked()?;
+        self.writable.end()?;
         Ok(self.clone())
     }
 
@@ -684,7 +685,7 @@ impl ServerResponse {
             self.set_header("content-length", &chunk.len().to_string())?;
         }
         self.writable.write_buffer(chunk)?;
-        self.writable.end_checked()?;
+        self.writable.end()?;
         Ok(self.clone())
     }
 

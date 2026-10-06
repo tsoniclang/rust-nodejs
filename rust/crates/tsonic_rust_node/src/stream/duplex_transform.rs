@@ -8,12 +8,19 @@ pub struct Duplex {
 
 impl Default for Duplex {
     fn default() -> Self {
-        Self::new(Readable::default(), Writable::new())
+        let readable = Readable::default();
+        let writable = Writable::with_backend(
+            StreamOptions::default(),
+            Rc::new(MemoryWritableBackend::default()),
+            Some(readable.lifecycle()),
+        );
+        Self::new(readable, writable)
     }
 }
 
 impl Duplex {
     pub fn new(readable: Readable, writable: Writable) -> Self {
+        StreamLifecycle::join(&readable, &writable);
         Self {
             readable,
             writable,
@@ -26,6 +33,7 @@ impl Duplex {
         writable: Writable,
         options: DuplexOptions,
     ) -> Self {
+        StreamLifecycle::join(&readable, &writable);
         for _ in 0..options.writable_corked {
             writable.cork();
         }
@@ -114,9 +122,9 @@ impl Duplex {
         self.writable.write_buffer(chunk)
     }
 
-    pub fn end(&self) -> Self {
-        self.writable.end();
-        self.clone()
+    pub fn end(&self) -> NodeResult<Self> {
+        self.writable.end()?;
+        Ok(self.clone())
     }
 
     pub fn end_string(&self, chunk: &str) -> NodeResult<Self> {
@@ -133,8 +141,8 @@ impl Duplex {
         self.writable.cork();
     }
 
-    pub fn uncork(&self) {
-        self.writable.uncork();
+    pub fn uncork(&self) -> NodeResult<()> {
+        self.writable.uncork()
     }
 
     pub fn writable_chunks(&self) -> Vec<Buffer> {
@@ -174,12 +182,10 @@ impl Duplex {
     }
 
     pub fn destroy(&self) {
-        self.readable.destroy();
         self.writable.destroy();
     }
 
     pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
-        self.readable.destroy_chain(error.clone())?;
         self.writable.destroy_chain(error)?;
         Ok(self.clone())
     }
@@ -198,6 +204,12 @@ struct TransformBackend {
 }
 
 impl WritableBackend for TransformBackend {
+    fn bind(&self, owner: WeakWritable) {
+        self.readable.set_capacity_handler(move || {
+            owner.upgrade().map_or(Ok(()), |writable| writable.poll_progress())
+        });
+    }
+
     fn write(&self, chunk: Buffer) -> NodeResult<()> {
         self.readable.enqueue((self.transform)(chunk))?;
         Ok(())
@@ -232,6 +244,7 @@ impl Transform {
                 transform,
                 readable: readable.clone(),
             }),
+            Some(readable.lifecycle()),
         );
         Self {
             inner: Duplex::new(readable, writable),
@@ -272,13 +285,9 @@ impl Transform {
         self.inner.read()
     }
 
-    pub fn end(&self) -> Self {
-        self.inner.end();
-        self.clone()
-    }
-
-    pub(crate) fn end_checked(&self) -> NodeResult<()> {
-        self.inner.writable_handle().end_checked()
+    pub fn end(&self) -> NodeResult<Self> {
+        self.inner.end()?;
+        Ok(self.clone())
     }
 }
 
@@ -314,8 +323,8 @@ impl PassThrough {
         self.inner.read()
     }
 
-    pub fn end(&self) {
-        self.inner.end();
+    pub fn end(&self) -> NodeResult<()> {
+        self.inner.end().map(|_| ())
     }
 }
 

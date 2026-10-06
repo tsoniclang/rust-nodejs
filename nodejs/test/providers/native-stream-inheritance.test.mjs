@@ -59,3 +59,30 @@ test("inherited stream operations retain the declared native receiver and exact 
   assert.equal(destroy[0].target.name, "destroy_chain");
   assert.equal(destroy[0].receiverCarrier.value.id, "rust.node.Duplex");
 });
+
+test("advertised duplex lifecycle operations retain exact receivers and finalization fallibility", () => {
+  const [{ definition }] = createTsonicPlugin().createTargetContributions({});
+  for (const owner of ["Writable", "Duplex"]) {
+    const id = `node:stream::${owner}`;
+    for (const member of ["end", "uncork"]) {
+      const rows = definition.operations.filter(row => row.memberId === `${id}.${member}`);
+      assert.ok(rows.length > 0, `${id}.${member}`);
+      for (const row of rows) {
+        assert.equal(row.isFallible, true, `${id}.${member}`);
+        assert.equal(row.errorBoundary, "provider-native", `${id}.${member}`);
+        assert.equal(row.errorCarrier.value.id, "rust.node.NodeError", `${id}.${member}`);
+        assert.equal(row.receiverCarrier.value.id, `rust.node.${owner}`, `${id}.${member}`);
+      }
+    }
+  }
+  for (const method of ["on", "once", "off"]) {
+    for (const event of ["drain", "finish", "error", "close"]) {
+      const signature = `node:stream::Duplex.${method}.${event}`;
+      const rows = definition.operations.filter(row => row.signatureId === signature);
+      assert.equal(rows.length, 1, signature);
+      assert.equal(rows[0].target.name, `${method}_${event}`, signature);
+      assert.equal(rows[0].receiverCarrier.value.id, "rust.node.Duplex", signature);
+      assert.equal(rows[0].isFallible, true, signature);
+    }
+  }
+});

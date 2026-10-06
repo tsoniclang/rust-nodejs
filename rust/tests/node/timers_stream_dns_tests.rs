@@ -218,7 +218,7 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
     let pass = stream::PassThrough::new();
     assert!(pass.write(Buffer::from_string("a", Some("utf8")).unwrap()));
     assert_eq!(pass.read().unwrap().to_string(Some("utf8")).unwrap(), "a");
-    pass.end();
+    pass.end().unwrap();
 
     let transform = stream::Transform::new(|chunk| {
         Buffer::from_string(
@@ -235,7 +235,7 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
 
     let duplex = stream::Duplex::new(stream::Readable::from(vec![]), stream::Writable::new());
     assert!(duplex.write(Buffer::from_string("x", Some("utf8")).unwrap()));
-    duplex.end();
+    duplex.end().unwrap();
     assert_eq!(duplex.writable_chunks().len(), 1);
 
     let readable = stream::Readable::from(vec![Buffer::from_string("web", Some("utf8")).unwrap()]);
@@ -436,7 +436,7 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     writable.cork();
     writable.cork();
     assert_eq!(writable.writable_corked(), 2);
-    writable.uncork();
+    writable.uncork().unwrap();
     assert_eq!(writable.writable_corked(), 1);
     writable.set_default_encoding("latin1");
     assert_eq!(writable.default_encoding(), "latin1");
@@ -445,13 +445,13 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     assert!(!writable.add_chunk(Buffer::from_string("q", Some("utf8")).unwrap()));
     assert_eq!(writable.writable_length(), 3);
     assert!(writable.writable_need_drain());
-    writable.uncork();
+    writable.uncork().unwrap();
     assert!(!writable.writable_need_drain());
     assert_eq!(drain_count.get(), 1);
     writable.off_drain("drain", &drain_listener).unwrap();
     assert!(writable.flush());
     let finalized = Cell::new(false);
-    writable.final_callback(|| finalized.set(true));
+    writable.final_callback(|| finalized.set(true)).unwrap();
     assert!(finalized.get());
     assert!(writable.writable_ended());
     assert!(writable.writable_finished());

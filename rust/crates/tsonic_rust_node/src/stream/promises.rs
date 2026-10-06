@@ -91,7 +91,7 @@ fn pipeline_transform_impl(
         written += 1;
     }
     if options.end {
-        writable.end();
+        writable.end()?;
     }
     Ok(written)
 }

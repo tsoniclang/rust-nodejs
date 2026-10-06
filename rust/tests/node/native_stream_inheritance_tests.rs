@@ -75,7 +75,7 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     let bytes = Buffer::from_string("native stream", Some("utf8")).unwrap();
     assert!(!writable.write_buffer(&bytes).unwrap());
     assert!(writable.writable_need_drain());
-    assert_eq!(writable, writable.end());
+    assert_eq!(writable, writable.end().unwrap());
     assert!(writable.writable_ended());
     tsonic_rust_node::run_event_loop().unwrap();
     assert_eq!(removed_calls.get(), 0);
@@ -105,7 +105,7 @@ fn transform_and_zlib_base_projections_destroy_the_original_stream() {
 }
 
 #[test]
-fn projected_codec_destruction_retains_error_identity_and_emits_once_per_side() {
+fn projected_codec_destruction_retains_error_identity_for_shared_lifecycle_listeners() {
     let codec = zlib::create_gzip(None);
     let readable = zlib::zlib_as_readable(&codec);
     let writable = zlib::zlib_as_writable(&codec);
@@ -117,7 +117,9 @@ fn projected_codec_destruction_retains_error_identity_and_emits_once_per_side() 
     });
     readable.once_error("error", &listener).unwrap();
     writable.once_error("error", &listener).unwrap();
-    let error = RetainedError::from(tsonic_rust_runtime::JsError::error("native codec failure"));
+    let error = RetainedError::from(tsonic_rust_runtime::JsError::error(
+        "native codec failure",
+    ));
     zlib::zlib_as_duplex(&codec)
         .destroy_chain(Some(error.clone()))
         .unwrap();

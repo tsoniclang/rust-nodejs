@@ -530,7 +530,7 @@ fn http_agent_and_client_request_expose_common_state() {
     );
     request.end(Some(
         tsonic_rust_node::buffer::Buffer::from_string("!", Some("utf8")).unwrap(),
-    ));
+    )).unwrap();
     assert!(request.finished());
     assert_eq!(request.body().len(), 2);
     request

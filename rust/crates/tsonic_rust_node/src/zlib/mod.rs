@@ -382,6 +382,7 @@ impl Zlib {
                 state: std::rc::Rc::downgrade(&state),
                 readable: readable.clone(),
             }),
+            Some(readable.lifecycle()),
         );
         Self {
             state,
@@ -455,7 +456,7 @@ impl Zlib {
     }
 
     pub fn end(&self) -> NodeResult<()> {
-        self.transform.end_checked()
+        self.transform.end().map(|_| ())
     }
 
     pub fn transform_handle(&self) -> crate::stream::Transform {

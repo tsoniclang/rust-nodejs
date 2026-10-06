@@ -101,12 +101,13 @@ impl ClientRequest {
         self.body.write(chunk)
     }
 
-    pub fn end(&mut self, chunk: Option<Buffer>) {
+    pub fn end(&mut self, chunk: Option<Buffer>) -> NodeResult<()> {
         if let Some(chunk) = chunk {
-            self.write(chunk);
+            self.body.write_buffer(&chunk)?;
         }
-        self.body.end();
+        self.body.end()?;
         self.finished = true;
+        Ok(())
     }
 
     pub fn finished(&self) -> bool {

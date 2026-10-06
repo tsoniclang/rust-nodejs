@@ -30,6 +30,8 @@ mod http_runtime_tests;
 mod misc_module_tests;
 #[path = "node/native_stream_inheritance_tests.rs"]
 mod native_stream_inheritance_tests;
+#[path = "node/native_stream_lifecycle_tests.rs"]
+mod native_stream_lifecycle_tests;
 #[path = "node/network_process_tests.rs"]
 mod network_process_tests;
 #[path = "node/os_tests.rs"]

@@ -5,7 +5,7 @@ where
     let writable = destination.writable_handle();
     let finish_writable = writable.clone();
     readable.on_end_internal(move || {
-        finish_writable.end_checked()
+        finish_writable.end().map(|_| ())
     });
 
     let flow_readable = readable.clone();

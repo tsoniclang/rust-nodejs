@@ -527,6 +527,7 @@ impl WriteStream {
                 ..Default::default()
             },
             backend,
+            None,
         );
         let stream = Self { state, writable };
         stream.spawn_open(options.clone())?;
@@ -567,6 +568,7 @@ impl WriteStream {
                 ..Default::default()
             },
             backend,
+            None,
         );
         Ok(Self { state, writable })
     }
@@ -619,7 +621,7 @@ impl WriteStream {
     }
 
     pub fn close(&self) -> NodeResult<()> {
-        self.writable.end_checked()
+        self.writable.end().map(|_| ())
     }
 
     pub fn closed(&self) -> bool {
