@@ -725,6 +725,7 @@ fn web_streams_support_reader_writer_pipe_and_transform_shapes() {
 
 #[test]
 fn dns_lookup_uses_platform_resolver_without_shelling_out() {
+    let root = tsonic_rust_node::background::BackgroundTasks::new();
     let lookup = dns::lookup("localhost").unwrap();
     assert!(lookup.family == 4 || lookup.family == 6);
     assert!(!lookup.address.is_empty());
@@ -737,6 +738,7 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
     let callback_count = std::rc::Rc::new(std::cell::Cell::new(0));
     let lookup_count = std::rc::Rc::clone(&callback_count);
     dns::lookup_callable(
+        &root,
         "localhost",
         tsonic_rust_runtime::Callable::new(
             move |(error, address, family): (Option<tsonic_rust_node::NodeError>, String, u8)| {
@@ -744,13 +746,14 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
                 assert!(!address.is_empty());
                 assert!(family == 4 || family == 6);
                 lookup_count.set(lookup_count.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         ),
     )
     .unwrap();
     let resolve4_count = std::rc::Rc::clone(&callback_count);
     dns::resolve4_callable(
+        &root,
         "localhost",
         tsonic_rust_runtime::Callable::new(
             move |(_error, _addresses): (
@@ -758,13 +761,14 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
                 tsonic_rust_js::JsArray<String>,
             )| {
                 resolve4_count.set(resolve4_count.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         ),
     )
     .unwrap();
     let resolve6_count = std::rc::Rc::clone(&callback_count);
     dns::resolve6_callable(
+        &root,
         "localhost",
         tsonic_rust_runtime::Callable::new(
             move |(_error, _addresses): (
@@ -772,13 +776,14 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
                 tsonic_rust_js::JsArray<String>,
             )| {
                 resolve6_count.set(resolve6_count.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         ),
     )
     .unwrap();
     let reverse_count = std::rc::Rc::clone(&callback_count);
     dns::reverse_callable(
+        &root,
         "127.0.0.1",
         tsonic_rust_runtime::Callable::new(
             move |(_error, _names): (
@@ -786,12 +791,16 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
                 tsonic_rust_js::JsArray<String>,
             )| {
                 reverse_count.set(reverse_count.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         ),
     )
     .unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+        &root,
+        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(callback_count.get(), 4);
     let lookup_options = dns::LookupOptions {
         family: Some(lookup.family),

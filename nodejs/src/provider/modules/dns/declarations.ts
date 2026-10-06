@@ -3,6 +3,7 @@ import { dnsAddressArrayCallbackCarrier, dnsLookupAddressCarrier, dnsLookupCallb
 import { fnExport, propertyMember, providerRef } from "../../declarations/builders.js";
 import { numberType, stringArrayType, stringType, voidType } from "../../model/source-types.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { nodeBackgroundInput } from "../../model/dispatch.js";
 import { optionalNodeErrorType } from "../util/node-error.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
@@ -96,6 +97,7 @@ export function dnsRows(): readonly RustProviderOperationDefinition[] {
     },
     resultCarrier: unitCarrier,
     parameterCarriers: [stringCarrier, callbackCarrier],
+    dispatchInputs: [nodeBackgroundInput],
     ...providerNativeFallibility,
   });
   return [

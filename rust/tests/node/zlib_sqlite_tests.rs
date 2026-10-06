@@ -73,6 +73,7 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
         "source ABI payload"
     );
 
+    let root = tsonic_rust_node::background::BackgroundTasks::new();
     let completions = std::rc::Rc::new(std::cell::Cell::new(0));
     let callback = || {
         let completions = std::rc::Rc::clone(&completions);
@@ -81,24 +82,32 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
                 assert!(error.is_none());
                 assert!(!output.expect("successful compression output").is_empty());
                 completions.set(completions.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         )
     };
-    tsonic_rust_node::zlib::gzip_callable(&input, callback()).unwrap();
-    tsonic_rust_node::zlib::gunzip_callable(&gzip, callback()).unwrap();
-    tsonic_rust_node::zlib::deflate_callable(&input, callback()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&deflate, callback()).unwrap();
-    tsonic_rust_node::zlib::gzip_options_callable(&input, options.clone(), callback()).unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&gzip, options.clone(), callback()).unwrap();
-    tsonic_rust_node::zlib::deflate_options_callable(&input, options.clone(), callback()).unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(&deflate, options, callback()).unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::zlib::gzip_callable(&root, &input, callback()).unwrap();
+    tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, callback()).unwrap();
+    tsonic_rust_node::zlib::deflate_callable(&root, &input, callback()).unwrap();
+    tsonic_rust_node::zlib::inflate_callable(&root, &deflate, callback()).unwrap();
+    tsonic_rust_node::zlib::gzip_options_callable(&root, &input, options.clone(), callback())
+        .unwrap();
+    tsonic_rust_node::zlib::gunzip_options_callable(&root, &gzip, options.clone(), callback())
+        .unwrap();
+    tsonic_rust_node::zlib::deflate_options_callable(&root, &input, options.clone(), callback())
+        .unwrap();
+    tsonic_rust_node::zlib::inflate_options_callable(&root, &deflate, options, callback()).unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+        &root,
+        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(completions.get(), 8);
 }
 
 #[test]
 fn zlib_callbacks_distinguish_failure_from_successful_empty_output() {
+    let root = tsonic_rust_node::background::BackgroundTasks::new();
     let invalid = Buffer::from_string("invalid compressed data", Some("utf8")).unwrap();
     let empty = Buffer::from_bytes(Vec::new());
     let gzip = tsonic_rust_node::zlib::gzip_sync(&empty).unwrap();
@@ -114,7 +123,7 @@ fn zlib_callbacks_distinguish_failure_from_successful_empty_output() {
                 assert!(!error.message().is_empty());
                 assert!(output.is_none());
                 failures.set(failures.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         )
     };
@@ -125,24 +134,87 @@ fn zlib_callbacks_distinguish_failure_from_successful_empty_output() {
                 assert!(error.is_none());
                 assert!(output.expect("present empty output").is_empty());
                 successes.set(successes.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             },
         )
     };
-    tsonic_rust_node::zlib::gunzip_callable(&invalid, failure()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&invalid, failure()).unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&invalid, Default::default(), failure())
+    tsonic_rust_node::zlib::gunzip_callable(&root, &invalid, failure()).unwrap();
+    tsonic_rust_node::zlib::inflate_callable(&root, &invalid, failure()).unwrap();
+    tsonic_rust_node::zlib::gunzip_options_callable(&root, &invalid, Default::default(), failure())
         .unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(&invalid, Default::default(), failure())
+    tsonic_rust_node::zlib::inflate_options_callable(
+        &root,
+        &invalid,
+        Default::default(),
+        failure(),
+    )
+    .unwrap();
+    tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, success()).unwrap();
+    tsonic_rust_node::zlib::inflate_callable(&root, &deflate, success()).unwrap();
+    tsonic_rust_node::zlib::gunzip_options_callable(&root, &gzip, Default::default(), success())
         .unwrap();
-    tsonic_rust_node::zlib::gunzip_callable(&gzip, success()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&deflate, success()).unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&gzip, Default::default(), success()).unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(&deflate, Default::default(), success())
-        .unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::zlib::inflate_options_callable(
+        &root,
+        &deflate,
+        Default::default(),
+        success(),
+    )
+    .unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+        &root,
+        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(failures.get(), 4);
     assert_eq!(successes.get(), 4);
+}
+
+#[test]
+fn zlib_callback_failure_retains_its_non_display_non_send_native_payload() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use tsonic_rust_node::background::BackgroundTasks;
+    use tsonic_rust_node::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::TsonicError;
+
+    enum Failure {
+        Runtime(TsonicError),
+        Payload(Rc<Cell<i64>>),
+    }
+    impl From<TsonicError> for Failure {
+        fn from(error: TsonicError) -> Self {
+            Self::Runtime(error)
+        }
+    }
+
+    let root = BackgroundTasks::<Failure>::new();
+    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+    let payload = expected.clone();
+    let input = Buffer::from_bytes(b"exact callback failure".to_vec());
+    tsonic_rust_node::zlib::gzip_callable(
+        &root,
+        &input,
+        Callable::new(
+            move |(error, output): (Option<tsonic_rust_node::NodeError>, Option<Buffer>)| {
+                assert!(error.is_none());
+                assert!(!output.expect("compressed output").is_empty());
+                Err(Failure::Payload(Rc::clone(&payload)))
+            },
+        ),
+    )
+    .unwrap();
+    let returned =
+        tsonic_rust_node::run_with_contexts(prepend(&root, DispatchEnd::<Failure>::new()))
+            .err()
+            .expect("retained callback must fail");
+    match returned {
+        Failure::Payload(value) => {
+            assert!(Rc::ptr_eq(&value, &expected));
+            assert_eq!(value.get(), 9_007_199_254_740_993);
+        }
+        Failure::Runtime(error) => panic!("source payload replaced by native fault: {error}"),
+    }
+    assert!(!root.has_pending_work());
 }
 
 #[test]

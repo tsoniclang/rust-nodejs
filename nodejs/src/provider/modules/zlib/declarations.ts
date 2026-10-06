@@ -9,6 +9,7 @@ import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 import { nodeErrorType } from "../util/node-error.js";
+import { nodeBackgroundInput } from "../../model/dispatch.js";
 
 const moduleSpecifier = "node:zlib";
 const optionsId = `${moduleSpecifier}::ZlibOptions`;
@@ -233,6 +234,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         target: { form: "call", path: `node_zlib::${basePath}`, argModes: ["ref", "value"] },
         resultCarrier: unitCarrier,
         parameterCarriers: [bufferCarrier, zlibCallbackCarrier],
+        dispatchInputs: [nodeBackgroundInput],
         ...providerNativeFallibility,
       },
       {
@@ -242,6 +244,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["ref", "value", "value"] },
         resultCarrier: unitCarrier,
         parameterCarriers: [bufferCarrier, zlibOptionsCarrier, zlibCallbackCarrier],
+        dispatchInputs: [nodeBackgroundInput],
         ...providerNativeFallibility,
       },
     );

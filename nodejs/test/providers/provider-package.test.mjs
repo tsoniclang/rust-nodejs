@@ -57,6 +57,18 @@ const expectedModules = [
   "url",
 ];
 
+function expectedBackgroundGroup(targetArgumentIndex) {
+  return {
+    contextId: "tsonic.rust.node.background", targetArgumentIndex,
+    empty: { form: "associated-call", method: "new", owner: {
+      kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: [{ kind: "type", type: {
+        kind: "target-named", id: "rust.program.TsonicError",
+      } }],
+    } },
+    prepend: { form: "call", path: "tsonic_rust_node::dispatch::prepend" },
+  };
+}
+
 test("provider package declares the expected node module specifiers", () => {
   const plugin = createTsonicPlugin();
   const specifiers = plugin.moduleOwnership.map((ownership) => ownership.specifierPrefix);
@@ -981,15 +993,17 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
     {
       id: "node-async-executor",
       phase: "async-execution",
-      path: "tsonic_rust_node::block_on",
+      path: "tsonic_rust_node::block_on_with_contexts",
+      dispatchGroups: [expectedBackgroundGroup(1)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
-      errorBoundary: "target-runtime",
+      errorBoundary: "source-program",
     },
     {
       id: "node-event-loop",
       phase: "after-entry",
-      path: "tsonic_rust_node::run_event_loop",
+      path: "tsonic_rust_node::run_with_contexts",
+      dispatchGroups: [expectedBackgroundGroup(0)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",

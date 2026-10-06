@@ -6,8 +6,10 @@ use super::{
     BackgroundZlibOptions, BrotliCompress, BrotliDecompress, BrotliOptions, Deflate, DeflateRaw,
     Gunzip, Gzip, Inflate, InflateRaw, ZlibOptions,
 };
+use crate::background::BackgroundTasks;
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
+use tsonic_rust_runtime::TsonicError;
 
 type CompressionCallback<Failure> =
     tsonic_rust_runtime::Callable<(Option<NodeError>, Option<Buffer>), Result<(), Failure>>;
@@ -170,88 +172,109 @@ pub fn create_brotli_decompress_source(
     Ok(create_brotli_decompress(Some(options.into_runtime()?)))
 }
 
-pub fn gzip_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
+pub fn gzip_callable<E>(
+    root: &BackgroundTasks<E>,
+    input: &Buffer,
+    callback: CompressionCallback<E>,
+) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_callable(input, callback, gzip_sync)
+    compress_callable(root, input, callback, gzip_sync)
 }
 
-pub fn gunzip_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
+pub fn gunzip_callable<E>(
+    root: &BackgroundTasks<E>,
+    input: &Buffer,
+    callback: CompressionCallback<E>,
+) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_callable(input, callback, gunzip_sync)
+    compress_callable(root, input, callback, gunzip_sync)
 }
 
-pub fn deflate_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
+pub fn deflate_callable<E>(
+    root: &BackgroundTasks<E>,
+    input: &Buffer,
+    callback: CompressionCallback<E>,
+) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_callable(input, callback, deflate_sync)
+    compress_callable(root, input, callback, deflate_sync)
 }
 
-pub fn inflate_callable<E>(input: &Buffer, callback: CompressionCallback<E>) -> NodeResult<()>
+pub fn inflate_callable<E>(
+    root: &BackgroundTasks<E>,
+    input: &Buffer,
+    callback: CompressionCallback<E>,
+) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_callable(input, callback, inflate_sync)
+    compress_callable(root, input, callback, inflate_sync)
 }
 
 pub fn gzip_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_options_callable(input, options, callback, gzip_sync_with_options)
+    compress_options_callable(root, input, options, callback, gzip_sync_with_options)
 }
 
 pub fn gunzip_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_options_callable(input, options, callback, gunzip_sync_with_options)
+    compress_options_callable(root, input, options, callback, gunzip_sync_with_options)
 }
 
 pub fn deflate_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_options_callable(input, options, callback, deflate_sync_with_options)
+    compress_options_callable(root, input, options, callback, deflate_sync_with_options)
 }
 
 pub fn inflate_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
     callback: CompressionCallback<E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
-    compress_options_callable(input, options, callback, inflate_sync_with_options)
+    compress_options_callable(root, input, options, callback, inflate_sync_with_options)
 }
 
 fn compress_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     callback: CompressionCallback<E>,
     compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
     let input = input.as_bytes();
-    crate::background::spawn(
+    root.spawn(
         move || {
             let input = Buffer::from_bytes(input);
             compress(&input).map(|output| output.as_bytes())
@@ -261,17 +284,18 @@ where
 }
 
 fn compress_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
     callback: CompressionCallback<E>,
     compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<TsonicError> + 'static,
 {
     let input = input.as_bytes();
     let options = BackgroundZlibOptions::from(options.into_runtime()?);
-    crate::background::spawn(
+    root.spawn(
         move || {
             let input = Buffer::from_bytes(input);
             let options = options.into_runtime();
@@ -281,17 +305,15 @@ where
     )
 }
 
-fn complete_compression<Failure: std::fmt::Display>(
+fn complete_compression<Failure>(
     result: NodeResult<Vec<u8>>,
     callback: CompressionCallback<Failure>,
-) -> tsonic_rust_runtime::TsonicResult<()> {
+) -> Result<(), Failure> {
     let arguments = match result {
         Ok(output) => (None, Some(Buffer::from_bytes(output))),
         Err(error) => (Some(error), None),
     };
-    callback
-        .call(arguments)
-        .map_err(crate::error::callback_runtime_error)
+    callback.call(arguments)
 }
 
 #[cfg(test)]
