@@ -88,16 +88,21 @@ export function schedule(): Error {
   });
   assert.equal(result.diagnostics.length, 0,
     result.diagnostics.slice(0, 6).map(row => row.message.slice(0, 256)).join("\n"));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  assert.equal(roots.length, 1, "one exact component root module");
+  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  assert.equal(names.length, 1, "only the demanded background root");
+  const run = `super::${names[0]}.with(|root| tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(root, tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())))`;
   const directory = writeGeneratedProject("native-stream-callback-deferred", result.artifacts);
-  appendFileSync(join(directory, "src/index.rs"), `
+  appendFileSync(join(directory, roots[0].path), `
 #[cfg(test)]
 mod source_callback_failures {
     use tsonic_rust_runtime::ErrorObject;
 
     #[test]
     fn deferred_finish_retains_original_source_error() {
-        let expected = super::schedule().expect("file stream callback registration");
-        let failure = tsonic_rust_node::run_event_loop().expect_err("deferred callback must fail");
+        let expected = crate::schedule().expect("file stream callback registration");
+        let failure = ${run}.expect_err("deferred callback must fail");
         let output = std::fs::read("native-stream-callback-output.txt").unwrap();
         std::fs::remove_file("native-stream-callback-output.txt").unwrap();
         assert_eq!(output, b"native output");

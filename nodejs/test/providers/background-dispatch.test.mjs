@@ -6,7 +6,7 @@ test("native compression callbacks demand their exact component background owner
   for (const selectedSurfaceIds of [[], ["js"]]) {
     const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds });
     const definition = contribution.definition;
-    assert.equal(definition.dispatchContexts.length, 3);
+    assert.equal(definition.dispatchContexts.length, 9);
     const context = definition.dispatchContexts[0];
     assert.equal(context.id, "tsonic.rust.node.background");
     assert.equal(context.requiredCrate, "tsonic_rust_node");
@@ -55,6 +55,8 @@ test("readline callbacks select exact independent background and source-thread t
     ]);
     for (const hook of definition.binaryHooks.filter(row => row.dispatchGroups !== undefined)) {
       assert.deepEqual(hook.dispatchGroups[0].contextIds, ["tsonic.rust.node.background", context.id, "tsonic.rust.node.timers",
+        "tsonic.rust.node.workers", "tsonic.rust.node.signals", "tsonic.rust.node.net",
+        "tsonic.rust.node.watchers", "tsonic.rust.node.tls", "tsonic.rust.node.http",
         ...(selectedSurfaceIds.includes("js") ? ["tsonic.rust.js.timers"] : [])]);
       assert.equal(Object.isFrozen(hook.dispatchGroups[0].contextIds), true);
     }

@@ -11,9 +11,12 @@ mod event_target;
 pub use async_resource::{EventEmitterAsyncResource, EventEmitterAsyncResourceOptions};
 pub use event_target::NodeEventTarget;
 
+pub(crate) use callback::{EventCallback, ListenerCallback as RetainedEventCallback};
+pub(crate) use keys::{EventListenerMap, EventName};
+
 use crate::error::{NodeError, NodeResult};
 use callback::ListenerCallback;
-use keys::{CallableListenerMap, EventKey, EventName};
+use keys::EventKey;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -76,7 +79,7 @@ impl<E: 'static> Clone for CallableListenerEntry<E> {
 struct EventEmitterState<E: 'static> {
     listeners: ListenerMap,
     listener_event_order: Vec<String>,
-    callable_listeners: CallableListenerMap<E>,
+    callable_listeners: EventListenerMap<CallableListenerEntry<E>>,
     callable_event_order: Vec<EventKey>,
     max_listeners: Option<usize>,
     next_listener_id: usize,
@@ -88,7 +91,7 @@ impl<E: 'static> Default for EventEmitterState<E> {
         Self {
             listeners: HashMap::new(),
             listener_event_order: Vec::new(),
-            callable_listeners: CallableListenerMap::new(),
+            callable_listeners: EventListenerMap::new(),
             callable_event_order: Vec::new(),
             max_listeners: None,
             next_listener_id: 0,
@@ -377,7 +380,7 @@ impl<E: 'static> EventEmitter<E> {
         self.listener_count(event) > 0
     }
 }
-fn unhandled_error(arguments: &[JsValue]) -> NodeError {
+pub(crate) fn unhandled_error(arguments: &[JsValue]) -> NodeError {
     let detail = arguments
         .first()
         .map(JsValue::inspect)

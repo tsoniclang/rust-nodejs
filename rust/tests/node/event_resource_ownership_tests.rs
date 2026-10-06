@@ -125,6 +125,34 @@ fn warmed_native_resource_frontiers_do_not_allocate_snapshot_wrappers() {
 }
 
 #[test]
+fn warmed_port_delivery_uses_one_queue_without_per_emission_wrappers_or_allocations() {
+    let workers = WorkerResources::<NodeError>::new();
+    let channel = MessageChannel::new(&workers).unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    channel
+        .port2
+        .on_callable(
+            &JsValue::String("message".to_owned()),
+            &Callable::new(move |()| {
+                observed.set(observed.get() + 1);
+                Ok::<(), NodeError>(())
+            }),
+        )
+        .unwrap();
+    channel.port1.post_message(JsValue::from(1)).unwrap();
+    assert!(poll_phase(&workers, DispatchPhase::Ports).unwrap());
+    let cost = measure(|| {
+        for _ in 0..1024 {
+            channel.port1.post_message(JsValue::from(1)).unwrap();
+            assert!(poll_phase(&workers, DispatchPhase::Ports).unwrap());
+        }
+    });
+    assert_eq!(calls.get(), 1025);
+    assert_eq!(cost, (0, 0));
+}
+
+#[test]
 fn a_once_listener_releases_native_capture_at_invocation_without_waiting_for_pruning() {
     struct DropProbe(Rc<Cell<usize>>);
     impl Drop for DropProbe {

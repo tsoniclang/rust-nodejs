@@ -8,7 +8,6 @@ use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::Callable;
 
 use crate::error::{NodeError, NodeResult};
-use crate::events::{EventEmitter, WeakEventEmitter};
 
 use super::clone::{decode, encode, ClonedValue};
 use super::protocol::{TransportEvent, WorkerFrameKind, WorkerTransport};
@@ -19,9 +18,11 @@ const MAXIMUM_QUEUED_MESSAGES: usize = 1 << 16;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod shared_tests;
+
 pub struct MessagePort<E: 'static = tsonic_rust_runtime::TsonicError> {
-    state: Rc<RefCell<MessagePortState>>,
-    emitter: EventEmitter<E>,
+    owner: Rc<PortOwner<E>>,
 }
 
 pub(super) struct MessagePortState {
@@ -35,6 +36,9 @@ pub(super) struct MessagePortState {
     closed: bool,
     refed: bool,
     close_pending: Option<TaskTicket>,
+    routing: PortRouting,
+    capture_count: usize,
+    capture_boundary: Option<TaskTicket>,
 }
 
 enum PortSignal {
@@ -43,11 +47,13 @@ enum PortSignal {
     Close,
 }
 
+include!("port/listeners.rs");
+include!("port/dispatch.rs");
+
 impl<E: 'static> Clone for MessagePort<E> {
     fn clone(&self) -> Self {
         Self {
-            state: Rc::clone(&self.state),
-            emitter: self.emitter.clone(),
+            owner: Rc::clone(&self.owner),
         }
     }
 }
@@ -55,44 +61,53 @@ impl<E: 'static> Clone for MessagePort<E> {
 impl<E: From<NodeError> + 'static> MessagePort<E> {
     fn local(resources: &WorkerResources<E>) -> NodeResult<Self> {
         let reservation = super::resources::reserve_resource()?;
-        let value = Self {
-            state: Rc::new(RefCell::new(MessagePortState {
-                reservation,
-                peer: None,
-                transport: None,
-                incoming: None,
-                messages: VecDeque::new(),
-                errors: VecDeque::new(),
-                started: false,
-                closed: false,
-                refed: true,
-                close_pending: None,
-            })),
-            emitter: EventEmitter::new(),
-        };
+        let state = Rc::new(RefCell::new(MessagePortState {
+            reservation,
+            peer: None,
+            transport: None,
+            incoming: None,
+            messages: VecDeque::new(),
+            errors: VecDeque::new(),
+            started: false,
+            closed: false,
+            refed: true,
+            close_pending: None,
+            routing: PortRouting::new(),
+            capture_count: 0,
+            capture_boundary: None,
+        }));
+        let value = Self::from_state(state)?;
         resources.register_port(&value);
         Ok(value)
     }
 
-    pub(super) fn from_state(
-        resources: &WorkerResources<E>,
-        state: Rc<RefCell<MessagePortState>>,
-    ) -> NodeResult<Self> {
-        let value = Self {
-            state,
-            emitter: EventEmitter::new(),
-        };
-        resources.register_port(&value);
-        Ok(value)
+    pub(super) fn from_state(state: Rc<RefCell<MessagePortState>>) -> NodeResult<Self> {
+        let reservation = super::resources::reserve_resource()?;
+        let ticket = reservation.ticket();
+        let owner = Rc::new(PortOwner {
+            state: Rc::clone(&state),
+            reservation,
+            callbacks: RefCell::new(PortCallbackSlots::new()),
+        });
+        let lifecycle: Rc<dyn PortListenerLifecycle> = owner.clone();
+        state
+            .borrow_mut()
+            .routing
+            .owners
+            .push(PortOwnerRegistration {
+                ticket,
+                owner: Rc::downgrade(&lifecycle),
+            });
+        Ok(Self { owner })
     }
 
     fn connect(&self, peer: &Self) {
-        self.state.borrow_mut().peer = Some(Rc::downgrade(&peer.state));
+        self.owner.state.borrow_mut().peer = Some(Rc::downgrade(&peer.owner.state));
     }
 
     pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
         let payload = ClonedValue::from_js(&value)?;
-        let state = self.state.borrow();
+        let state = self.owner.state.borrow();
         if state.closed {
             return Err(NodeError::new(
                 "ERR_CLOSED_MESSAGE_PORT",
@@ -111,18 +126,18 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
     }
 
     pub fn receive_message(&self) -> NodeResult<Option<JsValue>> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.owner.state.borrow_mut();
         state.ingest_transport()?;
         Ok(state.messages.pop_front().map(|(_, value)| value.to_js()))
     }
 
     pub fn start(&self) {
-        self.state.borrow_mut().started = true;
+        self.owner.state.borrow_mut().started = true;
     }
 
     pub fn close(&self) -> NodeResult<()> {
         let transport = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.owner.state.borrow_mut();
             if state.closed {
                 return Ok(());
             }
@@ -137,12 +152,12 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
     }
 
     pub fn unref(&self) -> &Self {
-        self.state.borrow_mut().refed = false;
+        self.owner.state.borrow_mut().refed = false;
         self
     }
 
     pub fn ref_chain(&self) -> &Self {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.owner.state.borrow_mut();
         if !state.closed {
             state.refed = true;
         }
@@ -151,159 +166,16 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
     }
 
     pub fn has_ref(&self) -> bool {
-        self.state.borrow().refed
-    }
-
-    pub fn on_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.start();
-        self.emitter.on_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn on_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.start();
-        self.emitter.on_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn once_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.start();
-        self.emitter.once_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn once_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.start();
-        self.emitter.once_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn off_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.off_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn off_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.off_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub(super) fn capture(&self) -> Result<Option<TaskTicket>, E> {
-        let captured = {
-            let mut state = self.state.borrow_mut();
-            state.ingest_transport().map(|()| {
-                if !state.started {
-                    return None;
-                }
-                [
-                    state.messages.back().map(|(ticket, _)| *ticket),
-                    state.errors.back().map(|(ticket, _)| *ticket),
-                    state.close_pending,
-                ]
-                .into_iter()
-                .flatten()
-                .max()
-            })
-        };
-        captured.map_err(E::from)
-    }
-
-    pub(super) fn poll(&self, boundary: Option<TaskTicket>) -> Result<bool, E> {
-        let Some(boundary) = boundary else {
-            return Ok(false);
-        };
-        let mut dispatched = false;
-        loop {
-            let value = {
-                let mut state = self.state.borrow_mut();
-                if !state
-                    .messages
-                    .front()
-                    .is_some_and(|(ticket, _)| *ticket <= boundary)
-                {
-                    break;
-                }
-                state.messages.pop_front().map(|(_, value)| value)
-            };
-            let Some(value) = value else {
-                break;
-            };
-            self.dispatch_signal(PortSignal::Message(value.to_js()))?;
-            dispatched = true;
-        }
-        loop {
-            let error = {
-                let mut state = self.state.borrow_mut();
-                if !state
-                    .errors
-                    .front()
-                    .is_some_and(|(ticket, _)| *ticket <= boundary)
-                {
-                    break;
-                }
-                state.errors.pop_front().map(|(_, error)| error)
-            };
-            let Some(error) = error else {
-                break;
-            };
-            self.dispatch_signal(PortSignal::Error(error))?;
-            dispatched = true;
-        }
-        if self
-            .state
-            .borrow()
-            .close_pending
-            .is_some_and(|ticket| ticket <= boundary)
-        {
-            self.state.borrow_mut().close_pending = None;
-            self.dispatch_signal(PortSignal::Close)?;
-            dispatched = true;
-        }
-        Ok(dispatched)
-    }
-
-    fn dispatch_signal(&self, signal: PortSignal) -> Result<(), E> {
-        let converted;
-        let (event, arguments): (&str, &[JsValue]) = match &signal {
-            PortSignal::Message(value) => ("message", std::slice::from_ref(value)),
-            PortSignal::Error(error) => {
-                converted = JsValue::String(error.clone());
-                ("error", std::slice::from_ref(&converted))
-            }
-            PortSignal::Close => ("close", &[]),
-        };
-        let emission = self.emitter.prepare_named_emission(event, arguments)?;
-        emission.invoke(arguments)?;
-        Ok(())
+        self.owner.state.borrow().refed
     }
 
     pub(super) fn is_refed_active(&self) -> bool {
-        let state = self.state.borrow();
-        state.started && state.refed && !state.closed
+        let state = self.owner.state.borrow();
+        state.started
+            && (state.routing.active.is_some()
+                || state.close_pending.is_some()
+                || (state.refed
+                    && (!state.closed || !state.messages.is_empty() || !state.errors.is_empty())))
     }
 }
 
@@ -414,41 +286,37 @@ impl<E: From<NodeError> + 'static> MessageChannel<E> {
 }
 
 pub(super) struct RuntimePort<E: 'static> {
-    state: Weak<RefCell<MessagePortState>>,
-    emitter: WeakEventEmitter<E>,
+    owner: Weak<PortOwner<E>>,
 }
 
 impl<E: 'static> Clone for RuntimePort<E> {
     fn clone(&self) -> Self {
         Self {
-            state: self.state.clone(),
-            emitter: self.emitter.clone(),
+            owner: self.owner.clone(),
         }
     }
 }
 
 impl<E: From<NodeError> + 'static> MessagePort<E> {
     pub(super) fn ticket(&self) -> TaskTicket {
-        self.state.borrow().reservation.ticket()
+        self.owner.state.borrow().reservation.ticket()
     }
 
     pub(super) fn downgrade(&self) -> RuntimePort<E> {
         RuntimePort {
-            state: Rc::downgrade(&self.state),
-            emitter: self.emitter.downgrade(),
+            owner: Rc::downgrade(&self.owner),
         }
     }
 }
 
 impl<E: 'static> RuntimePort<E> {
     pub(super) fn is_alive(&self) -> bool {
-        self.state.strong_count() > 0 && self.emitter.is_alive()
+        self.owner.strong_count() > 0
     }
 
     pub(super) fn upgrade(&self) -> Option<MessagePort<E>> {
         Some(MessagePort {
-            state: self.state.upgrade()?,
-            emitter: self.emitter.upgrade()?,
+            owner: self.owner.upgrade()?,
         })
     }
 }
@@ -469,5 +337,8 @@ pub(super) fn transport_state(
         closed: false,
         refed: true,
         close_pending: None,
+        routing: PortRouting::new(),
+        capture_count: 0,
+        capture_boundary: None,
     })))
 }

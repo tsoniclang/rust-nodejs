@@ -1,10 +1,12 @@
-use super::port::{MessagePort, RuntimePort};
+use super::port::{capture_parent, MessagePort, MessagePortState, PortFrontier, RuntimePort};
 use super::worker::{RuntimeWorker, Worker};
 use crate::error::{NodeError, NodeResult};
 use crate::runtime_resources::{
     NativeResourceBudget, ResourceFrontier, RuntimeResource, RuntimeResources,
 };
 use std::cell::OnceCell;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
 use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
@@ -93,6 +95,12 @@ pub struct WorkerResources<E: 'static> {
     parent: OnceCell<MessagePort<E>>,
 }
 
+pub struct WorkerFrontier {
+    owner: usize,
+    resources: ResourceFrontier,
+    parent: Option<PortFrontier>,
+}
+
 impl<E: 'static> Default for WorkerResources<E> {
     fn default() -> Self {
         Self::new()
@@ -126,35 +134,80 @@ impl<E: From<NodeError> + 'static> WorkerResources<E> {
         let Some(state) = super::parent_port_state() else {
             return Ok(None);
         };
-        let port = MessagePort::from_state(self, state)?;
+        self.bind_parent(state).map(Some)
+    }
+
+    pub(super) fn bind_parent(
+        &self,
+        state: Rc<RefCell<MessagePortState>>,
+    ) -> NodeResult<MessagePort<E>> {
+        let port = MessagePort::from_state(state)?;
         self.parent.set(port.clone()).map_err(|_| {
             NodeError::new(
                 "ERR_WORKER_PARENT_PORT",
                 "worker parent port was initialized twice",
             )
         })?;
-        Ok(Some(port))
+        Ok(port)
     }
 }
 
 impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
     type Error = E;
-    type Frontier = ResourceFrontier;
+    type Frontier = WorkerFrontier;
 
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
-        self.resources.prepare(phase)
+        let resources = self.resources.prepare(phase)?;
+        let parent = if phase == DispatchPhase::Ports {
+            self.parent
+                .get()
+                .map(MessagePort::physical_state)
+                .or_else(super::parent_port_state)
+                .map(capture_parent)
+                .transpose()
+                .map_err(E::from)?
+        } else {
+            None
+        };
+        Ok(WorkerFrontier {
+            owner: self as *const Self as usize,
+            resources,
+            parent,
+        })
     }
 
     fn next_ready(&self, frontier: &Self::Frontier) -> Option<u64> {
-        self.resources.next_ready(frontier)
+        if frontier.owner != self as *const Self as usize {
+            return None;
+        }
+        let resources = self.resources.next_ready(&frontier.resources);
+        let parent = frontier
+            .parent
+            .as_ref()
+            .and_then(|frontier| self.parent.get()?.next_shared(frontier));
+        match (resources, parent) {
+            (Some(resources), Some(parent)) => Some(resources.min(parent)),
+            (resources, parent) => resources.or(parent),
+        }
     }
 
     fn poll_next(&self, frontier: &Self::Frontier) -> Result<bool, E> {
-        self.resources.poll_next(frontier)
+        if frontier.owner != self as *const Self as usize {
+            return Ok(false);
+        }
+        let resources = self.resources.next_ready(&frontier.resources);
+        if let (Some(port), Some(parent)) = (self.parent.get(), frontier.parent.as_ref()) {
+            if let Some(ticket) = port.next_shared(parent) {
+                if resources.is_none_or(|resources| ticket <= resources) {
+                    return port.poll_shared(parent);
+                }
+            }
+        }
+        self.resources.poll_next(&frontier.resources)
     }
 
     fn has_work(&self) -> bool {
-        self.resources.has_work()
+        self.resources.has_work() || self.parent.get().is_some_and(MessagePort::is_refed_active)
     }
     fn next_delay(&self) -> Option<Duration> {
         self.resources.next_delay()

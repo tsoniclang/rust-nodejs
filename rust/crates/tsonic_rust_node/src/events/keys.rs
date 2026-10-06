@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use tsonic_rust_js::{JsSymbol, JsValue};
 
-use super::CallableListenerEntry;
 use crate::error::{NodeError, NodeResult};
 
 #[derive(Clone)]
@@ -13,7 +12,7 @@ pub(super) enum EventKey {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum EventName<'a> {
+pub(crate) enum EventName<'a> {
     String(&'a str),
     Symbol(&'a JsSymbol),
 }
@@ -35,7 +34,7 @@ impl EventKey {
 }
 
 impl<'a> EventName<'a> {
-    pub(super) fn from_value(value: &'a JsValue) -> NodeResult<Self> {
+    pub(crate) fn from_value(value: &'a JsValue) -> NodeResult<Self> {
         match value {
             JsValue::String(value) => Ok(Self::String(value)),
             JsValue::Symbol(value) => Ok(Self::Symbol(value)),
@@ -66,41 +65,34 @@ impl<'a> EventName<'a> {
     }
 }
 
-pub(super) struct CallableListenerMap<E: 'static> {
-    strings: HashMap<String, Rc<Vec<CallableListenerEntry<E>>>>,
-    symbols: HashMap<JsSymbol, Rc<Vec<CallableListenerEntry<E>>>>,
+pub(crate) struct EventListenerMap<TListener> {
+    strings: HashMap<String, Rc<Vec<TListener>>>,
+    symbols: HashMap<JsSymbol, Rc<Vec<TListener>>>,
 }
 
-impl<E: 'static> CallableListenerMap<E> {
-    pub(super) fn new() -> Self {
+impl<TListener> EventListenerMap<TListener> {
+    pub(crate) fn new() -> Self {
         Self {
             strings: HashMap::new(),
             symbols: HashMap::new(),
         }
     }
 
-    pub(super) fn get(&self, name: EventName<'_>) -> Option<&Rc<Vec<CallableListenerEntry<E>>>> {
+    pub(crate) fn get(&self, name: EventName<'_>) -> Option<&Rc<Vec<TListener>>> {
         match name {
             EventName::String(value) => self.strings.get(value),
             EventName::Symbol(value) => self.symbols.get(value),
         }
     }
 
-    pub(super) fn get_mut(
-        &mut self,
-        name: EventName<'_>,
-    ) -> Option<&mut Rc<Vec<CallableListenerEntry<E>>>> {
+    pub(crate) fn get_mut(&mut self, name: EventName<'_>) -> Option<&mut Rc<Vec<TListener>>> {
         match name {
             EventName::String(value) => self.strings.get_mut(value),
             EventName::Symbol(value) => self.symbols.get_mut(value),
         }
     }
 
-    pub(super) fn insert(
-        &mut self,
-        name: EventName<'_>,
-        listeners: Rc<Vec<CallableListenerEntry<E>>>,
-    ) {
+    pub(crate) fn insert(&mut self, name: EventName<'_>, listeners: Rc<Vec<TListener>>) {
         match name {
             EventName::String(value) => {
                 self.strings.insert(value.to_owned(), listeners);
@@ -111,13 +103,19 @@ impl<E: 'static> CallableListenerMap<E> {
         }
     }
 
-    pub(super) fn remove(
-        &mut self,
-        name: EventName<'_>,
-    ) -> Option<Rc<Vec<CallableListenerEntry<E>>>> {
+    pub(crate) fn remove(&mut self, name: EventName<'_>) -> Option<Rc<Vec<TListener>>> {
         match name {
             EventName::String(value) => self.strings.remove(value),
             EventName::Symbol(value) => self.symbols.remove(value),
         }
+    }
+
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut Rc<Vec<TListener>>> {
+        self.strings.values_mut().chain(self.symbols.values_mut())
+    }
+
+    pub(crate) fn remove_empty(&mut self) {
+        self.strings.retain(|_, listeners| !listeners.is_empty());
+        self.symbols.retain(|_, listeners| !listeners.is_empty());
     }
 }

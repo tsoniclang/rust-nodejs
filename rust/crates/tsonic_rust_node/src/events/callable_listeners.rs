@@ -304,7 +304,7 @@ impl<E: 'static> EventEmitter<E> {
             state.callable_event_order.clear();
             std::mem::replace(
                 &mut state.callable_listeners,
-                super::CallableListenerMap::new(),
+                super::EventListenerMap::new(),
             )
         };
         drop(removed);

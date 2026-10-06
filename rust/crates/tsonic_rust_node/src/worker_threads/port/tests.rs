@@ -4,7 +4,7 @@ use std::rc::Rc;
 use super::*;
 use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts, DispatchPhase};
 
-enum Failure {
+pub(super) enum Failure {
     Original(Rc<Cell<i64>>),
     Native(NodeError),
 }
@@ -45,7 +45,7 @@ fn port_failure_retains_exact_error_and_uninvoked_messages() {
         Failure::Native(error) => panic!("source error replaced: {}", error.code()),
     }
     assert_eq!(calls.get(), 0);
-    assert_eq!(channel.port2.state.borrow().messages.len(), 1);
+    assert_eq!(channel.port2.owner.state.borrow().messages.len(), 1);
     assert_eq!(
         poll_phase(&resources, DispatchPhase::Ports).ok(),
         Some(true)

@@ -1,7 +1,7 @@
 use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::Callable;
 
-pub(super) enum EventCallback<E: 'static> {
+pub(crate) enum EventCallback<E: 'static> {
     Empty(Callable<(), Result<(), E>>),
     One(Callable<(JsValue,), Result<(), E>>),
     Two(Callable<(JsValue, JsValue), Result<(), E>>),
@@ -21,7 +21,13 @@ impl<E: 'static> Clone for EventCallback<E> {
 
 impl<E: 'static> EventCallback<E> {
     pub(super) fn invoke(&self, arguments: &[JsValue]) -> Result<(), E> {
-        let value = |index| arguments.get(index).cloned().unwrap_or(JsValue::Null);
+        self.invoke_with_values(|index| arguments.get(index).cloned().unwrap_or(JsValue::Null))
+    }
+
+    pub(crate) fn invoke_with_values(
+        &self,
+        mut value: impl FnMut(usize) -> JsValue,
+    ) -> Result<(), E> {
         match self {
             Self::Empty(callback) => callback.call(()),
             Self::One(callback) => callback.call((value(0),)),
@@ -31,10 +37,10 @@ impl<E: 'static> EventCallback<E> {
     }
 }
 
-pub(super) type ListenerCallback<E> = crate::retained_listener::RetainedListener<EventCallback<E>>;
+pub(crate) type ListenerCallback<E> = crate::retained_listener::RetainedListener<EventCallback<E>>;
 
 impl<E: 'static> ListenerCallback<E> {
-    pub(super) fn invoke(&self, arguments: &[JsValue], before: &impl Fn()) -> Result<bool, E> {
+    pub(crate) fn invoke(&self, arguments: &[JsValue], before: &impl Fn()) -> Result<bool, E> {
         self.with_callback(|callback| {
             before();
             callback.invoke(arguments)
