@@ -1,4 +1,5 @@
-use std::collections::BTreeMap;
+use std::cell::{OnceCell, RefCell};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -52,8 +53,9 @@ struct BackgroundRuntime {
 struct SourceThreadCompletions {
     sender: SyncSender<WorkCompletion>,
     receiver: Receiver<WorkCompletion>,
-    callbacks: BTreeMap<u64, Box<dyn BackgroundCompletion>>,
-    pending: usize,
+    in_flight: BTreeMap<u64, Box<dyn BackgroundCompletion>>,
+    ready: VecDeque<(u64, Box<dyn BackgroundCompletion>)>,
+    next_ready_ticket: u64,
 }
 
 impl SourceThreadCompletions {
@@ -62,15 +64,28 @@ impl SourceThreadCompletions {
         Self {
             sender,
             receiver,
-            callbacks: BTreeMap::new(),
-            pending: 0,
+            in_flight: BTreeMap::new(),
+            ready: VecDeque::new(),
+            next_ready_ticket: 0,
         }
+    }
+
+    fn pending(&self) -> usize {
+        self.in_flight.len() + self.ready.len()
     }
 }
 
 thread_local! {
-    static SOURCE_THREAD_COMPLETIONS: std::cell::RefCell<SourceThreadCompletions> =
-        std::cell::RefCell::new(SourceThreadCompletions::new());
+    static SOURCE_THREAD_COMPLETIONS: OnceCell<RefCell<SourceThreadCompletions>> =
+        const { OnceCell::new() };
+}
+
+fn with_source<Output>(
+    callback: impl FnOnce(&RefCell<SourceThreadCompletions>) -> Output,
+) -> Output {
+    SOURCE_THREAD_COMPLETIONS.with(|source| {
+        callback(source.get_or_init(|| RefCell::new(SourceThreadCompletions::new())))
+    })
 }
 
 static RUNTIME: OnceLock<BackgroundRuntime> = OnceLock::new();
@@ -86,23 +101,24 @@ where
 {
     let runtime = runtime()?;
     let wake = crate::readiness::waker()?;
-    let id = NEXT_WORK_ID.fetch_add(1, Ordering::Relaxed);
-    if id == u64::MAX {
-        return Err(crate::NodeError::new(
-            "ERR_NODE_BACKGROUND_WORK_LIMIT",
-            "background work identity space is exhausted",
-        ));
-    }
+    let id = NEXT_WORK_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| {
+            crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_WORK_LIMIT",
+                "background work identity space is exhausted",
+            )
+        })?;
     let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
-    let completion_sender = SOURCE_THREAD_COMPLETIONS.with(|source| {
+    let completion_sender = with_source(|source| {
         let mut source = source.borrow_mut();
-        if source.callbacks.len() >= MAX_PENDING_BACKGROUND_WORK {
+        if source.pending() >= MAX_PENDING_BACKGROUND_WORK {
             return Err(crate::NodeError::new(
                 "ERR_NODE_BACKGROUND_WORK_LIMIT",
                 "pending background work exceeds the finite limit",
             ));
         }
-        source.callbacks.insert(
+        source.in_flight.insert(
             id,
             Box::new(TypedBackgroundCompletion {
                 result_receiver,
@@ -127,15 +143,10 @@ where
         }),
     };
     match runtime.work_sender.try_send(request) {
-        Ok(()) => {
-            SOURCE_THREAD_COMPLETIONS.with(|source| {
-                source.borrow_mut().pending += 1;
-            });
-            Ok(())
-        }
+        Ok(()) => Ok(()),
         Err(error) => {
-            SOURCE_THREAD_COMPLETIONS.with(|source| {
-                source.borrow_mut().callbacks.remove(&id);
+            with_source(|source| {
+                source.borrow_mut().in_flight.remove(&id);
             });
             Err(crate::NodeError::new(
                 "ERR_NODE_BACKGROUND_WORK_LIMIT",
@@ -219,12 +230,33 @@ where
 }
 
 pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let callbacks = SOURCE_THREAD_COMPLETIONS.with(|source| {
+    SOURCE_THREAD_COMPLETIONS.with(|source| source.get().map_or(Ok(false), poll_completions))
+}
+
+fn poll_completions(
+    source: &RefCell<SourceThreadCompletions>,
+) -> tsonic_rust_runtime::TsonicResult<bool> {
+    let boundary = {
         let mut source = source.borrow_mut();
-        let mut completed = Vec::new();
         loop {
             match source.receiver.try_recv() {
-                Ok(value) => completed.push(value),
+                Ok(value) => {
+                    let next = source.next_ready_ticket.checked_add(1).ok_or_else(|| {
+                        crate::NodeError::new(
+                            "ERR_NODE_BACKGROUND_WORK_LIMIT",
+                            "background ready ticket range is exhausted",
+                        )
+                    })?;
+                    let callback = source.in_flight.remove(&value.id).ok_or_else(|| {
+                        crate::NodeError::new(
+                            "ERR_NODE_BACKGROUND_RESULT",
+                            "background work completed without its exact callback",
+                        )
+                    })?;
+                    let ticket = source.next_ready_ticket;
+                    source.next_ready_ticket = next;
+                    source.ready.push_back((ticket, callback));
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     return Err(tsonic_rust_runtime::TsonicError::from(
@@ -236,40 +268,40 @@ pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
                 }
             }
         }
-        if completed
-            .iter()
-            .any(|completion| !source.callbacks.contains_key(&completion.id))
-            || source.pending < completed.len()
-        {
-            return Err(tsonic_rust_runtime::TsonicError::from(
-                crate::NodeError::new(
-                    "ERR_NODE_BACKGROUND_RESULT",
-                    "background work completed without its exact callback",
-                ),
-            ));
-        }
-        source.pending -= completed.len();
-        completed
-            .into_iter()
-            .map(|completion| {
-                source.callbacks.remove(&completion.id).ok_or_else(|| {
-                    tsonic_rust_runtime::TsonicError::from(crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_RESULT",
-                        "background work completed without its exact callback",
-                    ))
-                })
-            })
-            .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()
-    })?;
-    let did_work = !callbacks.is_empty();
-    for callback in callbacks {
+        source.ready.back().map(|(ticket, _)| *ticket)
+    };
+    let Some(boundary) = boundary else {
+        return Ok(false);
+    };
+    let mut did_work = false;
+    loop {
+        let callback = {
+            let mut source = source.borrow_mut();
+            if source
+                .ready
+                .front()
+                .is_some_and(|(ticket, _)| *ticket <= boundary)
+            {
+                source.ready.pop_front().map(|(_, callback)| callback)
+            } else {
+                None
+            }
+        };
+        let Some(callback) = callback else {
+            break;
+        };
         callback.complete()?;
+        did_work = true;
     }
     Ok(did_work)
 }
 
 pub(crate) fn has_pending_work() -> bool {
-    SOURCE_THREAD_COMPLETIONS.with(|source| source.borrow().pending != 0)
+    SOURCE_THREAD_COMPLETIONS.with(|source| {
+        source
+            .get()
+            .is_some_and(|source| source.borrow().pending() != 0)
+    })
 }
 
 fn runtime() -> crate::NodeResult<&'static BackgroundRuntime> {
@@ -317,9 +349,135 @@ fn worker_loop(work_receiver: Arc<Mutex<std::sync::mpsc::Receiver<WorkRequest>>>
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use std::time::{Duration, Instant};
+    use tsonic_rust_runtime::ErrorObject;
+
+    struct TestCompletion<Callback>(Callback);
+
+    impl<Callback: FnOnce() -> tsonic_rust_runtime::TsonicResult<()>> super::BackgroundCompletion
+        for TestCompletion<Callback>
+    {
+        fn complete(self: Box<Self>) -> tsonic_rust_runtime::TsonicResult<()> {
+            (self.0)()
+        }
+    }
+
+    fn register_ready(
+        source: &RefCell<super::SourceThreadCompletions>,
+        id: u64,
+        callback: impl FnOnce() -> tsonic_rust_runtime::TsonicResult<()> + 'static,
+    ) {
+        let mut source = source.borrow_mut();
+        assert!(source
+            .in_flight
+            .insert(id, Box::new(TestCompletion(callback)))
+            .is_none());
+        source
+            .sender
+            .try_send(super::WorkCompletion { id })
+            .unwrap();
+    }
+
+    #[test]
+    fn context_free_completion_queries_do_not_initialize_channels() {
+        assert!(!super::has_pending_work());
+        assert!(!super::poll().unwrap());
+        assert!(super::SOURCE_THREAD_COMPLETIONS.with(|source| source.get().is_none()));
+    }
+
+    #[test]
+    fn first_completion_failure_preserves_identity_and_uninvoked_work() {
+        let source = RefCell::new(super::SourceThreadCompletions::new());
+        let expected = tsonic_rust_runtime::JsError::error("original background failure");
+        let failure = expected.clone();
+        register_ready(&source, 1, move || Err(failure.into()));
+        let observed = Rc::new(Cell::new(0));
+        let recorded = observed.clone();
+        register_ready(&source, 2, move || {
+            recorded.set(1);
+            Ok(())
+        });
+        let returned = super::poll_completions(&source).unwrap_err();
+        assert_eq!(
+            returned.source_error().error_identity_key(),
+            expected.error_identity_key()
+        );
+        assert_eq!(observed.get(), 0);
+        assert_eq!(source.borrow().pending(), 1);
+        assert!(super::poll_completions(&source).unwrap());
+        assert_eq!(observed.get(), 1);
+        assert_eq!(source.borrow().pending(), 0);
+        assert!(!super::poll_completions(&source).unwrap());
+    }
+
+    #[test]
+    fn nested_failed_dispatch_does_not_extend_the_outer_ready_frontier() {
+        let source = Rc::new(RefCell::new(super::SourceThreadCompletions::new()));
+        let owner = Rc::downgrade(&source);
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let recorded = observed.clone();
+        let expected = tsonic_rust_runtime::JsError::error("nested background failure");
+        let nested_identity = expected.error_identity_key();
+        register_ready(&source, 1, move || {
+            let source = owner.upgrade().unwrap();
+            recorded.borrow_mut().push(1);
+            let later = recorded.clone();
+            register_ready(&source, 3, move || {
+                later.borrow_mut().push(3);
+                Ok(())
+            });
+            let returned = super::poll_completions(&source).unwrap_err();
+            assert_eq!(
+                returned.source_error().error_identity_key(),
+                nested_identity
+            );
+            Ok(())
+        });
+        let recorded = observed.clone();
+        register_ready(&source, 2, move || {
+            recorded.borrow_mut().push(2);
+            Err(expected.into())
+        });
+        assert!(super::poll_completions(&source).unwrap());
+        assert_eq!(*observed.borrow(), vec![1, 2]);
+        assert_eq!(source.borrow().pending(), 1);
+        assert!(super::poll_completions(&source).unwrap());
+        assert_eq!(*observed.borrow(), vec![1, 2, 3]);
+        assert_eq!(source.borrow().pending(), 0);
+    }
+
+    #[test]
+    fn malformed_completion_and_ticket_exhaustion_fail_before_invocation() {
+        for duplicate in [false, true] {
+            let source = RefCell::new(super::SourceThreadCompletions::new());
+            let invoked = Rc::new(Cell::new(0));
+            let recorded = invoked.clone();
+            register_ready(&source, 1, move || {
+                recorded.set(1);
+                Ok(())
+            });
+            source
+                .borrow()
+                .sender
+                .try_send(super::WorkCompletion {
+                    id: if duplicate { 1 } else { 2 },
+                })
+                .unwrap();
+            assert!(super::poll_completions(&source).is_err());
+            assert_eq!(invoked.get(), 0);
+            assert_eq!(source.borrow().pending(), 1);
+            assert!(super::poll_completions(&source).unwrap());
+            assert_eq!(invoked.get(), 1);
+        }
+        let source = RefCell::new(super::SourceThreadCompletions::new());
+        source.borrow_mut().next_ready_ticket = u64::MAX;
+        register_ready(&source, 1, || panic!("overflow must not invoke callbacks"));
+        assert!(super::poll_completions(&source).is_err());
+        assert_eq!(source.borrow().pending(), 1);
+        assert!(source.borrow().ready.is_empty());
+    }
 
     #[test]
     fn asynchronous_work_does_not_block_the_polling_thread() {

@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use tsonic_rust_runtime::ordered_dispatch::poll_ordered_entries;
 use tsonic_rust_runtime::{Callable, TsonicResult};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -222,30 +223,22 @@ pub(crate) fn next_runtime_timer_delay() -> Option<Duration> {
 
 pub(crate) fn poll_runtime_timers() -> TsonicResult<bool> {
     let now = Instant::now();
-    let callbacks = TIMERS.with(|timers| {
-        let mut timers = timers.borrow_mut();
-        let due_ids = timers
-            .iter()
-            .filter_map(|(id, entry)| (entry.due <= now).then_some(*id))
-            .collect::<Vec<_>>();
-        let mut callbacks = Vec::with_capacity(due_ids.len());
-        for id in due_ids {
-            let Some(entry) = timers.get_mut(&id) else {
-                continue;
-            };
-            callbacks.push(Rc::clone(&entry.callback));
-            if entry.interval {
-                entry.due = now + entry.delay;
-            } else {
-                timers.remove(&id);
-            }
-        }
-        callbacks
-    });
-    for callback in &callbacks {
-        callback.borrow_mut()()?;
-    }
-    Ok(!callbacks.is_empty())
+    TIMERS.with(|timers| {
+        poll_ordered_entries(
+            timers,
+            |entry| entry.due <= now,
+            |timers, id| {
+                let entry = timers.get_mut(&id).expect("selected native timer");
+                if entry.interval {
+                    entry.due = now + entry.delay;
+                    Rc::clone(&entry.callback)
+                } else {
+                    timers.remove(&id).expect("selected native timer").callback
+                }
+            },
+            |callback| callback.borrow_mut()(),
+        )
+    })
 }
 
 fn schedule(
@@ -254,7 +247,9 @@ fn schedule(
     interval: bool,
     options: TimerOptions,
 ) -> Timeout {
-    let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+    let id = NEXT_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .expect("native timer identity range is exhausted");
     let timeout = Timeout { id, delay_ms };
     if options.signal_aborted {
         return timeout;
@@ -287,6 +282,61 @@ fn remove_entry(id: u64) {
     TIMERS.with(|timers| {
         timers.borrow_mut().remove(&id);
     });
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use std::cell::Cell;
+    use tsonic_rust_runtime::ErrorObject;
+
+    #[test]
+    fn first_timer_failure_retains_original_identity_and_uninvoked_callbacks() {
+        let original = tsonic_rust_runtime::JsError::error("original timer failure");
+        let failure = original.clone();
+        schedule(
+            move || Err(failure.clone().into()),
+            0,
+            false,
+            TimerOptions::default(),
+        );
+        let observed = Rc::new(Cell::new(0));
+        let recorded = observed.clone();
+        set_timeout(move || recorded.set(1), 0);
+        let returned = poll_runtime_timers().unwrap_err();
+        assert_eq!(
+            returned.source_error().error_identity_key(),
+            original.error_identity_key()
+        );
+        assert_eq!(observed.get(), 0);
+        assert!(has_refed_runtime_timers());
+        assert!(poll_runtime_timers().unwrap());
+        assert_eq!(observed.get(), 1);
+        assert!(!has_refed_runtime_timers());
+    }
+
+    #[test]
+    fn cancellation_and_reentrant_admission_follow_the_live_timer_store() {
+        let observed = Rc::new(Cell::new(0));
+        let cancelled = Rc::new(RefCell::new(None::<Timeout>));
+        let handle = cancelled.clone();
+        let recorded = observed.clone();
+        set_timeout(
+            move || {
+                clear_timeout(handle.borrow_mut().as_mut().unwrap());
+                let later = recorded.clone();
+                set_timeout(move || later.set(7), 0);
+            },
+            0,
+        );
+        *cancelled.borrow_mut() = Some(set_timeout(|| panic!("cancelled ready timer"), 0));
+        assert!(poll_runtime_timers().unwrap());
+        assert_eq!(observed.get(), 0);
+        assert!(has_refed_runtime_timers());
+        assert!(poll_runtime_timers().unwrap());
+        assert_eq!(observed.get(), 7);
+        assert!(!has_refed_runtime_timers());
+    }
 }
 
 pub mod promises {
