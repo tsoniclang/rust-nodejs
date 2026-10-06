@@ -1,56 +1,19 @@
-const MAX_PENDING_RUNTIME_TASKS: usize = 1 << 20;
-
-use std::cell::OnceCell;
 use std::future::Future;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
 use crate::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_js::event_loop::EventLoopDriver;
-use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 use tsonic_rust_runtime::TsonicResult;
-
-thread_local! {
-    static RUNTIME_TASK_BUDGET: OnceCell<TaskBudget> = const { OnceCell::new() };
-    static RUNTIME_TASKS: OnceCell<TaskQueue<tsonic_rust_runtime::TsonicError>> =
-        const { OnceCell::new() };
-}
-
-pub(crate) fn runtime_task_budget() -> TaskBudget {
-    RUNTIME_TASK_BUDGET.with(|budget| {
-        budget
-            .get_or_init(|| {
-                TaskBudget::new(
-                    NonZeroUsize::new(MAX_PENDING_RUNTIME_TASKS).expect("finite native task limit"),
-                )
-            })
-            .clone()
-    })
-}
 
 pub(crate) fn enqueue_runtime_task(
     task: impl FnOnce() -> tsonic_rust_runtime::TsonicResult<()> + 'static,
 ) -> crate::NodeResult<()> {
-    RUNTIME_TASKS.with(|tasks| {
-        tasks
-            .get_or_init(|| TaskQueue::new(runtime_task_budget()))
-            .enqueue(task)
-            .map(|_| ())
-            .map_err(crate::NodeError::from)
-    })
-}
-
-fn poll_runtime_tasks() -> tsonic_rust_runtime::TsonicResult<bool> {
-    RUNTIME_TASKS.with(|tasks| tasks.get().map_or(Ok(false), TaskQueue::poll_ready))
+    crate::runtime_tasks::with_default(|tasks| tasks.enqueue(task))
 }
 
 fn has_runtime_tasks() -> bool {
-    RUNTIME_TASKS.with(|tasks| {
-        tasks
-            .get()
-            .is_some_and(|tasks| tasks.front_ticket().is_some())
-    })
+    crate::runtime_tasks::with_default(crate::runtime_tasks::RuntimeTasks::has_pending_work)
 }
 
 fn has_runtime_work() -> bool {
@@ -133,19 +96,26 @@ where
             DispatchPhase::Workers,
             DispatchPhase::Ports,
         ] {
-            let work = if phase == DispatchPhase::Background {
-                crate::background::with_default(|native| {
+            let work = match phase {
+                DispatchPhase::Background => crate::background::with_default(|native| {
                     crate::dispatch::poll_phase(
                         &crate::dispatch::prepend(native, &self.contexts),
                         phase,
                     )
-                })?
-            } else {
-                let frontier = self.contexts.prepare(phase)?;
-                let native =
-                    poll_native_phase(phase, can_dispatch_signals).map_err(Self::Error::from)?;
-                let selected = crate::dispatch::poll_prepared(&self.contexts, &frontier)?;
-                native || selected
+                })?,
+                DispatchPhase::RuntimeTasks => crate::runtime_tasks::with_default(|native| {
+                    crate::dispatch::poll_phase(
+                        &crate::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
+                _ => {
+                    let frontier = self.contexts.prepare(phase)?;
+                    let native = poll_native_phase(phase, can_dispatch_signals)
+                        .map_err(Self::Error::from)?;
+                    let selected = crate::dispatch::poll_prepared(&self.contexts, &frontier)?;
+                    native || selected
+                }
             };
             did_work |= work;
             if phase == DispatchPhase::JsTimers {
@@ -187,10 +157,9 @@ where
 fn poll_native_phase(phase: DispatchPhase, can_dispatch_signals: bool) -> TsonicResult<bool> {
     match phase {
         DispatchPhase::JsTimers => tsonic_rust_js::timers::poll_timers(),
-        DispatchPhase::Background => {
-            unreachable!("native background belongs to the composed phase")
+        DispatchPhase::Background | DispatchPhase::RuntimeTasks => {
+            unreachable!("native queued work belongs to its composed phase")
         }
-        DispatchPhase::RuntimeTasks => poll_runtime_tasks(),
         DispatchPhase::Signals => {
             if can_dispatch_signals {
                 crate::process::poll_signals().map_err(tsonic_rust_runtime::TsonicError::from)
@@ -218,14 +187,6 @@ mod tests {
     use tsonic_rust_runtime::Callable;
 
     #[test]
-    fn context_free_queries_do_not_allocate_a_native_task_root() {
-        assert!(!super::has_runtime_tasks());
-        assert!(!super::poll_runtime_tasks().unwrap());
-        assert!(super::RUNTIME_TASKS.with(|tasks| tasks.get().is_none()));
-        assert!(super::RUNTIME_TASK_BUDGET.with(|budget| budget.get().is_none()));
-    }
-
-    #[test]
     fn runtime_tasks_preserve_exact_failures_and_uninvoked_work() {
         let original = tsonic_rust_runtime::JsError::error("original native failure");
         let retained = original.clone();
@@ -237,12 +198,12 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let failure = super::poll_runtime_tasks().unwrap_err();
+        let failure = crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap_err();
         assert!(matches!(failure, tsonic_rust_runtime::TsonicError::Js(_)));
         assert!(failure.source_error().has_same_identity(&original));
         assert_eq!(observed.get(), 0);
         assert!(super::has_runtime_tasks());
-        assert!(super::poll_runtime_tasks().unwrap());
+        assert!(crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap());
         assert_eq!(observed.get(), 7);
         assert!(!super::has_runtime_tasks());
     }

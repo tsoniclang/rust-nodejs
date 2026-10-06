@@ -17,9 +17,23 @@ export const nodeBackgroundInput: RustDispatchContextInput = {
   contextId: nodeBackgroundContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
 };
 
-export function nodeBackgroundGroup(targetArgumentIndex: number): RustDispatchContextGroupInput {
+export const nodeRuntimeTaskContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.runtime-tasks",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.RuntimeTasks", genericArguments: errorArguments },
+  construct: { form: "call", path: "tsonic_rust_node::runtime_tasks::RuntimeTasks::new", const: true },
+  handleCarrier: { kind: "target-named", id: "rust.node.RuntimeTaskHandle", genericArguments: errorArguments },
+  handle: { form: "receiver-method", name: "handle" },
+  composedContexts: [],
+};
+
+export const nodeRuntimeTaskInput: RustDispatchContextInput = {
+  contextId: nodeRuntimeTaskContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
+export function nodeDispatchGroup(targetArgumentIndex: number): RustDispatchContextGroupInput {
   return {
-    contextId: nodeBackgroundContext.id, targetArgumentIndex,
+    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: errorArguments,
     } },

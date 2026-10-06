@@ -36,6 +36,7 @@ pub mod punycode;
 pub mod querystring;
 mod readiness;
 pub mod readline;
+pub mod runtime_tasks;
 pub mod sqlite;
 pub mod stream;
 pub mod string_decoder;

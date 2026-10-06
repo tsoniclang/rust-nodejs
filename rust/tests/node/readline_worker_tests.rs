@@ -23,8 +23,12 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 
     let answer = Rc::new(RefCell::new(None::<String>));
     let callback_answer = Rc::clone(&answer);
+    let background = tsonic_rust_node::background::BackgroundTasks::new();
+    let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     interface
         .question_callable(
+            &background,
+            &tasks,
             "name? ",
             Callable::new(move |(value,)| {
                 *callback_answer.borrow_mut() = Some(value);
@@ -32,7 +36,14 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
             }),
         )
         .unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+        &background,
+        tsonic_rust_node::dispatch::prepend(
+            &tasks,
+            tsonic_rust_node::dispatch::DispatchEnd::<TsonicError>::new(),
+        ),
+    ))
+    .unwrap();
     assert_eq!(answer.borrow().as_deref(), Some("answer"));
 
     interface.write("done😀").unwrap();
@@ -53,6 +64,47 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
     assert!(!interface.is_paused());
     interface.close();
     assert!(interface.next_line().unwrap().is_none());
+}
+
+#[test]
+fn readline_question_retains_non_display_non_send_source_failure() {
+    struct Failure(Rc<Cell<i64>>);
+    impl From<TsonicError> for Failure {
+        fn from(_value: TsonicError) -> Self {
+            panic!("buffered readline does not produce a native callback failure")
+        }
+    }
+    let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
+        input: Readable::from_chunks(vec![Buffer::from_string("answer\n", Some("utf8")).unwrap()]),
+        ..Default::default()
+    });
+    let background = tsonic_rust_node::background::BackgroundTasks::<Failure>::new();
+    let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::<Failure>::new();
+    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+    let captured = Rc::clone(&expected);
+    interface
+        .question_callable(
+            &background,
+            &tasks,
+            "",
+            Callable::new(move |(answer,)| {
+                assert_eq!(answer, "answer");
+                Err(Failure(Rc::clone(&captured)))
+            }),
+        )
+        .unwrap();
+    assert!(!background.has_pending_work());
+    let returned = tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+        &background,
+        tsonic_rust_node::dispatch::prepend(
+            &tasks,
+            tsonic_rust_node::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    ))
+    .err()
+    .expect("original retained source failure");
+    assert!(Rc::ptr_eq(&returned.0, &expected));
+    assert_eq!(returned.0.get(), 9_007_199_254_740_993);
 }
 
 #[test]

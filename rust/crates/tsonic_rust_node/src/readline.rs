@@ -46,15 +46,17 @@ impl Interface {
 
     pub fn question_callable<E>(
         &mut self,
+        background: &crate::background::BackgroundTasks<E>,
+        tasks: &crate::runtime_tasks::RuntimeTasks<E>,
         query: &str,
         callback: tsonic_rust_runtime::Callable<(String,), Result<(), E>>,
     ) -> NodeResult<()>
     where
-        E: std::fmt::Display + 'static,
+        E: From<tsonic_rust_runtime::TsonicError> + 'static,
     {
         self.write_output(query)?;
         if self.input.is_stdin_source() {
-            return crate::background::spawn(
+            return background.spawn(
                 || {
                     let mut answer = String::new();
                     std::io::stdin()
@@ -69,9 +71,9 @@ impl Interface {
                     Ok(answer)
                 },
                 move |answer| {
-                    callback
-                        .call((answer.map_err(tsonic_rust_runtime::TsonicError::from)?,))
-                        .map_err(crate::error::callback_runtime_error)
+                    callback.call((answer
+                        .map_err(tsonic_rust_runtime::TsonicError::from)
+                        .map_err(E::from)?,))
                 },
             );
         }
@@ -81,11 +83,7 @@ impl Interface {
                 "readline input ended before an answer was available",
             )
         })?;
-        crate::event_loop::enqueue_runtime_task(move || {
-            callback
-                .call((answer,))
-                .map_err(crate::error::callback_runtime_error)
-        })
+        tasks.enqueue(move || callback.call((answer,)))
     }
 
     pub fn write(&mut self, text: &str) -> NodeResult<()> {

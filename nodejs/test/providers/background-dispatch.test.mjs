@@ -6,7 +6,7 @@ test("native compression callbacks demand their exact component background owner
   for (const selectedSurfaceIds of [[], ["js"]]) {
     const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds });
     const definition = contribution.definition;
-    assert.equal(definition.dispatchContexts.length, 1);
+    assert.equal(definition.dispatchContexts.length, 2);
     const context = definition.dispatchContexts[0];
     assert.equal(context.id, "tsonic.rust.node.background");
     assert.equal(context.requiredCrate, "tsonic_rust_node");
@@ -35,5 +35,27 @@ test("native compression callbacks demand their exact component background owner
     const synchronous = definition.operations.filter(row => row.exportId === "node:zlib::gzipSync");
     assert.equal(synchronous.length, 2);
     assert.equal(synchronous.every(row => row.dispatchInputs === undefined), true);
+  }
+});
+
+test("readline callbacks select exact independent background and source-thread task owners", () => {
+  for (const selectedSurfaceIds of [[], ["js"]]) {
+    const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds });
+    const definition = contribution.definition;
+    const context = definition.dispatchContexts.find(row => row.id === "tsonic.rust.node.runtime-tasks");
+    assert.equal(context !== undefined, true, "exact runtime task owner");
+    assert.deepEqual(context.construct, { form: "call", path: "tsonic_rust_node::runtime_tasks::RuntimeTasks::new", const: true });
+    assert.equal(context.rootCarrier.id, "rust.node.RuntimeTasks");
+    assert.equal(context.handleCarrier.id, "rust.node.RuntimeTaskHandle");
+    const operation = definition.operations.find(row => row.memberId === "node:readline::Interface.question");
+    assert.equal(operation !== undefined, true, "exact checked source callback operation");
+    assert.deepEqual(operation.dispatchInputs, [
+      { contextId: "tsonic.rust.node.background", view: "root", targetArgumentIndex: 0, mode: "ref" },
+      { contextId: context.id, view: "root", targetArgumentIndex: 1, mode: "ref" },
+    ]);
+    for (const hook of definition.binaryHooks.filter(row => row.dispatchGroups !== undefined)) {
+      assert.deepEqual(hook.dispatchGroups[0].contextIds, ["tsonic.rust.node.background", context.id]);
+      assert.equal(Object.isFrozen(hook.dispatchGroups[0].contextIds), true);
+    }
   }
 });

@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import { nodeBackgroundContext, nodeBackgroundGroup } from "./model/dispatch.js";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
@@ -316,6 +316,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
     carrierPaths: {
       "rust.node.BackgroundTasks": "tsonic_rust_node::background::BackgroundTasks",
       "rust.node.BackgroundHandle": "tsonic_rust_node::background::BackgroundHandle",
+      "rust.node.RuntimeTasks": "tsonic_rust_node::runtime_tasks::RuntimeTasks",
+      "rust.node.RuntimeTaskHandle": "tsonic_rust_runtime::dispatch_queue::TaskHandle",
       "rust.node.DispatchEnd": "tsonic_rust_node::dispatch::DispatchEnd",
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
       "rust.node.StatOptions": "tsonic_rust_node::fs::StatOptions",
@@ -446,7 +448,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.WorkerOptions": workerThreadCarrierTraits.options,
       "rust.node.MessagePort": workerThreadCarrierTraits.port,
     },
-    dispatchContexts: [nodeBackgroundContext],
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",
@@ -456,7 +458,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       id: "node-async-executor",
       phase: "async-execution",
       path: "tsonic_rust_node::block_on_with_contexts",
-      dispatchGroups: [nodeBackgroundGroup(1)],
+      dispatchGroups: [nodeDispatchGroup(1)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",
@@ -464,7 +466,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       id: "node-event-loop",
       phase: "after-entry",
       path: "tsonic_rust_node::run_with_contexts",
-      dispatchGroups: [nodeBackgroundGroup(0)],
+      dispatchGroups: [nodeDispatchGroup(0)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",

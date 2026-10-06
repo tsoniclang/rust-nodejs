@@ -57,9 +57,9 @@ const expectedModules = [
   "url",
 ];
 
-function expectedBackgroundGroup(targetArgumentIndex) {
+function expectedDispatchGroup(targetArgumentIndex) {
   return {
-    contextId: "tsonic.rust.node.background", targetArgumentIndex,
+    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks"], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: [{ kind: "type", type: {
         kind: "target-named", id: "rust.program.TsonicError",
@@ -994,7 +994,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
       id: "node-async-executor",
       phase: "async-execution",
       path: "tsonic_rust_node::block_on_with_contexts",
-      dispatchGroups: [expectedBackgroundGroup(1)],
+      dispatchGroups: [expectedDispatchGroup(1)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",
@@ -1003,7 +1003,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
       id: "node-event-loop",
       phase: "after-entry",
       path: "tsonic_rust_node::run_with_contexts",
-      dispatchGroups: [expectedBackgroundGroup(0)],
+      dispatchGroups: [expectedDispatchGroup(0)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",
