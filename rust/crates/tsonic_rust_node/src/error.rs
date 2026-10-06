@@ -72,6 +72,18 @@ impl tsonic_rust_runtime::ToSourceString for NodeError {
 
 pub type NodeResult<T> = Result<T, NodeError>;
 
+impl From<tsonic_rust_runtime::timer_queue::TimerQueueError> for NodeError {
+    fn from(value: tsonic_rust_runtime::timer_queue::TimerQueueError) -> Self {
+        use tsonic_rust_runtime::timer_queue::TimerQueueError;
+        let code = match value {
+            TimerQueueError::Capacity => "ERR_NODE_TIMER_LIMIT",
+            TimerQueueError::IdentityExhausted => "ERR_NODE_TIMER_IDENTITY_LIMIT",
+            TimerQueueError::DeadlineOutOfRange => "ERR_OUT_OF_RANGE",
+        };
+        Self::new(code, value.to_string())
+    }
+}
+
 impl From<tsonic_rust_runtime::dispatch_queue::TaskQueueError> for NodeError {
     fn from(value: tsonic_rust_runtime::dispatch_queue::TaskQueueError) -> Self {
         use tsonic_rust_runtime::dispatch_queue::TaskQueueError;

@@ -1,7 +1,9 @@
-import { rustProgramErrorTargetType } from "@tsonic/target-rust/provider";
+import { rustProgramErrorTargetType, rustJsTimerDispatchContextId } from "@tsonic/target-rust/provider";
 import type { RustDispatchContextDefinition, RustDispatchContextGroupInput, RustDispatchContextInput } from "@tsonic/target-rust/provider";
+import { emptyCallbackCarrier } from "./carriers.js";
 
 const errorArguments = [{ kind: "type" as const, type: rustProgramErrorTargetType() }];
+export const nodeTimerCallbackCarrier = emptyCallbackCarrier;
 
 export const nodeBackgroundContext: RustDispatchContextDefinition = {
   id: "tsonic.rust.node.background",
@@ -31,12 +33,25 @@ export const nodeRuntimeTaskInput: RustDispatchContextInput = {
   contextId: nodeRuntimeTaskContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
 };
 
-export function nodeDispatchGroup(targetArgumentIndex: number): RustDispatchContextGroupInput {
+export const nodeTimerContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.timers",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.Timers", genericArguments: [{ kind: "type", type: nodeTimerCallbackCarrier }] },
+  construct: { form: "call", path: "tsonic_rust_node::timers::new", const: true },
+  composedContexts: [],
+};
+
+export const nodeTimerInput: RustDispatchContextInput = {
+  contextId: nodeTimerContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
+export function nodeDispatchGroup(targetArgumentIndex: number, jsEnabled: boolean): RustDispatchContextGroupInput {
   return {
-    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id], targetArgumentIndex,
+    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id,
+      ...(jsEnabled ? [rustJsTimerDispatchContextId] : [])], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: errorArguments,
     } },
-    prepend: { form: "call", path: "tsonic_rust_node::dispatch::prepend" },
+    prepend: { form: "call", path: "tsonic_rust_runtime::dispatch::prepend" },
   };
 }

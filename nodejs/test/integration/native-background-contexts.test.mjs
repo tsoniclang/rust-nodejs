@@ -47,8 +47,8 @@ mod retained_source_failure {
     fn original_error_survives_native_worker_completion() {
         let expected = crate::schedule().expect("callback registration");
         let result = super::${name}.with(|root| {
-            tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
-                root, tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+            tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+                root, tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
             ))
         });
         let returned = result.expect_err("source callback must fail");

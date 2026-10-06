@@ -59,13 +59,13 @@ const expectedModules = [
 
 function expectedDispatchGroup(targetArgumentIndex) {
   return {
-    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks"], targetArgumentIndex,
+    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks", "tsonic.rust.node.timers"], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: [{ kind: "type", type: {
         kind: "target-named", id: "rust.program.TsonicError",
       } }],
     } },
-    prepend: { form: "call", path: "tsonic_rust_node::dispatch::prepend" },
+    prepend: { form: "call", path: "tsonic_rust_runtime::dispatch::prepend" },
   };
 }
 
@@ -1066,5 +1066,11 @@ test("provider package maps timers to the shared Node event loop", () => {
   assert.equal(rows.every((row) => row.operationKind === "method"), true);
   assert.equal(rows.every((row) => row.immediateCallback === undefined), true);
   assert.equal(rows.every((row) =>
-    JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout" })), true);
+    JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout",
+      genericArguments: [{ kind: "type", type: row.parameterCarriers[0] }] })), true);
+  for (const row of rows) {
+    assert.deepEqual(row.dispatchInputs, [{ contextId: "tsonic.rust.node.timers", view: "root", targetArgumentIndex: 0, mode: "ref" }]);
+    assert.equal(row.isFallible, true);
+    assert.equal(row.errorBoundary, "provider-native");
+  }
 });

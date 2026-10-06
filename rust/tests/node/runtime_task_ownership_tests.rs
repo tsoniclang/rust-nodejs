@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use std::num::NonZeroUsize;
-use tsonic_rust_node::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_node::runtime_tasks::RuntimeTasks;
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 
 #[path = "../support/allocation_counts.rs"]
@@ -46,7 +46,7 @@ fn warmed_composed_runtime_dispatch_and_weak_handles_allocate_nothing() {
     root.enqueue(|| Ok(())).unwrap();
     assert_eq!(root.poll(), Ok(true));
     let handle = root.handle();
-    let contexts = tsonic_rust_node::dispatch::prepend(&root, DispatchEnd::<()>::new());
+    let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<()>::new());
     let actual = measure(|| {
         for _ in 0..1024 {
             black_box(handle.clone());

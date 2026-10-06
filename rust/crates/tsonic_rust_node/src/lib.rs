@@ -13,7 +13,6 @@ pub mod cluster;
 pub mod crypto;
 pub mod dgram;
 pub mod diagnostics_channel;
-pub mod dispatch;
 pub mod dns;
 pub mod error;
 mod event_loop;

@@ -2,6 +2,8 @@ import { emptyCallbackCarrier, int32Carrier } from "../../model/carriers.js";
 import { fnExport, providerRef } from "../../declarations/builders.js";
 import { int32Type, voidType } from "../../model/source-types.js";
 import { timeoutCarrier } from "./carriers.js";
+import { nodeTimerInput } from "../../model/dispatch.js";
+import { providerNativeFallibility } from "../../model/operations.js";
 
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function timersModule(): RustProviderModuleDefinition {
@@ -50,6 +52,8 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       exportId: "node:timers::setTimeout",
       operationKind: "method",
       target: { form: "call", path: "node_timers::set_timeout_callable" },
+      dispatchInputs: [nodeTimerInput],
+      ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
       parameterCarriers: [emptyCallbackCarrier, int32Carrier],
     },
@@ -57,6 +61,8 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       exportId: "node:timers::setInterval",
       operationKind: "method",
       target: { form: "call", path: "node_timers::set_interval_callable" },
+      dispatchInputs: [nodeTimerInput],
+      ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
       parameterCarriers: [emptyCallbackCarrier, int32Carrier],
     },

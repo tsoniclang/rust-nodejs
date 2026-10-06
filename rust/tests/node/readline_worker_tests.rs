@@ -36,11 +36,11 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
             }),
         )
         .unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,
-        tsonic_rust_node::dispatch::prepend(
+        tsonic_rust_runtime::dispatch::prepend(
             &tasks,
-            tsonic_rust_node::dispatch::DispatchEnd::<TsonicError>::new(),
+            tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
         ),
     ))
     .unwrap();
@@ -94,11 +94,11 @@ fn readline_question_retains_non_display_non_send_source_failure() {
         )
         .unwrap();
     assert!(!background.has_pending_work());
-    let returned = tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+    let returned = tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,
-        tsonic_rust_node::dispatch::prepend(
+        tsonic_rust_runtime::dispatch::prepend(
             &tasks,
-            tsonic_rust_node::dispatch::DispatchEnd::<Failure>::new(),
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
         ),
     ))
     .err()

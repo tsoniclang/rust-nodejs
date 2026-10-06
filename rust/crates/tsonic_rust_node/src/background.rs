@@ -330,12 +330,17 @@ fn publish_completions<TError>(
     Ok(source.ready.back().map(|(ticket, _)| *ticket))
 }
 
-impl<TError: From<TsonicError>> crate::dispatch::DispatchContexts for BackgroundTasks<TError> {
+impl<TError: From<TsonicError>> tsonic_rust_runtime::dispatch::DispatchContexts
+    for BackgroundTasks<TError>
+{
     type Error = TError;
     type Frontier = Option<u64>;
 
-    fn prepare(&self, phase: crate::dispatch::DispatchPhase) -> Result<Self::Frontier, TError> {
-        if phase != crate::dispatch::DispatchPhase::Background {
+    fn prepare(
+        &self,
+        phase: tsonic_rust_runtime::dispatch::DispatchPhase,
+    ) -> Result<Self::Frontier, TError> {
+        if phase != tsonic_rust_runtime::dispatch::DispatchPhase::Background {
             return Ok(None);
         }
         self.source.get().map_or(Ok(None), |source| {

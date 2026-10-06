@@ -36,7 +36,10 @@ fn typed_runtime_driver_preserves_original_failure_and_uninvoked_work() {
         Ok(())
     })
     .unwrap();
-    let contexts = crate::dispatch::prepend(&root, crate::dispatch::DispatchEnd::<Failure>::new());
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
+        &root,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+    );
     match crate::run_with_contexts(&contexts)
         .err()
         .expect("original source failure")
@@ -109,18 +112,21 @@ fn complete_phase_frontier_defers_cross_root_reentrant_tasks() {
             Ok(())
         })
         .unwrap();
-    let contexts = crate::dispatch::prepend(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
-        crate::dispatch::prepend(&second, crate::dispatch::DispatchEnd::<Failure>::new()),
+        tsonic_rust_runtime::dispatch::prepend(
+            &second,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
     );
     assert_eq!(
-        crate::dispatch::poll_phase(&contexts, DispatchPhase::RuntimeTasks).ok(),
+        tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::RuntimeTasks).ok(),
         Some(true)
     );
     assert_eq!(*observed.borrow(), [1, 2]);
     assert!(contexts.has_work());
     assert_eq!(
-        crate::dispatch::poll_phase(&contexts, DispatchPhase::RuntimeTasks).ok(),
+        tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::RuntimeTasks).ok(),
         Some(true)
     );
     assert_eq!(*observed.borrow(), [1, 2, 3]);
@@ -190,10 +196,12 @@ fn native_and_component_tasks_use_one_phase_order_without_reboxing() {
         Ok(())
     })
     .unwrap();
-    assert!(crate::run_with_contexts(crate::dispatch::prepend(
-        &root,
-        crate::dispatch::DispatchEnd::<Failure>::new()
-    ))
-    .is_ok());
+    assert!(
+        crate::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+            &root,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new()
+        ))
+        .is_ok()
+    );
     assert_eq!(*observed.borrow(), [1, 2, 3]);
 }

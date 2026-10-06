@@ -6,7 +6,7 @@ use crate::background::{background_task_budget, BackgroundTasks};
 
 #[test]
 fn composed_background_domains_use_one_ready_order_and_retain_uninvoked_callbacks() {
-    use crate::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
     let first = BackgroundTasks::<Failure>::new();
     let second = BackgroundTasks::<OtherFailure>::new();
     let observed = Rc::new(RefCell::new(Vec::new()));
@@ -33,11 +33,11 @@ fn composed_background_domains_use_one_ready_order_and_retain_uninvoked_callback
         recorded.borrow_mut().push(3);
         Ok(())
     });
-    let contexts = crate::dispatch::prepend(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
-        crate::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
+        tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
-    let returned = crate::dispatch::poll_phase(&contexts, DispatchPhase::Background)
+    let returned = tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background)
         .err()
         .expect("source callback must fail");
     let Failure::Payload(returned) = returned else {
@@ -48,14 +48,16 @@ fn composed_background_domains_use_one_ready_order_and_retain_uninvoked_callback
     assert_eq!(&*observed.borrow(), &[0, 1]);
     assert!(first.has_pending_work());
     assert!(!second.has_pending_work());
-    assert!(crate::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok());
+    assert!(
+        tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok()
+    );
     assert_eq!(&*observed.borrow(), &[0, 1, 3]);
     assert_eq!(background_task_budget().pending(), 0);
 }
 
 #[test]
 fn composed_phase_prepares_every_domain_before_reentrant_dispatch() {
-    use crate::dispatch::{DispatchEnd, DispatchPhase};
+    use tsonic_rust_runtime::dispatch::{DispatchEnd, DispatchPhase};
     let first = BackgroundTasks::<Failure>::new();
     let second = Rc::new(BackgroundTasks::<OtherFailure>::new());
     let reentrant = second.clone();
@@ -72,21 +74,25 @@ fn composed_phase_prepares_every_domain_before_reentrant_dispatch() {
     register_ready(second.scheduling_source(), || {
         Err(OtherFailure(Failure::Payload(Rc::new(Cell::new(1)))))
     });
-    let contexts = crate::dispatch::prepend(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
-        crate::dispatch::prepend(&*second, DispatchEnd::<Failure>::new()),
+        tsonic_rust_runtime::dispatch::prepend(&*second, DispatchEnd::<Failure>::new()),
     );
-    assert!(crate::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok());
+    assert!(
+        tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok()
+    );
     assert_eq!(observed.get(), 0);
     assert!(second.has_pending_work());
-    assert!(crate::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok());
+    assert!(
+        tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background).is_ok()
+    );
     assert_eq!(observed.get(), 2);
     assert_eq!(background_task_budget().pending(), 0);
 }
 
 #[test]
 fn native_node_driver_transports_exact_component_background_errors() {
-    use crate::dispatch::DispatchEnd;
+    use tsonic_rust_runtime::dispatch::DispatchEnd;
     let first = BackgroundTasks::<Failure>::new();
     let second = BackgroundTasks::<OtherFailure>::new();
     let expected = Rc::new(Cell::new(9_007_199_254_740_993));
@@ -105,9 +111,9 @@ fn native_node_driver_transports_exact_component_background_errors() {
             },
         )
         .unwrap();
-    let contexts = crate::dispatch::prepend(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
-        crate::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
+        tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
     let returned = crate::run_with_contexts(&contexts)
         .err()
@@ -124,7 +130,7 @@ fn native_node_driver_transports_exact_component_background_errors() {
 
 #[test]
 fn native_async_driver_drops_its_root_future_on_exact_callback_failure() {
-    use crate::dispatch::DispatchEnd;
+    use tsonic_rust_runtime::dispatch::DispatchEnd;
     struct PendingRoot(Rc<Cell<usize>>);
     impl std::future::Future for PendingRoot {
         type Output = usize;
@@ -146,7 +152,7 @@ fn native_async_driver_drops_its_root_future_on_exact_callback_failure() {
     root.spawn(|| Ok(()), move |_| Err(Failure::Payload(failure)))
         .unwrap();
     let released = Rc::new(Cell::new(0));
-    let contexts = crate::dispatch::prepend(&root, DispatchEnd::<Failure>::new());
+    let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<Failure>::new());
     let returned = crate::block_on_with_contexts(PendingRoot(released.clone()), contexts)
         .err()
         .expect("native background callback must interrupt the root future");

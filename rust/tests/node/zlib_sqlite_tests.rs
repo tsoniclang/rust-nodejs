@@ -97,9 +97,9 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     tsonic_rust_node::zlib::deflate_options_callable(&root, &input, options.clone(), callback())
         .unwrap();
     tsonic_rust_node::zlib::inflate_options_callable(&root, &deflate, options, callback()).unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &root,
-        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
     ))
     .unwrap();
     assert_eq!(completions.get(), 8);
@@ -160,9 +160,9 @@ fn zlib_callbacks_distinguish_failure_from_successful_empty_output() {
         success(),
     )
     .unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &root,
-        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
     ))
     .unwrap();
     assert_eq!(failures.get(), 4);
@@ -174,7 +174,7 @@ fn zlib_callback_failure_retains_its_non_display_non_send_native_payload() {
     use std::cell::Cell;
     use std::rc::Rc;
     use tsonic_rust_node::background::BackgroundTasks;
-    use tsonic_rust_node::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
     use tsonic_rust_runtime::TsonicError;
 
     enum Failure {

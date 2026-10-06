@@ -2,8 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
-use crate::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_js::event_loop::EventLoopDriver;
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
 pub(crate) fn enqueue_runtime_task(
@@ -97,15 +97,27 @@ where
             DispatchPhase::Ports,
         ] {
             let work = match phase {
+                DispatchPhase::JsTimers => tsonic_rust_js::timers::with_default(|native| {
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
                 DispatchPhase::Background => crate::background::with_default(|native| {
-                    crate::dispatch::poll_phase(
-                        &crate::dispatch::prepend(native, &self.contexts),
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
                         phase,
                     )
                 })?,
                 DispatchPhase::RuntimeTasks => crate::runtime_tasks::with_default(|native| {
-                    crate::dispatch::poll_phase(
-                        &crate::dispatch::prepend(native, &self.contexts),
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
+                DispatchPhase::Timers => crate::timers::with_default(|native| {
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
                         phase,
                     )
                 })?,
@@ -113,7 +125,8 @@ where
                     let frontier = self.contexts.prepare(phase)?;
                     let native = poll_native_phase(phase, can_dispatch_signals)
                         .map_err(Self::Error::from)?;
-                    let selected = crate::dispatch::poll_prepared(&self.contexts, &frontier)?;
+                    let selected =
+                        tsonic_rust_runtime::dispatch::poll_prepared(&self.contexts, &frontier)?;
                     native || selected
                 }
             };
@@ -156,8 +169,10 @@ where
 
 fn poll_native_phase(phase: DispatchPhase, can_dispatch_signals: bool) -> TsonicResult<bool> {
     match phase {
-        DispatchPhase::JsTimers => tsonic_rust_js::timers::poll_timers(),
-        DispatchPhase::Background | DispatchPhase::RuntimeTasks => {
+        DispatchPhase::JsTimers
+        | DispatchPhase::Background
+        | DispatchPhase::RuntimeTasks
+        | DispatchPhase::Timers => {
             unreachable!("native queued work belongs to its composed phase")
         }
         DispatchPhase::Signals => {
@@ -167,7 +182,6 @@ fn poll_native_phase(phase: DispatchPhase, can_dispatch_signals: bool) -> Tsonic
                 Ok(false)
             }
         }
-        DispatchPhase::Timers => crate::timers::poll_runtime_timers(),
         DispatchPhase::Http => crate::http::poll_runtime_servers(),
         DispatchPhase::Net => crate::net::poll_runtime_servers(),
         DispatchPhase::Tls => crate::tls::poll_runtime_servers(),
@@ -237,10 +251,14 @@ mod tests {
     fn node_driver_runs_js_timers_and_discarded_continuations() {
         let source = JsPromise::create(Callable::new(
             |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
-                tsonic_rust_js::timers::set_timeout_callable(
-                    Callable::new(move |()| resolve.call((PromiseResolution::Value(3),))),
-                    1.0,
-                );
+                tsonic_rust_js::timers::with_default(|timers| {
+                    tsonic_rust_js::timers::set_timeout_callable(
+                        timers,
+                        Callable::new(move |()| resolve.call((PromiseResolution::Value(3),))),
+                        1.0,
+                    )
+                })
+                .unwrap();
                 Ok(())
             },
         ));

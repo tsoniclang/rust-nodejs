@@ -2,8 +2,8 @@ use std::cell::OnceCell;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use crate::dispatch::{DispatchContexts, DispatchPhase};
 use crate::error::{NodeError, NodeResult};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskHandle, TaskQueue, TaskTicket};
 use tsonic_rust_runtime::TsonicError;
 

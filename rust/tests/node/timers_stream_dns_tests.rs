@@ -17,11 +17,18 @@ fn timers_run_callbacks_and_expose_handle_state() {
     assert!(called.get());
     assert!(!timeout.has_ref());
 
+    let contexts = timers::new();
     timers::set_timeout_callable(
+        &contexts,
         Callable::new(|()| Ok::<(), tsonic_rust_runtime::TsonicError>(())),
         0,
-    );
-    tsonic_rust_node::run_event_loop().unwrap();
+    )
+    .unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &contexts,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
 
     let mut timeout = timers::set_timeout(|| {}, 10_000);
     timeout.unref();
@@ -51,11 +58,15 @@ fn timers_run_callbacks_and_expose_handle_state() {
 
 #[test]
 fn timers_cover_interval_immediate_and_scheduler_shapes() {
+    let contexts = timers::new();
     let count = Rc::new(Cell::new(0));
-    let interval_slot = Rc::new(RefCell::new(None::<timers::Timeout>));
+    let interval_slot = Rc::new(RefCell::new(
+        None::<timers::Timeout<Callable<(), Result<(), tsonic_rust_runtime::TsonicError>>>>,
+    ));
     let callback_count = Rc::clone(&count);
     let callback_slot = Rc::clone(&interval_slot);
     let interval = timers::set_interval_callable(
+        &contexts,
         Callable::new(move |()| {
             callback_count.set(callback_count.get() + 1);
             if callback_count.get() == 2 {
@@ -65,10 +76,15 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
         }),
         1,
     );
+    let interval = interval.unwrap();
     *interval_slot.borrow_mut() = Some(interval.clone());
     assert_eq!(count.get(), 0);
     assert!(interval.has_ref());
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &contexts,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(count.get(), 2);
     assert!(!interval.has_ref());
 
@@ -146,12 +162,18 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
 
 #[test]
 fn interval_callable_propagates_fallible_callback_errors() {
+    let contexts = timers::new();
+    let original = Rc::new(std::io::Error::other("timer failed"));
+    let retained = Rc::clone(&original);
     timers::set_interval_callable(
-        Callable::new(|()| Err(std::io::Error::other("timer failed"))),
+        &contexts,
+        Callable::new(move |()| Err(Rc::clone(&retained))),
         1,
-    );
-    let error = tsonic_rust_node::run_event_loop().unwrap_err();
-    assert!(error.to_string().contains("ERR_TSONIC_CALLBACK"));
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let error = contexts.poll().unwrap_err();
+    assert!(Rc::ptr_eq(&error, &original));
     assert!(error.to_string().contains("timer failed"));
 }
 
@@ -796,9 +818,9 @@ fn dns_lookup_uses_platform_resolver_without_shelling_out() {
         ),
     )
     .unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_node::dispatch::prepend(
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &root,
-        tsonic_rust_node::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
     ))
     .unwrap();
     assert_eq!(callback_count.get(), 4);

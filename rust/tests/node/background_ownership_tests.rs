@@ -88,14 +88,14 @@ fn warmed_background_queries_and_weak_handle_clones_allocate_nothing() {
 
 #[test]
 fn composed_background_dispatch_queries_allocate_nothing() {
-    use tsonic_rust_node::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
     let first = BackgroundTasks::<Failure>::new();
     let second = BackgroundTasks::<Failure>::new();
     black_box(first.handle());
     black_box(second.handle());
-    let contexts = tsonic_rust_node::dispatch::prepend(
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
-        tsonic_rust_node::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
+        tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
     let cost = measure(|| {
         for _ in 0..1024 {
