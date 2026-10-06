@@ -1,23 +1,24 @@
-
-#[derive(Clone)]
-pub(crate) struct WeakWritable {
-    state: Weak<RefCell<WritableState>>,
+pub(crate) struct WeakWritable<E: 'static> {
+    state: Weak<RefCell<WritableState<E>>>,
 }
 
-impl WeakWritable {
-    pub(crate) fn upgrade(&self) -> Option<Writable> {
-        self.state.upgrade().map(|state| Writable { state })
+impl<E: 'static> WeakWritable<E> {
+    pub(crate) fn upgrade(&self) -> Option<Writable<E>> {
+        self.state.upgrade().map(|state| Writable::<E> { state })
     }
 }
 
-pub(crate) trait WritableBackend {
-    fn bind(&self, _owner: WeakWritable) {}
-    fn write(&self, chunk: Buffer) -> NodeResult<()>;
-    fn flush(&self) -> NodeResult<()> {
+pub(crate) trait WritableBackend<E: 'static> {
+    fn bind(&self, _owner: WeakWritable<E>) {}
+    fn write(&self, chunk: Buffer) -> StreamBackendResult<(), E>;
+    fn flush(&self) -> StreamBackendResult<(), E> {
         Ok(())
     }
-    fn finish(&self) -> NodeResult<bool>;
-    fn destroy(&self) -> NodeResult<()>;
+    fn finish(&self) -> StreamBackendResult<bool, E>;
+    fn finish_accepted(&self) -> bool {
+        false
+    }
+    fn destroy(&self) -> StreamBackendResult<(), E>;
     fn buffered_bytes(&self) -> usize;
     fn chunks(&self) -> Vec<Buffer> {
         Vec::new()
@@ -41,17 +42,17 @@ struct MemoryWritableBackend {
     chunks: RefCell<Vec<Buffer>>,
 }
 
-impl WritableBackend for MemoryWritableBackend {
-    fn write(&self, chunk: Buffer) -> NodeResult<()> {
+impl<E: From<NodeError> + 'static> WritableBackend<E> for MemoryWritableBackend {
+    fn write(&self, chunk: Buffer) -> StreamBackendResult<(), E> {
         self.chunks.borrow_mut().push(chunk);
         Ok(())
     }
 
-    fn finish(&self) -> NodeResult<bool> {
+    fn finish(&self) -> StreamBackendResult<bool, E> {
         Ok(true)
     }
 
-    fn destroy(&self) -> NodeResult<()> {
+    fn destroy(&self) -> StreamBackendResult<(), E> {
         self.chunks.borrow_mut().clear();
         Ok(())
     }
@@ -69,17 +70,17 @@ struct TerminalWritableBackend {
     sink: WritableSink,
 }
 
-impl WritableBackend for TerminalWritableBackend {
-    fn write(&self, chunk: Buffer) -> NodeResult<()> {
+impl<E: From<NodeError> + 'static> WritableBackend<E> for TerminalWritableBackend {
+    fn write(&self, chunk: Buffer) -> StreamBackendResult<(), E> {
         chunk.with_bytes(|bytes| write_sink(self.sink, bytes))?;
         Ok(())
     }
 
-    fn finish(&self) -> NodeResult<bool> {
+    fn finish(&self) -> StreamBackendResult<bool, E> {
         Ok(true)
     }
 
-    fn destroy(&self) -> NodeResult<()> {
+    fn destroy(&self) -> StreamBackendResult<(), E> {
         Ok(())
     }
 
@@ -103,27 +104,27 @@ impl WritableBackend for TerminalWritableBackend {
     }
 }
 
-struct WritableState {
+struct WritableState<E: 'static> {
     options: StreamOptions,
-    backend: Rc<dyn WritableBackend>,
+    backend: Rc<dyn WritableBackend<E>>,
     ending: bool,
     finished: bool,
+    finish_emitted: bool,
     destroyed: bool,
-    lifecycle: StreamLifecycle,
+    lifecycle: StreamLifecycle<E>,
     corked: usize,
-    corked_chunks: Vec<Buffer>,
+    corked_chunks: VecDeque<Buffer>,
     corked_bytes: usize,
     need_drain: bool,
-    drain_event: StreamEvent<()>,
-    finish_event: StreamEvent<()>,
+    drain_event: StreamEvent<(), E>,
+    finish_event: StreamEvent<(), E>,
 }
 
-#[derive(Clone)]
-pub struct Writable {
-    state: Rc<RefCell<WritableState>>,
+pub struct Writable<E: 'static = NodeError> {
+    state: Rc<RefCell<WritableState<E>>>,
 }
 
-impl std::fmt::Debug for Writable {
+impl<E: 'static> std::fmt::Debug for Writable<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let state = self.state.borrow();
         formatter
@@ -131,26 +132,32 @@ impl std::fmt::Debug for Writable {
             .field("ending", &state.ending)
             .field("finished", &state.finished)
             .field("destroyed", &state.destroyed)
-            .field("buffered_bytes", &self.buffered_bytes_with(&state))
+            .field(
+                "buffered_bytes",
+                &state
+                    .backend
+                    .buffered_bytes()
+                    .saturating_add(state.corked_bytes),
+            )
             .finish()
     }
 }
 
-impl Default for Writable {
+impl<E: From<NodeError> + 'static> Default for Writable<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl PartialEq for Writable {
+impl<E: 'static> PartialEq for Writable<E> {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.state, &other.state)
     }
 }
 
-impl Eq for Writable {}
+impl<E: 'static> Eq for Writable<E> {}
 
-impl Writable {
+impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn new() -> Self {
         Self::with_backend(
             StreamOptions::default(),
@@ -165,20 +172,21 @@ impl Writable {
 
     pub(crate) fn with_backend(
         options: StreamOptions,
-        backend: Rc<dyn WritableBackend>,
-        lifecycle: Option<StreamLifecycle>,
+        backend: Rc<dyn WritableBackend<E>>,
+        lifecycle: Option<StreamLifecycle<E>>,
     ) -> Self {
-        let lifecycle = lifecycle.unwrap_or_else(|| StreamLifecycle::new(options.emit_close));
+        let lifecycle = lifecycle.unwrap_or_else(|| StreamLifecycle::<E>::new(options.emit_close));
         let writable = Self {
-            state: Rc::new(RefCell::new(WritableState {
+            state: Rc::new(RefCell::new(WritableState::<E> {
                 options,
                 backend,
                 ending: false,
                 finished: false,
+                finish_emitted: false,
                 destroyed: false,
                 lifecycle: lifecycle.clone(),
                 corked: 0,
-                corked_chunks: Vec::new(),
+                corked_chunks: VecDeque::new(),
                 corked_bytes: 0,
                 need_drain: false,
                 drain_event: StreamEvent::default(),
@@ -186,11 +194,7 @@ impl Writable {
             })),
         };
         lifecycle.bind_writable(&writable);
-        writable
-            .state
-            .borrow()
-            .backend
-            .bind(writable.downgrade());
+        writable.state.borrow().backend.bind(writable.downgrade());
         writable
     }
 
@@ -214,41 +218,39 @@ impl Writable {
         )
     }
 
-    pub fn write(&self, chunk: Buffer) -> bool {
-        self.write_owned(chunk).unwrap_or(false)
+    pub fn write(&self, chunk: Buffer) -> Result<bool, E> {
+        self.write_owned(chunk)
     }
 
-    fn write_owned(&self, chunk: Buffer) -> NodeResult<bool> {
+    fn write_owned(&self, chunk: Buffer) -> Result<bool, E> {
         let backend = {
             let mut state = self.state.borrow_mut();
             if state.ending || state.destroyed {
-                return Err(NodeError::new(
-                    "ERR_STREAM_WRITE_AFTER_END",
-                    "write after end",
-                ));
+                drop(state);
+                return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "write after end").into());
             }
             if state.corked > 0 {
                 state.corked_bytes = state.corked_bytes.saturating_add(chunk.len());
-                state.corked_chunks.push(chunk);
-                let pressured = self.buffered_bytes_with(&state)
-                    >= state.options.high_water_mark.max(1);
+                state.corked_chunks.push_back(chunk);
+                let pressured =
+                    self.buffered_bytes_with(&state) >= state.options.high_water_mark.max(1);
                 state.need_drain |= pressured;
                 return Ok(!pressured);
             }
             Rc::clone(&state.backend)
         };
-        backend.write(chunk)?;
+        self.backend_result(backend.write(chunk))?;
         let mut state = self.state.borrow_mut();
         let pressured = self.buffered_bytes_with(&state) >= state.options.high_water_mark.max(1);
         state.need_drain |= pressured;
         Ok(!pressured)
     }
 
-    pub fn write_string(&self, value: &str) -> NodeResult<bool> {
+    pub fn write_string(&self, value: &str) -> Result<bool, E> {
         self.write_owned(Buffer::from_string(value, Some("utf8"))?)
     }
 
-    pub fn write_buffer(&self, value: &Buffer) -> NodeResult<bool> {
+    pub fn write_buffer(&self, value: &Buffer) -> Result<bool, E> {
         self.write_owned(value.clone())
     }
 
@@ -260,35 +262,55 @@ impl Writable {
         self.state.borrow().backend.fd()
     }
 
-    pub fn writev(&self, chunks: &[Buffer]) -> bool {
+    pub fn writev(&self, chunks: &[Buffer]) -> Result<bool, E> {
         let mut writable = true;
         for chunk in chunks {
-            writable = self.write(chunk.clone()) && writable;
+            writable = self.write(chunk.clone())? && writable;
         }
-        writable
+        Ok(writable)
     }
 
     pub fn cork(&self) {
         self.state.borrow_mut().corked += 1;
     }
 
-    pub fn uncork(&self) -> NodeResult<()> {
-        let chunks = {
+    pub fn uncork(&self) -> Result<(), E> {
+        {
             let mut state = self.state.borrow_mut();
             state.corked = state.corked.saturating_sub(1);
             if state.corked != 0 {
                 return Ok(());
             }
-            state.corked_bytes = 0;
-            std::mem::take(&mut state.corked_chunks)
-        };
-        for chunk in chunks {
-            if let Err(error) = self.write_owned(chunk) {
+        }
+        self.flush_corked()?;
+        self.poll_progress()
+    }
+
+    fn flush_corked(&self) -> Result<(), E> {
+        loop {
+            let selected = {
+                let mut state = self.state.borrow_mut();
+                state.corked_chunks.pop_front().map(|chunk| {
+                    state.corked_bytes = state.corked_bytes.saturating_sub(chunk.len());
+                    (chunk, Rc::clone(&state.backend))
+                })
+            };
+            let Some((chunk, backend)) = selected else {
+                return Ok(());
+            };
+            self.backend_result(backend.write(chunk))?;
+        }
+    }
+
+    fn backend_result<Output>(&self, result: StreamBackendResult<Output, E>) -> Result<Output, E> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(StreamBackendFailure::Callback(error)) => Err(error),
+            Err(StreamBackendFailure::Native(error)) => {
                 self.fail(error.clone())?;
-                return Err(error);
+                Err(error.into())
             }
         }
-        self.poll_progress()
     }
 
     pub fn writable_corked(&self) -> usize {
@@ -354,19 +376,19 @@ impl Writable {
         self.state.borrow().destroyed
     }
 
-    pub fn clear_drain(&self) {
+    pub fn clear_drain(&self) -> Result<(), E> {
         let callbacks = {
             let mut state = self.state.borrow_mut();
             if !state.need_drain {
-                return;
+                return Ok(());
             }
             state.need_drain = false;
             state.drain_event.emission()
         };
-        let _ = invoke_event(callbacks, ());
+        invoke_event(callbacks, ())
     }
 
-    pub fn final_callback(&self, callback: impl FnOnce()) -> NodeResult<()> {
+    pub fn final_callback(&self, callback: impl FnOnce()) -> Result<(), E> {
         self.end_result()?;
         callback();
         Ok(())
@@ -376,103 +398,98 @@ impl Writable {
         callback();
     }
 
-    pub fn destroy_with_error(&self, error: impl Into<String>) {
-        let _ = self.fail(NodeError::new("ERR_STREAM_DESTROYED", error));
+    pub fn destroy_with_error(&self, error: impl Into<String>) -> Result<(), E> {
+        self.fail(NodeError::new("ERR_STREAM_DESTROYED", error))
     }
 
-    pub fn add_chunk(&self, chunk: Buffer) -> bool {
+    pub fn add_chunk(&self, chunk: Buffer) -> Result<bool, E> {
         self.write(chunk)
     }
 
-    pub fn write_str(&self, value: &str, encoding: Option<&str>) -> bool {
-        match Buffer::from_string(value, encoding) {
-            Ok(buffer) => self.write(buffer),
-            Err(_) => false,
-        }
+    pub fn write_str(&self, value: &str, encoding: Option<&str>) -> Result<bool, E> {
+        self.write(Buffer::from_string(value, encoding)?)
     }
 
-    pub fn flush(&self) -> bool {
-        self.clear_drain();
-        true
+    pub fn flush(&self) -> Result<bool, E> {
+        self.clear_drain()?;
+        Ok(true)
     }
 
-    pub fn end(&self) -> NodeResult<Self> {
+    pub fn end(&self) -> Result<Self, E> {
         self.end_result()?;
         Ok(self.clone())
     }
 
-    pub(crate) fn flush_backend(&self) -> NodeResult<()> {
+    pub(crate) fn flush_backend(&self) -> Result<(), E> {
         let backend = {
             let state = self.state.borrow();
             if state.ending || state.destroyed {
-                return Err(NodeError::new(
-                    "ERR_STREAM_WRITE_AFTER_END",
-                    "flush after end",
-                ));
+                drop(state);
+                return Err(NodeError::new("ERR_STREAM_WRITE_AFTER_END", "flush after end").into());
             }
             Rc::clone(&state.backend)
         };
-        backend.flush()
+        self.backend_result(backend.flush())
     }
 
-    pub fn end_string(&self, value: &str) -> NodeResult<Self> {
+    pub fn end_string(&self, value: &str) -> Result<Self, E> {
         self.write_string(value)?;
         self.end_result()?;
         Ok(self.clone())
     }
 
-    pub fn end_buffer(&self, value: &Buffer) -> NodeResult<Self> {
+    pub fn end_buffer(&self, value: &Buffer) -> Result<Self, E> {
         self.write_buffer(value)?;
         self.end_result()?;
         Ok(self.clone())
     }
 
-    fn end_result(&self) -> NodeResult<()> {
-        let chunks = {
+    fn end_result(&self) -> Result<(), E> {
+        {
             let mut state = self.state.borrow_mut();
-            if state.ending || state.destroyed {
+            if state.finished {
+                drop(state);
+                return self.complete_finish();
+            }
+            if state.destroyed {
                 return Ok(());
             }
             state.ending = true;
             state.corked = 0;
-            state.corked_bytes = 0;
-            std::mem::take(&mut state.corked_chunks)
-        };
-        let backend = self.state.borrow().backend.clone();
-        for chunk in chunks {
-            if let Err(error) = backend.write(chunk) {
-                self.fail(error.clone())?;
-                return Err(error);
-            }
         }
-        let finished = match backend.finish() {
-            Ok(finished) => finished,
-            Err(error) => {
-                self.fail(error.clone())?;
-                return Err(error);
-            }
-        };
+        self.flush_corked()?;
+        let backend = Rc::clone(&self.state.borrow().backend);
+        let completion = backend.finish();
+        if matches!(&completion, Err(StreamBackendFailure::Callback(_)))
+            && backend.finish_accepted()
+        {
+            self.mark_finished();
+        }
+        let finished = self.backend_result(completion)?;
         if finished {
             self.complete_finish()?;
         }
         Ok(())
     }
 
-    pub fn destroy(&self) {
-        let _ = self.destroy_result(None);
+    pub fn destroy(&self) -> Result<(), E> {
+        self.destroy_result(None)
     }
 
-    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
+    pub fn destroy_chain(
+        &self,
+        error: Option<tsonic_rust_runtime::RetainedError>,
+    ) -> Result<Self, E> {
         self.destroy_result(error)?;
         Ok(self.clone())
     }
 
-    fn destroy_result(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<()> {
+    fn destroy_result(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> Result<(), E> {
         let lifecycle = self.state.borrow().lifecycle.clone();
         lifecycle.destroy(error)
     }
 
-    fn destroy_storage(&self) -> NodeResult<()> {
+    fn destroy_storage(&self) -> StreamBackendResult<(), E> {
         let backend = {
             let mut state = self.state.borrow_mut();
             if state.destroyed {
@@ -497,13 +514,13 @@ impl Writable {
         self.state.borrow().backend.chunks()
     }
 
-    pub(crate) fn downgrade(&self) -> WeakWritable {
-        WeakWritable {
+    pub(crate) fn downgrade(&self) -> WeakWritable<E> {
+        WeakWritable::<E> {
             state: Rc::downgrade(&self.state),
         }
     }
 
-    pub(crate) fn poll_progress(&self) -> NodeResult<()> {
+    pub(crate) fn poll_progress(&self) -> Result<(), E> {
         let callbacks = {
             let mut state = self.state.borrow_mut();
             let below_mark =
@@ -512,185 +529,42 @@ impl Writable {
                 state.need_drain = false;
                 state.drain_event.emission()
             } else {
-                Vec::new()
+                StreamEmission::default()
             }
         };
         invoke_event(callbacks, ())
     }
 
-    pub(crate) fn complete_finish(&self) -> NodeResult<()> {
+    pub(crate) fn complete_finish(&self) -> Result<(), E> {
         let (finish_callbacks, lifecycle) = {
             let mut state = self.state.borrow_mut();
-            if state.finished || state.destroyed {
+            if state.destroyed {
                 return Ok(());
             }
             state.finished = true;
-            let finish_callbacks = state.finish_event.emission();
+            let finish_callbacks = if state.finish_emitted {
+                StreamEmission::default()
+            } else {
+                state.finish_emitted = true;
+                state.finish_event.emission()
+            };
             (finish_callbacks, state.lifecycle.clone())
         };
-        let finish = invoke_event(finish_callbacks, ());
-        let close = lifecycle.finish_writable();
-        finish.and(close)
+        let result = invoke_event(finish_callbacks, ());
+        lifecycle.finish_writable();
+        result?;
+        lifecycle.emit_terminal()
     }
 
-    pub(crate) fn fail(&self, error: NodeError) -> NodeResult<()> {
+    pub(crate) fn mark_finished(&self) {
+        self.state.borrow_mut().finished = true;
+    }
+
+    pub(crate) fn fail(&self, error: NodeError) -> Result<(), E> {
         self.destroy_result(Some(error.into()))
     }
 
-    pub(crate) fn on_drain_internal(&self, callback: impl Fn() -> NodeResult<()> + 'static) {
-        self.state.borrow_mut().drain_event.add(StreamListener {
-            identity: 0,
-            once: true,
-            callback: Rc::new(move |()| callback()),
-        });
-    }
-
-    pub fn on_drain<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "drain", listener, false)
-    }
-
-    pub fn once_drain<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "drain", listener, true)
-    }
-
-    pub fn off_drain<E>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.remove_empty_listener(event, "drain", listener.identity_key())
-    }
-
-    pub fn on_finish<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "finish", listener, false)
-    }
-
-    pub fn once_finish<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "finish", listener, true)
-    }
-
-    pub fn off_finish<E>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.remove_empty_listener(event, "finish", listener.identity_key())
-    }
-
-    pub fn on_close<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "close", listener, false)
-    }
-
-    pub fn once_close<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_empty_listener(event, "close", listener, true)
-    }
-
-    pub fn off_close<E>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.remove_empty_listener(event, "close", listener.identity_key())
-    }
-
-    pub fn on_error<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_error_listener(event, listener, false)
-    }
-
-    pub fn once_error<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        self.add_error_listener(event, listener, true)
-    }
-
-    pub fn off_error<E>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
-    ) -> NodeResult<Self> {
-        ensure_stream_event(event, "error")?;
-        self.state.borrow().lifecycle.remove_error_listener(listener.identity_key());
-        Ok(self.clone())
-    }
-
-    fn add_empty_listener<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        expected: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-        once: bool,
-    ) -> NodeResult<Self> {
-        ensure_stream_event(event, expected)?;
-        let entry = empty_listener(listener, once);
-        let mut state = self.state.borrow_mut();
-        match expected {
-            "drain" => state.drain_event.add(entry),
-            "finish" => state.finish_event.add(entry),
-            "close" => state.lifecycle.add_close_listener(entry),
-            _ => unreachable!("validated writable event"),
-        }
-        Ok(self.clone())
-    }
-
-    fn remove_empty_listener(
-        &self,
-        event: &str,
-        expected: &str,
-        identity: usize,
-    ) -> NodeResult<Self> {
-        ensure_stream_event(event, expected)?;
-        let mut state = self.state.borrow_mut();
-        match expected {
-            "drain" => state.drain_event.remove(identity),
-            "finish" => state.finish_event.remove(identity),
-            "close" => state.lifecycle.remove_close_listener(identity),
-            _ => unreachable!("validated writable event"),
-        }
-        Ok(self.clone())
-    }
-
-    fn add_error_listener<E: std::fmt::Display + 'static>(
-        &self,
-        event: &str,
-        listener: &tsonic_rust_runtime::Callable<(tsonic_rust_runtime::RetainedError,), Result<(), E>>,
-        once: bool,
-    ) -> NodeResult<Self> {
-        ensure_stream_event(event, "error")?;
-        self.state.borrow().lifecycle.add_error_listener(value_listener(listener, once));
-        Ok(self.clone())
-    }
-
-    fn buffered_bytes_with(&self, state: &WritableState) -> usize {
+    fn buffered_bytes_with(&self, state: &WritableState<E>) -> usize {
         state
             .backend
             .buffered_bytes()
@@ -713,4 +587,19 @@ fn write_sink(sink: WritableSink, bytes: &[u8]) -> NodeResult<bool> {
     result
         .map(|()| true)
         .map_err(|error| NodeError::new("EIO", error.to_string()))
+}
+
+impl<E: 'static> Clone for Writable<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: Rc::clone(&self.state),
+        }
+    }
+}
+impl<E: 'static> Clone for WeakWritable<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
 }

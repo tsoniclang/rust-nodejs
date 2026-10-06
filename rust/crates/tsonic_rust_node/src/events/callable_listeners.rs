@@ -299,19 +299,29 @@ impl<E: 'static> EventEmitter<E> {
     }
 
     pub fn remove_all_callable_listeners(&self) -> &Self {
-        let mut state = self.state.borrow_mut();
-        state.callable_listeners.clear();
-        state.callable_event_order.clear();
+        let removed = {
+            let mut state = self.state.borrow_mut();
+            state.callable_event_order.clear();
+            std::mem::replace(
+                &mut state.callable_listeners,
+                super::CallableListenerMap::new(),
+            )
+        };
+        drop(removed);
         self
     }
 
     pub fn remove_all_callable_listeners_for(&self, event: &JsValue) -> NodeResult<&Self> {
         let event = EventName::from_value(event)?;
-        let mut state = self.state.borrow_mut();
-        state.callable_listeners.remove(event);
-        state
-            .callable_event_order
-            .retain(|candidate| !event.matches(candidate));
+        let removed = {
+            let mut state = self.state.borrow_mut();
+            let removed = state.callable_listeners.remove(event);
+            state
+                .callable_event_order
+                .retain(|candidate| !event.matches(candidate));
+            removed
+        };
+        drop(removed);
         Ok(self)
     }
 

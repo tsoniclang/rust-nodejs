@@ -1,6 +1,6 @@
 import { rustCallableTargetType, rustNamedTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
-import { nodeErrorCarrier, unitCarrier } from "../../model/carriers.js";
+import { nodeErrorCarrier, unitCarrier, nodeProgramErrorArguments } from "../../model/carriers.js";
 import { readableCarrier, streamCarrier, writableCarrier } from "../stream/carriers.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 
@@ -27,7 +27,7 @@ export const httpServerAddressCarrier: RustTargetTypeRef = rustNamedTargetType(
 export const httpIncomingMessageCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.HttpIncomingMessage",
   "tsonic_rust_node::http::IncomingMessage",
-  [],
+  nodeProgramErrorArguments,
   [],
   undefined,
   [
@@ -39,7 +39,7 @@ export const httpIncomingMessageCarrier: RustTargetTypeRef = rustNamedTargetType
 export const httpServerResponseCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.HttpServerResponse",
   "tsonic_rust_node::http::ServerResponse",
-  [],
+  nodeProgramErrorArguments,
   [],
   undefined,
   [
@@ -48,7 +48,7 @@ export const httpServerResponseCarrier: RustTargetTypeRef = rustNamedTargetType(
   ],
 );
 
-export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer" };
+export const httpServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.HttpServer", genericArguments: nodeProgramErrorArguments };
 
 export const httpRequestCallbackCarrier = rustCallableTargetType(
   [httpIncomingMessageCarrier, httpServerResponseCarrier],

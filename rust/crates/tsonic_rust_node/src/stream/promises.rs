@@ -3,7 +3,7 @@ use super::{
     FinishedOptions, Readable, Writable,
 };
 use crate::buffer::Buffer;
-use crate::error::{NodeError, NodeResult};
+use crate::error::NodeError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipelineOptions {
@@ -20,33 +20,36 @@ impl Default for PipelineOptions {
     }
 }
 
-pub fn pipeline(readable: &mut Readable, writable: &mut Writable) -> NodeResult<()> {
+pub fn pipeline<E: From<NodeError> + 'static>(
+    readable: &mut Readable<E>,
+    writable: &mut Writable<E>,
+) -> Result<(), E> {
     pipeline_sync(readable, writable)
 }
 
-pub fn pipeline_with_options(
-    readable: &mut Readable,
-    writable: &mut Writable,
+pub fn pipeline_with_options<E: From<NodeError> + 'static>(
+    readable: &mut Readable<E>,
+    writable: &mut Writable<E>,
     options: &PipelineOptions,
-) -> NodeResult<usize> {
+) -> Result<usize, E> {
     pipeline_transforms(readable, &[], writable, options)
 }
 
-pub fn pipeline_transform(
-    readable: &mut Readable,
+pub fn pipeline_transform<E: From<NodeError> + 'static>(
+    readable: &mut Readable<E>,
     transform: impl FnMut(Buffer) -> Buffer,
-    writable: &mut Writable,
+    writable: &mut Writable<E>,
     options: &PipelineOptions,
-) -> NodeResult<usize> {
+) -> Result<usize, E> {
     pipeline_transform_impl(readable, transform, writable, options)
 }
 
-pub fn pipeline_transforms(
-    readable: &mut Readable,
+pub fn pipeline_transforms<E: From<NodeError> + 'static>(
+    readable: &mut Readable<E>,
     transforms: &[fn(Buffer) -> Buffer],
-    writable: &mut Writable,
+    writable: &mut Writable<E>,
     options: &PipelineOptions,
-) -> NodeResult<usize> {
+) -> Result<usize, E> {
     pipeline_transform_impl(
         readable,
         |mut chunk| {
@@ -60,31 +63,34 @@ pub fn pipeline_transforms(
     )
 }
 
-pub fn finished(readable: &Readable, writable: &Writable) -> bool {
+pub fn finished<E: From<NodeError> + 'static>(
+    readable: &Readable<E>,
+    writable: &Writable<E>,
+) -> bool {
     super::finished(readable, writable)
 }
 
-pub fn finished_with_options(
-    readable: &Readable,
-    writable: &Writable,
+pub fn finished_with_options<E: From<NodeError> + 'static>(
+    readable: &Readable<E>,
+    writable: &Writable<E>,
     options: &FinishedOptions,
 ) -> bool {
     finished_sync_with_options(readable, writable, options)
 }
 
-fn pipeline_transform_impl(
-    readable: &mut Readable,
+fn pipeline_transform_impl<E: From<NodeError> + 'static>(
+    readable: &mut Readable<E>,
     mut transform: impl FnMut(Buffer) -> Buffer,
-    writable: &mut Writable,
+    writable: &mut Writable<E>,
     options: &PipelineOptions,
-) -> NodeResult<usize> {
+) -> Result<usize, E> {
     if options.signal_aborted {
-        return Err(NodeError::new("ABORT_ERR", "pipeline aborted"));
+        return Err(NodeError::new("ABORT_ERR", "pipeline aborted").into());
     }
 
     let mut written = 0;
-    while let Some(chunk) = readable.read() {
-        if !writable.write(transform(chunk)) {
+    while let Some(chunk) = readable.read()? {
+        if !writable.write(transform(chunk))? {
             written += 1;
             break;
         }

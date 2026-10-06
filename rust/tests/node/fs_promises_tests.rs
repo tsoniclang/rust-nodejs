@@ -3,11 +3,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tsonic_rust_node::{
     buffer::Buffer,
     fs_promises::{self, FsReadResult},
-    run_event_loop,
 };
 
 #[test]
 fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
         "tsonic-rust-fs-promises-{}",
         SystemTime::now()
@@ -275,17 +276,28 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap();
     assert_eq!(readable_web_with_options.chunks().len(), 1);
     assert!(!handle.writable_web_stream().closed());
-    let read_stream = handle.create_read_stream().unwrap();
-    run_event_loop().unwrap();
+    let read_stream = handle.create_read_stream(&background).unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert!(read_stream.read().unwrap().is_some());
     let ranged_stream = handle
-        .create_read_stream_with_options(fs_promises::ReadStreamOptions {
-            start: Some(0),
-            end: Some(4),
-            ..fs_promises::ReadStreamOptions::default()
-        })
+        .create_read_stream_with_options(
+            &background,
+            fs_promises::ReadStreamOptions {
+                start: Some(0),
+                end: Some(4),
+                ..fs_promises::ReadStreamOptions::default()
+            },
+        )
         .unwrap();
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(
         ranged_stream
             .read()
@@ -296,26 +308,33 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         "hello"
     );
     let write_stream = handle
-        .create_write_stream_with_options(fs_promises::WriteStreamOptions {
-            start: Some(14),
-            ..fs_promises::WriteStreamOptions::default()
-        })
+        .create_write_stream_with_options(
+            &background,
+            fs_promises::WriteStreamOptions {
+                start: Some(14),
+                ..fs_promises::WriteStreamOptions::default()
+            },
+        )
         .unwrap();
     assert!(write_stream
         .write(Buffer::from_string("stream", Some("utf8")).unwrap())
         .unwrap());
     write_stream.close().unwrap();
     let write_stream_with_options = handle
-        .create_write_stream_with_options(fs_promises::WriteStreamOptions::default())
+        .create_write_stream_with_options(&background, fs_promises::WriteStreamOptions::default())
         .unwrap();
     assert!(!write_stream_with_options.closed());
     write_stream_with_options.close().unwrap();
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(
         handle.read_lines("utf8").unwrap(),
         vec!["hello rust!!?#stream".to_string()]
     );
-    let pulled = handle.pull(4).unwrap().to_vec();
+    let pulled = handle.pull(4).unwrap().to_vec().unwrap();
     assert!(pulled.len() >= 3);
     let pulled_with_options = handle
         .pull_with_options(fs_promises::PullOptions {
@@ -325,7 +344,8 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
             ..fs_promises::PullOptions::default()
         })
         .unwrap()
-        .to_vec();
+        .to_vec()
+        .unwrap();
     assert_eq!(pulled_with_options.len(), 2);
     let mut writer = handle.writer();
     writer.seek(10);

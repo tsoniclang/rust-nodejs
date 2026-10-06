@@ -779,6 +779,8 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
 
 #[test]
 fn fs_stream_option_carriers_are_closed_shapes() {
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = temp_root("streams");
     let root_text = root.to_string_lossy().to_string();
     fs::mkdir_sync_with_options(
@@ -794,6 +796,7 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     fs::write_file_sync_string(&file_text, "abcdef", "utf8").unwrap();
 
     let readable = fs::create_read_stream_with_options(
+        &background,
         &file_text,
         fs::ReadStreamOptions {
             start: Some(1),
@@ -805,12 +808,16 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     .unwrap();
     assert_eq!(readable.path(), file_text);
     assert!(readable.pending());
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert!(!readable.pending());
     let chunk = readable.read().unwrap().unwrap();
     assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
     assert_eq!(readable.bytes_read(), 3);
-    readable.close();
+    readable.close().unwrap();
     assert!(!readable.pending());
 
     let write_options = fs::WriteStreamOptions {
@@ -818,14 +825,19 @@ fn fs_stream_option_carriers_are_closed_shapes() {
         flush: Some(true),
         ..fs::WriteStreamOptions::default()
     };
-    let writable = fs::create_write_stream_with_options(&file_text, write_options).unwrap();
+    let writable =
+        fs::create_write_stream_with_options(&background, &file_text, write_options).unwrap();
     assert_eq!(writable.path(), file_text);
     assert!(writable.pending());
     assert!(writable
         .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
         .unwrap());
     writable.close().unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(writable.bytes_written(), 1);
     assert!(!writable.pending());
     assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");

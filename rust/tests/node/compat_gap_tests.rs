@@ -21,6 +21,8 @@ fn path_matches_glob_handles_common_star_and_question_patterns() {
 
 #[test]
 fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
         "tsonic-rust-compat-gap-{}",
         SystemTime::now()
@@ -88,8 +90,12 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     fs::unlink_callback(&renamed_text, |result| unlink_result = Some(result));
     unlink_result.unwrap().unwrap();
 
-    let readable = fs::create_read_stream(&file_text).unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    let readable = fs::create_read_stream(&background, &file_text).unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(
         readable
             .read()
@@ -99,12 +105,16 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
             .unwrap(),
         "hello"
     );
-    let writable = fs::create_write_stream(&file_text).unwrap();
+    let writable = fs::create_write_stream(&background, &file_text).unwrap();
     assert!(writable
         .write(buffer::Buffer::from_string("x", Some("utf8")).unwrap())
         .unwrap());
     writable.close().unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(writable.bytes_written(), 1);
 
     fs::rm_sync_with_options(
@@ -119,12 +129,12 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
 
 #[test]
 fn process_stdio_helpers_are_closed_stream_shapes() {
-    let stdout = process::stdout();
+    let stdout = process::stdout::<tsonic_rust_node::NodeError>();
     assert_eq!(stdout.fd(), 1);
     assert!(stdout
         .write_buffer(&buffer::Buffer::from_bytes(Vec::new()))
         .unwrap());
-    let stderr = process::stderr();
+    let stderr = process::stderr::<tsonic_rust_node::NodeError>();
     assert_eq!(stderr.fd(), 2);
     assert!(stderr.write_string("").unwrap());
     let _ = stdout.is_tty();

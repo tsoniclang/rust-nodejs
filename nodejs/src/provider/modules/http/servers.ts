@@ -1,3 +1,4 @@
+import { providerNativeFallibility } from "../../model/operations.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { providerRef } from "../../declarations/builders.js";
@@ -148,12 +149,12 @@ export function serverRows(): readonly RustProviderOperationDefinition[] {
   const optionalCallback = rustOptionTargetType(emptyCallbackCarrier);
   const rows: RustProviderOperationDefinition[] = [
     receiver(serverId, "listening", "listening", httpServerCarrier, boolCarrier, [], "property"),
-    fallibleReceiver(serverId, "listen", "listen_default_host_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, optionalCallback], `${serverId}.listen(port,callback)`, ["value", "value"]),
-    fallibleReceiver(serverId, "listen", "listen_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, stringCarrier, optionalCallback], `${serverId}.listen(port,host,callback)`, ["value", "ref", "value"]),
-    fallibleReceiver(serverId, "listen", "listen_with_backlog_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, stringCarrier, int32Carrier, optionalCallback], `${serverId}.listen(port,host,backlog,callback)`, ["value", "ref", "value", "value"]),
-    fallibleReceiver(serverId, "listen", "listen_path_optional", httpServerCarrier, httpServerCarrier, [stringCarrier, optionalCallback], `${serverId}.listen(path,callback)`, ["ref", "value"]),
+    fallibleReceiver(serverId, "listen", "listen_default_host_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, optionalCallback], `${serverId}.listen(port,callback)`, ["value", "value"], undefined, providerNativeFallibility),
+    fallibleReceiver(serverId, "listen", "listen_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, stringCarrier, optionalCallback], `${serverId}.listen(port,host,callback)`, ["value", "ref", "value"], undefined, providerNativeFallibility),
+    fallibleReceiver(serverId, "listen", "listen_with_backlog_optional", httpServerCarrier, httpServerCarrier, [int32Carrier, stringCarrier, int32Carrier, optionalCallback], `${serverId}.listen(port,host,backlog,callback)`, ["value", "ref", "value", "value"], undefined, providerNativeFallibility),
+    fallibleReceiver(serverId, "listen", "listen_path_optional", httpServerCarrier, httpServerCarrier, [stringCarrier, optionalCallback], `${serverId}.listen(path,callback)`, ["ref", "value"], undefined, providerNativeFallibility),
     receiver(serverId, "address", "address", httpServerCarrier, rustOptionTargetType(httpServerAddressCarrier), []),
-    fallibleReceiver(serverId, "close", "close_optional", httpServerCarrier, httpServerCarrier, [rustOptionTargetType(httpCloseCallbackCarrier)]),
+    fallibleReceiver(serverId, "close", "close_optional", httpServerCarrier, httpServerCarrier, [rustOptionTargetType(httpCloseCallbackCarrier)], undefined, undefined, undefined, providerNativeFallibility),
     receiver(serverId, "ref", "ref_chain", httpServerCarrier, httpServerCarrier, []),
     receiver(serverId, "unref", "unref_chain", httpServerCarrier, httpServerCarrier, []),
   ];
@@ -161,6 +162,6 @@ export function serverRows(): readonly RustProviderOperationDefinition[] {
     ["error", errorListenerCarrier],
     ["listening", emptyListenerCarrier],
     ["close", emptyListenerCarrier],
-  ]));
+  ], providerNativeFallibility));
   return rows;
 }

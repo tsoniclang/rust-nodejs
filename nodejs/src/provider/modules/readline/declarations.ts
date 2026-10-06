@@ -1,7 +1,7 @@
 import { nativeUintCarrier, boolCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, stringType, voidType } from "../../model/source-types.js";
 import { propertyMember, providerRef } from "../../declarations/builders.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { sourceCallbackFallibility } from "../../model/operations.js";
 import { nodeBackgroundInput, nodeRuntimeTaskInput } from "../../model/dispatch.js";
 import { readableCarrier, writableCarrier } from "../stream/carriers.js";
 import { readlineInterfaceCarrier, readlineOptionsCarrier, readlineQuestionCallbackCarrier } from "./carriers.js";
@@ -184,7 +184,7 @@ function interfaceMethod(
     parameterCarriers: parameters,
   } as const;
   return fallible
-    ? { ...operation, ...providerNativeFallibility }
+    ? { ...operation, ...sourceCallbackFallibility }
     : operation;
 }
 

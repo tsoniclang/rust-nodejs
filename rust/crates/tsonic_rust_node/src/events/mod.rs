@@ -263,16 +263,23 @@ impl<E: 'static> EventEmitter<E> {
     }
 
     pub fn off_by_id(&self, event: &str, listener_id: usize) -> &Self {
-        let mut state = self.state.borrow_mut();
-        if let Some(listeners) = state.listeners.get_mut(event) {
-            listeners.retain(|listener| listener.id != listener_id);
-            if listeners.is_empty() {
+        let removed = {
+            let mut state = self.state.borrow_mut();
+            let removed = state.listeners.get_mut(event).and_then(|listeners| {
+                listeners
+                    .iter()
+                    .position(|listener| listener.id == listener_id)
+                    .map(|index| listeners.remove(index))
+            });
+            if state.listeners.get(event).is_some_and(Vec::is_empty) {
                 state.listeners.remove(event);
                 state
                     .listener_event_order
                     .retain(|candidate| candidate != event);
             }
-        }
+            removed
+        };
+        drop(removed);
         self
     }
 
@@ -339,15 +346,22 @@ impl<E: 'static> EventEmitter<E> {
     }
 
     pub fn remove_all_listeners(&self, event: Option<&str>) -> &Self {
-        let mut state = self.state.borrow_mut();
         if let Some(event) = event {
-            state.listeners.remove(event);
-            state
-                .listener_event_order
-                .retain(|candidate| candidate != event);
+            let removed = {
+                let mut state = self.state.borrow_mut();
+                state
+                    .listener_event_order
+                    .retain(|candidate| candidate != event);
+                state.listeners.remove(event)
+            };
+            drop(removed);
         } else {
-            state.listeners.clear();
-            state.listener_event_order.clear();
+            let removed = {
+                let mut state = self.state.borrow_mut();
+                state.listener_event_order.clear();
+                std::mem::take(&mut state.listeners)
+            };
+            drop(removed);
         }
         self
     }

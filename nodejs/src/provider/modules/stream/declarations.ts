@@ -1,3 +1,4 @@
+import { nodeProgramErrorArguments } from "../../model/carriers.js";
 import {
   rustCallableTargetType,
   rustJsArrayTargetType,
@@ -16,7 +17,7 @@ import {
   stringCarrier,
   unitCarrier,
 } from "../../model/carriers.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { sourceCallbackFallibility } from "../../model/operations.js";
 import {
   booleanType,
   errorType,
@@ -261,7 +262,6 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_stream::Readable::from_source", argModes: ["ref"] },
       resultCarrier: readableCarrier,
       parameterCarriers: [rustJsArrayTargetType(bufferCarrier)],
-      ...providerNativeFallibility,
     },
     {
       exportId: readableId,
@@ -272,7 +272,7 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: rustOptionTargetType(bufferCarrier),
       receiverCarrier: readableCarrier,
       parameterCarriers: [rustOptionTargetType(int32Carrier)],
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       exportId: readableId,
@@ -292,12 +292,12 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
           {
             kind: "trait",
             path: "tsonic_rust_node::stream::WritableTarget",
-            genericArguments: [],
+            genericArguments: nodeProgramErrorArguments,
             associatedConstraints: [],
           },
         ],
       }],
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     ...readableSimpleRows(),
     ...writableRows("Writable", writableCarrier),
@@ -308,11 +308,11 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
 function readableSimpleRows(): readonly RustProviderOperationDefinition[] {
   const rows: RustProviderOperationDefinition[] = [
     receiverMethod(readableId, "pause", "pause_chain", readableCarrier, readableCarrier, []),
-    receiverMethod(readableId, "resume", "resume_chain", readableCarrier, readableCarrier, []),
+    { ...receiverMethod(readableId, "resume", "resume_chain", readableCarrier, readableCarrier, []), ...sourceCallbackFallibility },
     receiverMethod(readableId, "isPaused", "is_paused", readableCarrier, boolCarrier, []),
     {
       ...receiverMethod(readableId, "destroy", "destroy_chain", readableCarrier, readableCarrier, [optionalErrorCarrier]),
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     receiverProperty(readableId, "readable", readableCarrier, boolCarrier),
     receiverProperty(readableId, "readableEnded", readableCarrier, boolCarrier, "readable_ended"),
@@ -336,35 +336,35 @@ function writableRows(
     {
       ...receiverMethod(classId, "write", "write_buffer", receiverCarrier, boolCarrier, [bufferCarrier], `${classId}.write(buffer)`),
       target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"] },
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       ...receiverMethod(classId, "write", "write_string", receiverCarrier, boolCarrier, [stringCarrier], `${classId}.write(string)`),
       target: { form: "receiver-method", name: "write_string", argModes: ["ref"] },
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       ...receiverMethod(classId, "end", "end", receiverCarrier, receiverCarrier, [], `${classId}.end()`),
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       ...receiverMethod(classId, "end", "end_buffer", receiverCarrier, receiverCarrier, [bufferCarrier], `${classId}.end(buffer)`),
       target: { form: "receiver-method", name: "end_buffer", argModes: ["ref"] },
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       ...receiverMethod(classId, "end", "end_string", receiverCarrier, receiverCarrier, [stringCarrier], `${classId}.end(string)`),
       target: { form: "receiver-method", name: "end_string", argModes: ["ref"] },
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     receiverMethod(classId, "cork", "cork", receiverCarrier, unitCarrier, []),
     {
       ...receiverMethod(classId, "uncork", "uncork", receiverCarrier, unitCarrier, []),
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     {
       ...receiverMethod(classId, "destroy", "destroy_chain", receiverCarrier, receiverCarrier, [optionalErrorCarrier]),
-      ...providerNativeFallibility,
+      ...sourceCallbackFallibility,
     },
     receiverProperty(classId, "writable", receiverCarrier, boolCarrier),
     receiverProperty(classId, "writableEnded", receiverCarrier, boolCarrier, "writable_ended"),
@@ -393,7 +393,7 @@ function receiverMethod(
   resultCarrier: RustTargetTypeRef,
   parameterCarriers: readonly RustTargetTypeRef[],
   signatureId?: string,
-): RustProviderOperationDefinition {
+): Extract<RustProviderOperationDefinition, { readonly isFallible?: false }> {
   return {
     exportId,
     memberId: `${exportId}.${memberName}`,
@@ -441,6 +441,6 @@ function eventRows(
     receiverCarrier,
     resultCarrier: receiverCarrier,
     parameterCarriers: [stringCarrier, listener],
-    ...providerNativeFallibility,
+    ...sourceCallbackFallibility,
   })));
 }

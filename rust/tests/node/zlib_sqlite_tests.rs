@@ -35,9 +35,14 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
         "source ABI payload"
     );
 
-    let mut gzip_stream = tsonic_rust_node::zlib::create_gzip_source(options.clone()).unwrap();
+    let mut gzip_stream =
+        tsonic_rust_node::zlib::create_gzip_source::<tsonic_rust_node::NodeError>(options.clone())
+            .unwrap();
     let stream_gzip = gzip_stream.process(&input).unwrap();
-    let mut gunzip_stream = tsonic_rust_node::zlib::create_gunzip_source(options.clone()).unwrap();
+    let mut gunzip_stream = tsonic_rust_node::zlib::create_gunzip_source::<
+        tsonic_rust_node::NodeError,
+    >(options.clone())
+    .unwrap();
     assert_eq!(
         gunzip_stream
             .process(&stream_gzip)
@@ -46,11 +51,15 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
             .unwrap(),
         "source ABI payload"
     );
-    let mut deflate_stream =
-        tsonic_rust_node::zlib::create_deflate_source(options.clone()).unwrap();
+    let mut deflate_stream = tsonic_rust_node::zlib::create_deflate_source::<
+        tsonic_rust_node::NodeError,
+    >(options.clone())
+    .unwrap();
     let stream_deflate = deflate_stream.process(&input).unwrap();
-    let mut inflate_stream =
-        tsonic_rust_node::zlib::create_inflate_source(options.clone()).unwrap();
+    let mut inflate_stream = tsonic_rust_node::zlib::create_inflate_source::<
+        tsonic_rust_node::NodeError,
+    >(options.clone())
+    .unwrap();
     assert_eq!(
         inflate_stream
             .process(&stream_deflate)
@@ -59,11 +68,15 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
             .unwrap(),
         "source ABI payload"
     );
-    let mut deflate_raw_stream =
-        tsonic_rust_node::zlib::create_deflate_raw_source(options.clone()).unwrap();
+    let mut deflate_raw_stream = tsonic_rust_node::zlib::create_deflate_raw_source::<
+        tsonic_rust_node::NodeError,
+    >(options.clone())
+    .unwrap();
     let stream_raw = deflate_raw_stream.process(&input).unwrap();
-    let mut inflate_raw_stream =
-        tsonic_rust_node::zlib::create_inflate_raw_source(options.clone()).unwrap();
+    let mut inflate_raw_stream = tsonic_rust_node::zlib::create_inflate_raw_source::<
+        tsonic_rust_node::NodeError,
+    >(options.clone())
+    .unwrap();
     assert_eq!(
         inflate_raw_stream
             .process(&stream_raw)
@@ -334,7 +347,8 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         ..Default::default()
     };
     assert_eq!(brotli_options.chunk_size, 4096);
-    let mut gzip = tsonic_rust_node::zlib::create_gzip(Some(options));
+    let mut gzip =
+        tsonic_rust_node::zlib::create_gzip::<tsonic_rust_node::NodeError>(Some(options));
     let output = gzip.process(&input).unwrap();
     assert_eq!(gzip.bytes_written(), input.len());
     assert!(!gzip.closed());
@@ -344,18 +358,18 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         || {},
     );
     let flushed = std::cell::Cell::new(false);
-    gzip.flush(Some(|| flushed.set(true)));
+    gzip.flush(Some(|| flushed.set(true))).unwrap();
     assert!(flushed.get());
     gzip.reset();
     assert_eq!(gzip.bytes_written(), 0);
     let closed = std::cell::Cell::new(false);
-    gzip.close(Some(|| closed.set(true)));
+    gzip.close(Some(|| closed.set(true))).unwrap();
     assert!(closed.get());
     assert!(gzip.closed());
 
-    let mut deflate = tsonic_rust_node::zlib::create_deflate(None);
+    let mut deflate = tsonic_rust_node::zlib::create_deflate::<tsonic_rust_node::NodeError>(None);
     let deflated = deflate.process(&input).unwrap();
-    let mut inflate = tsonic_rust_node::zlib::create_inflate(None);
+    let mut inflate = tsonic_rust_node::zlib::create_inflate::<tsonic_rust_node::NodeError>(None);
     assert_eq!(
         inflate
             .process(&deflated)
@@ -365,9 +379,11 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    let mut deflate_raw = tsonic_rust_node::zlib::create_deflate_raw(None);
+    let mut deflate_raw =
+        tsonic_rust_node::zlib::create_deflate_raw::<tsonic_rust_node::NodeError>(None);
     let raw = deflate_raw.process(&input).unwrap();
-    let mut inflate_raw = tsonic_rust_node::zlib::create_inflate_raw(None);
+    let mut inflate_raw =
+        tsonic_rust_node::zlib::create_inflate_raw::<tsonic_rust_node::NodeError>(None);
     assert_eq!(
         inflate_raw
             .process(&raw)
@@ -377,7 +393,7 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    let mut gunzip = tsonic_rust_node::zlib::create_gunzip(None);
+    let mut gunzip = tsonic_rust_node::zlib::create_gunzip::<tsonic_rust_node::NodeError>(None);
     assert_eq!(
         gunzip
             .process(&output)
@@ -386,7 +402,7 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
             .unwrap(),
         "class payload"
     );
-    let mut unzip = tsonic_rust_node::zlib::create_unzip(None);
+    let mut unzip = tsonic_rust_node::zlib::create_unzip::<tsonic_rust_node::NodeError>(None);
     assert_eq!(
         unzip
             .process(&output)
@@ -396,10 +412,13 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    let mut brotli = tsonic_rust_node::zlib::create_brotli_compress(Some(Default::default()));
+    let mut brotli = tsonic_rust_node::zlib::create_brotli_compress::<tsonic_rust_node::NodeError>(
+        Some(Default::default()),
+    );
     let brotli_output = brotli.process(&input).unwrap();
-    let mut brotli_decode =
-        tsonic_rust_node::zlib::create_brotli_decompress(Some(Default::default()));
+    let mut brotli_decode = tsonic_rust_node::zlib::create_brotli_decompress::<
+        tsonic_rust_node::NodeError,
+    >(Some(Default::default()));
     assert_eq!(
         brotli_decode
             .process(&brotli_output)

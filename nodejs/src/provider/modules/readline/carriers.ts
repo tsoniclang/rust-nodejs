@@ -1,10 +1,10 @@
 import { rustCallableTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
-import { stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { stringCarrier, unitCarrier, nodeProgramErrorArguments } from "../../model/carriers.js";
 
-export const readlineOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ReadlineOptions" };
+export const readlineOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ReadlineOptions", genericArguments: nodeProgramErrorArguments };
 
-export const readlineInterfaceCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ReadlineInterface" };
+export const readlineInterfaceCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ReadlineInterface", genericArguments: nodeProgramErrorArguments };
 
 export const readlineQuestionCallbackCarrier = rustCallableTargetType(
   [stringCarrier],

@@ -29,8 +29,15 @@ test("inherited stream operations retain the declared native receiver and exact 
     assert.equal(carrier?.kind, "target-specific", id);
     assert.equal(carrier.target, "rust", id);
     assert.equal(carrier.value.id, carrierId, id);
+    assert.deepEqual(carrier.value.genericArguments, [{
+      kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+    }], id);
     for (const [target, path] of projections) {
-      assert.equal(carrier.value.upcasts.filter(row => row.target.value.id === target && row.path === path).length, 1, path);
+      const selected = carrier.value.upcasts.filter(row => row.target.value.id === target && row.path === path);
+      assert.equal(selected.length, 1, path);
+      assert.deepEqual(selected[0].target.value.genericArguments, [{
+        kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+      }], path);
     }
     assert.equal(declaration.members.some(member =>
       ["on", "once", "off", "write", "end", "destroy"].includes(member.name)), false, id);
@@ -69,9 +76,9 @@ test("advertised duplex lifecycle operations retain exact receivers and finaliza
       assert.ok(rows.length > 0, `${id}.${member}`);
       for (const row of rows) {
         assert.equal(row.isFallible, true, `${id}.${member}`);
-        assert.equal(row.errorBoundary, "provider-native", `${id}.${member}`);
-        assert.equal(row.errorCarrier.kind, "target-named", `${id}.${member}`);
-        assert.equal(row.errorCarrier.id, "rust.node.NodeError", `${id}.${member}`);
+        assert.equal(row.errorBoundary, "source-program", `${id}.${member}`);
+        assert.equal(row.errorCarrier === undefined, true, `${id}.${member}`);
+        assert.deepEqual(row.nativeErrorCarriers, [{ kind: "target-named", id: "rust.node.NodeError" }], `${id}.${member}`);
         assert.equal(row.receiverCarrier.value.id, `rust.node.${owner}`, `${id}.${member}`);
       }
     }

@@ -4,7 +4,7 @@ import { httpsClientRequestCarrier, httpsServerCarrier } from "./carriers.js";
 import { httpResponseCallbackCarrier, httpRequestCallbackCarrier } from "../http/carriers.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
-import { nodeBackgroundInput, nodeTlsInput } from "../../model/dispatch.js";
+import { nodeBackgroundInput, nodeTlsInput, nodeHttpInput, nodeRuntimeTaskInput } from "../../model/dispatch.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { tlsServerOptionsCarrier } from "../tls/carriers.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
@@ -140,11 +140,7 @@ export function httpsModule(): RustProviderModuleDefinition {
 }
 
 export function httpsRows(): readonly RustProviderOperationDefinition[] {
-  const mutableServer: RustTargetTypeRef = {
-    kind: "reference",
-    referent: httpsServerCarrier,
-    mutable: true,
-  };
+  const serverResult = httpsServerCarrier;
   return [
     ...optionRows(),
     {
@@ -153,7 +149,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::create_server_callable", argModes: ["value", "value"] },
       resultCarrier: httpsServerCarrier,
       parameterCarriers: [tlsServerOptionsCarrier, httpRequestCallbackCarrier],
-      dispatchInputs: [nodeTlsInput, { ...nodeBackgroundInput, targetArgumentIndex: 1 }],
+      dispatchInputs: [nodeHttpInput, { ...nodeTlsInput, targetArgumentIndex: 1 }, { ...nodeBackgroundInput, targetArgumentIndex: 2 }],
       ...providerNativeFallibility,
     },
     {
@@ -162,6 +158,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::request_callable", argModes: ["ref", "value"] },
       resultCarrier: httpsClientRequestCarrier,
       parameterCarriers: [stringCarrier, httpResponseCallbackCarrier],
+      dispatchInputs: [nodeBackgroundInput],
       ...providerNativeFallibility,
     },
     {
@@ -176,7 +173,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       exportId: clientRequestId,
       memberId: `${clientRequestId}.write`,
       operationKind: "method",
-      target: { form: "receiver-method", name: "write_string", argModes: ["ref"], mutatesReceiver: true },
+      target: { form: "receiver-method", name: "write_string", argModes: ["ref"] },
       resultCarrier: boolCarrier,
       receiverCarrier: httpsClientRequestCarrier,
       parameterCarriers: [stringCarrier],
@@ -186,17 +183,17 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       exportId: clientRequestId,
       memberId: `${clientRequestId}.end`,
       operationKind: "method",
-      target: { form: "receiver-method", name: "end", mutatesReceiver: true },
+      target: { form: "receiver-method", name: "end" },
       resultCarrier: unitCarrier,
       receiverCarrier: httpsClientRequestCarrier,
       parameterCarriers: [],
       ...providerNativeFallibility,
     },
-    { ...serverMethod("listen", "port,callback", "listen_default_host", [{ kind: "type-parameter", identity: "node:https:numeric:Port", name: "Port" }, emptyCallbackCarrier], ["value", "value"], mutableServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:https:numeric:Port", sourceName: "Port" }] },
-    { ...serverMethod("listen", "port,host,callback", "listen", [{ kind: "type-parameter", identity: "node:https:numeric:Port", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], mutableServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:https:numeric:Port", sourceName: "Port" }] },
+    { ...serverMethod("listen", "port,callback", "listen_default_host", [{ kind: "type-parameter", identity: "node:https:numeric:Port", name: "Port" }, emptyCallbackCarrier], ["value", "value"], serverResult, true), genericParameters: [{ kind: "type", targetIdentity: "node:https:numeric:Port", sourceName: "Port" }], dispatchInputs: [nodeRuntimeTaskInput] },
+    { ...serverMethod("listen", "port,host,callback", "listen", [{ kind: "type-parameter", identity: "node:https:numeric:Port", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], serverResult, true), genericParameters: [{ kind: "type", targetIdentity: "node:https:numeric:Port", sourceName: "Port" }] },
     serverMethod("close", undefined, "close", [], [], unitCarrier, false),
-    serverMethod("ref", undefined, "ref_chain", [], [], mutableServer, false),
-    serverMethod("unref", undefined, "unref_chain", [], [], mutableServer, false),
+    serverMethod("ref", undefined, "ref_chain", [], [], serverResult, false),
+    serverMethod("unref", undefined, "unref_chain", [], [], serverResult, false),
     {
       exportId: serverId,
       memberId: `${serverId}.listening`,
@@ -274,7 +271,6 @@ function serverMethod(
       form: "receiver-method",
       name,
       ...(argModes.length === 0 ? {} : { argModes }),
-      mutatesReceiver: true,
     },
     resultCarrier,
     receiverCarrier: httpsServerCarrier,

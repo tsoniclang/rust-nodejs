@@ -140,3 +140,96 @@ fn original_native_failure_retains_the_unvisited_resource_frontier() {
     assert_eq!(poll_prepared(&resources, &frontier).ok(), Some(true));
     assert_eq!(second.polled.get(), 1);
 }
+
+#[derive(Clone)]
+struct ReentrantResource {
+    alive: Rc<Cell<bool>>,
+    _owner: Rc<RegistryDrop>,
+}
+
+struct RegistryDrop {
+    resources: Weak<RuntimeResources<ReentrantResource>>,
+    calls: Rc<Cell<usize>>,
+}
+
+impl Drop for RegistryDrop {
+    fn drop(&mut self) {
+        let resources = self.resources.upgrade().expect("registry remains owned");
+        assert!(
+            resources.registrations.try_borrow_mut().is_ok(),
+            "resource capture dropped under registry borrow"
+        );
+        assert!(!resources.has_work());
+        self.calls.set(self.calls.get() + 1);
+    }
+}
+
+impl RuntimeResource for ReentrantResource {
+    type Error = crate::NodeError;
+    fn is_alive(&self) -> bool {
+        self.alive.get()
+    }
+    fn phase(&self) -> DispatchPhase {
+        DispatchPhase::Http
+    }
+    fn capture(&self) -> crate::NodeResult<Option<TaskTicket>> {
+        Ok(None)
+    }
+    fn poll(&self, _boundary: Option<TaskTicket>) -> crate::NodeResult<bool> {
+        Ok(false)
+    }
+    fn has_work(&self) -> bool {
+        false
+    }
+    fn next_delay(&self) -> Option<Duration> {
+        None
+    }
+}
+
+#[test]
+fn pruning_and_replacement_release_native_resource_owners_outside_registry_borrows() {
+    for replacement in [false, true] {
+        let resources = Rc::new(RuntimeResources::new(1));
+        let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+        let reservation = budget.reserve().unwrap();
+        let calls = Rc::new(Cell::new(0));
+        let alive = Rc::new(Cell::new(true));
+        resources.register(
+            reservation.ticket(),
+            ReentrantResource {
+                alive: Rc::clone(&alive),
+                _owner: Rc::new(RegistryDrop {
+                    resources: Rc::downgrade(&resources),
+                    calls: Rc::clone(&calls),
+                }),
+            },
+        );
+        if replacement {
+            resources.register(
+                reservation.ticket(),
+                ReentrantResource {
+                    alive: Rc::new(Cell::new(true)),
+                    _owner: Rc::new(RegistryDrop {
+                        resources: Rc::downgrade(&resources),
+                        calls: Rc::clone(&calls),
+                    }),
+                },
+            );
+            assert_eq!(calls.get(), 1);
+            resources
+                .registrations
+                .borrow()
+                .values()
+                .next()
+                .unwrap()
+                .resource
+                .alive
+                .set(false);
+        } else {
+            alive.set(false);
+        }
+        assert!(resources.prepare(DispatchPhase::Http).is_ok());
+        assert_eq!(calls.get(), if replacement { 2 } else { 1 });
+        assert!(resources.registrations.borrow().is_empty());
+    }
+}

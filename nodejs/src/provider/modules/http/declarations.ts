@@ -1,3 +1,5 @@
+import { nodeHttpInput } from "../../model/dispatch.js";
+import { providerNativeFallibility } from "../../model/operations.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { providerRef } from "../../declarations/builders.js";
@@ -78,6 +80,8 @@ export function httpRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_http::create_server_optional", argModes: ["value"] },
       resultCarrier: httpServerCarrier,
       parameterCarriers: [rustOptionTargetType(httpRequestCallbackCarrier)],
+      dispatchInputs: [nodeHttpInput],
+      ...providerNativeFallibility,
     },
     ...headerRows(incomingHeadersId, incomingHttpHeadersCarrier),
     headerValuesRow(),

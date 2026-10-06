@@ -107,16 +107,42 @@ impl Default for FinishedOptions {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Stream {
-    Readable(Readable),
-    Writable(Writable),
+pub enum Stream<E: 'static = NodeError> {
+    Readable(Readable<E>),
+    Writable(Writable<E>),
 }
 
-pub fn readable_as_stream(value: &Readable) -> Stream {
-    Stream::Readable(value.clone())
+pub fn readable_as_stream<E: 'static>(value: &Readable<E>) -> Stream<E> {
+    Stream::<E>::Readable(value.clone())
 }
 
-pub fn writable_as_stream(value: &Writable) -> Stream {
-    Stream::Writable(value.clone())
+pub fn writable_as_stream<E: 'static>(value: &Writable<E>) -> Stream<E> {
+    Stream::<E>::Writable(value.clone())
 }
+
+impl<E: 'static> Clone for Stream<E> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Readable(readable) => Self::Readable(readable.clone()),
+            Self::Writable(writable) => Self::Writable(writable.clone()),
+        }
+    }
+}
+impl<E: 'static> std::fmt::Debug for Stream<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Readable(value) => formatter.debug_tuple("Readable").field(value).finish(),
+            Self::Writable(value) => formatter.debug_tuple("Writable").field(value).finish(),
+        }
+    }
+}
+impl<E: 'static> PartialEq for Stream<E> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Readable(left), Self::Readable(right)) => left == right,
+            (Self::Writable(left), Self::Writable(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+impl<E: 'static> Eq for Stream<E> {}

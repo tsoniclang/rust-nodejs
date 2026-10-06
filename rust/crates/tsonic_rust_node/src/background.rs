@@ -201,7 +201,8 @@ where
         let _ = wake.wake();
     });
     if submitted.is_err() {
-        source.borrow_mut().in_flight.remove(&id);
+        let removed = source.borrow_mut().in_flight.remove(&id);
+        drop(removed);
     }
     submitted
 }
@@ -224,16 +225,6 @@ fn background_task_budget() -> TaskBudget {
             })
             .clone()
     })
-}
-
-pub(crate) fn spawn<TResult>(
-    work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
-    completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TsonicError> + 'static,
-) -> crate::NodeResult<()>
-where
-    TResult: Send + 'static,
-{
-    SOURCE_THREAD_COMPLETIONS.with(|source| source.spawn(work, completion))
 }
 
 #[cfg(test)]

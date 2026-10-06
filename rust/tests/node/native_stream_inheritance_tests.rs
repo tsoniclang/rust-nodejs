@@ -7,6 +7,8 @@ use tsonic_rust_runtime::{Callable, RetainedError};
 
 #[test]
 fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
         "native-stream-inheritance-{}-{}",
         std::process::id(),
@@ -18,6 +20,7 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     std::fs::create_dir_all(&root).unwrap();
     let path = root.join("output.txt");
     let file = fs::create_write_stream_with_options(
+        &background,
         &path.to_string_lossy(),
         fs::WriteStreamOptions {
             high_water_mark: Some(1),
@@ -31,12 +34,12 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     let callback_calls = Rc::clone(&removed_calls);
     let removed = Callable::new(move |()| {
         callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), NodeError>(())
+        Ok::<(), tsonic_rust_runtime::TsonicError>(())
     });
     let callback_calls = Rc::clone(&removed_calls);
     let removed_error = Callable::new(move |(_error,): (RetainedError,)| {
         callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), NodeError>(())
+        Ok::<(), tsonic_rust_runtime::TsonicError>(())
     });
     assert_eq!(
         writable,
@@ -62,13 +65,13 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     let callback_calls = Rc::clone(&drain_calls);
     let drain = Callable::new(move |()| {
         callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), NodeError>(())
+        Ok::<(), tsonic_rust_runtime::TsonicError>(())
     });
     let finish_calls = Rc::new(Cell::new(0));
     let callback_calls = Rc::clone(&finish_calls);
     let finish = Callable::new(move |()| {
         callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), NodeError>(())
+        Ok::<(), tsonic_rust_runtime::TsonicError>(())
     });
     writable.once_drain("drain", &drain).unwrap();
     writable.once_finish("finish", &finish).unwrap();
@@ -77,7 +80,11 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     assert!(writable.writable_need_drain());
     assert_eq!(writable, writable.end().unwrap());
     assert!(writable.writable_ended());
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &background,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert_eq!(removed_calls.get(), 0);
     assert_eq!(drain_calls.get(), 1);
     assert_eq!(finish_calls.get(), 1);
@@ -90,13 +97,13 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
 
 #[test]
 fn transform_and_zlib_base_projections_destroy_the_original_stream() {
-    let transform = stream::Transform::new(|chunk| chunk);
+    let transform = stream::Transform::<NodeError>::new(|chunk| chunk);
     let duplex = stream::transform_as_duplex(&transform);
     assert_eq!(duplex, duplex.destroy_chain(None).unwrap());
     assert!(stream::transform_as_readable(&transform).destroyed());
     assert!(stream::transform_as_writable(&transform).destroyed());
 
-    let codec = zlib::create_gzip(None);
+    let codec = zlib::create_gzip::<NodeError>(None);
     let duplex = zlib::zlib_as_duplex(&codec);
     assert_eq!(duplex, duplex.destroy_chain(None).unwrap());
     assert!(codec.closed());
@@ -106,7 +113,7 @@ fn transform_and_zlib_base_projections_destroy_the_original_stream() {
 
 #[test]
 fn projected_codec_destruction_retains_error_identity_for_shared_lifecycle_listeners() {
-    let codec = zlib::create_gzip(None);
+    let codec = zlib::create_gzip::<NodeError>(None);
     let readable = zlib::zlib_as_readable(&codec);
     let writable = zlib::zlib_as_writable(&codec);
     let observed = Rc::new(RefCell::new(Vec::new()));

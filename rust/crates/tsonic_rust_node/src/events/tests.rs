@@ -134,3 +134,78 @@ fn retaining_a_normal_source_listener_has_no_second_callable_owner() {
         super::callback::ListenerCallback::Repeated(super::callback::EventCallback::Empty(stored))
             if Callable::same(stored, &callback)));
 }
+
+struct SubscriptionDrop {
+    emitter: super::WeakEventEmitter<NodeError>,
+    calls: Rc<Cell<usize>>,
+}
+
+impl Drop for SubscriptionDrop {
+    fn drop(&mut self) {
+        let emitter = self
+            .emitter
+            .upgrade()
+            .expect("native emitter is still owned");
+        assert!(
+            emitter.state.try_borrow_mut().is_ok(),
+            "listener capture dropped under emitter borrow"
+        );
+        emitter.set_max_listeners(3);
+        self.calls.set(self.calls.get() + 1);
+    }
+}
+
+#[test]
+fn bulk_source_listener_removal_allows_native_capture_destructors_to_reenter() {
+    for all_events in [false, true] {
+        let emitter = EventEmitter::<NodeError>::new();
+        let event = JsValue::from("data".to_owned());
+        let calls = Rc::new(Cell::new(0));
+        let owner = SubscriptionDrop {
+            emitter: emitter.downgrade(),
+            calls: Rc::clone(&calls),
+        };
+        let listener = Callable::new(move |()| {
+            let _capture = &owner;
+            Ok::<(), NodeError>(())
+        });
+        emitter.on_callable(&event, &listener).unwrap();
+        drop(listener);
+        if all_events {
+            emitter.remove_all_callable_listeners();
+        } else {
+            emitter.remove_all_callable_listeners_for(&event).unwrap();
+        }
+        assert_eq!(calls.get(), 1);
+        assert_eq!(emitter.get_max_listeners(), 3);
+        assert_eq!(emitter.callable_listener_count(&event).unwrap(), 0);
+    }
+}
+
+#[test]
+fn native_id_and_bulk_removal_release_captures_outside_emitter_borrows() {
+    for selection in [0, 1, 2] {
+        let emitter = EventEmitter::<NodeError>::new();
+        let calls = Rc::new(Cell::new(0));
+        let owner = SubscriptionDrop {
+            emitter: emitter.downgrade(),
+            calls: Rc::clone(&calls),
+        };
+        let id = emitter.on_with_id("data", move |_| {
+            let _capture = &owner;
+        });
+        match selection {
+            0 => {
+                emitter.off_by_id("data", id);
+            }
+            1 => {
+                emitter.remove_all_listeners(Some("data"));
+            }
+            _ => {
+                emitter.remove_all_listeners(None);
+            }
+        }
+        assert_eq!(calls.get(), 1);
+        assert_eq!(emitter.listener_count("data"), 0);
+    }
+}

@@ -34,7 +34,9 @@ test("Readable pipe preserves its destination binding through parameters, result
   assert.deepEqual(row.parameterCarriers, [carrier]);
   assert.deepEqual(row.resultCarrier, carrier);
   assert.deepEqual(row.typeRequirements, [{ identity, name: "TDestination", requirements: [
-    "clone", { kind: "trait", path: "tsonic_rust_node::stream::WritableTarget", genericArguments: [], associatedConstraints: [] },
+    "clone", { kind: "trait", path: "tsonic_rust_node::stream::WritableTarget",
+      genericArguments: [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }],
+      associatedConstraints: [] },
   ] }]);
 });
 
@@ -51,4 +53,17 @@ test("Zlib native equality traits agree at the binding and operation producers",
     assert.ok(operation, signature);
     assert.deepEqual(operation.resultCarrier.value.traits, traits, signature);
   }
+});
+
+test("Readable native construction does not invent a callback failure", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const row = contribution.definition.operations.find(operation =>
+    operation.signatureId === "node:stream::Readable.from(chunks)");
+  assert.ok(row);
+  assert.equal(row.isFallible === undefined, true);
+  assert.equal(row.errorBoundary === undefined, true);
+  assert.equal(row.errorCarrier === undefined, true);
+  assert.deepEqual(row.resultCarrier.value.genericArguments, [{
+    kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+  }]);
 });

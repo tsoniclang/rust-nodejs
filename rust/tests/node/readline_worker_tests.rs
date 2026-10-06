@@ -25,7 +25,7 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
     let callback_answer = Rc::clone(&answer);
     let background = tsonic_rust_node::background::BackgroundTasks::new();
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
-    interface
+    assert!(interface
         .question_callable(
             &background,
             &tasks,
@@ -35,7 +35,7 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
                 Ok::<(), TsonicError>(())
             }),
         )
-        .unwrap();
+        .is_ok());
     tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,
         tsonic_rust_runtime::dispatch::prepend(
@@ -87,7 +87,7 @@ fn readline_question_retains_non_display_non_send_source_failure() {
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::<Failure>::new();
     let expected = Rc::new(Cell::new(9_007_199_254_740_993));
     let captured = Rc::clone(&expected);
-    interface
+    assert!(interface
         .question_callable(
             &background,
             &tasks,
@@ -97,7 +97,7 @@ fn readline_question_retains_non_display_non_send_source_failure() {
                 Err(Failure(Rc::clone(&captured)))
             }),
         )
-        .unwrap();
+        .is_ok());
     assert!(!background.has_pending_work());
     let returned = tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,

@@ -115,15 +115,15 @@ pub fn finalization_unregister() {
         .ok();
 }
 
-pub fn stdout() -> crate::stream::Writable {
+pub fn stdout<E: From<crate::NodeError> + 'static>() -> crate::stream::Writable<E> {
     crate::stream::Writable::stdout()
 }
 
-pub fn stderr() -> crate::stream::Writable {
+pub fn stderr<E: From<crate::NodeError> + 'static>() -> crate::stream::Writable<E> {
     crate::stream::Writable::stderr()
 }
 
-pub fn stdin() -> crate::stream::Readable {
+pub fn stdin<E: From<crate::NodeError> + 'static>() -> crate::stream::Readable<E> {
     crate::stream::Readable::stdin()
 }
 

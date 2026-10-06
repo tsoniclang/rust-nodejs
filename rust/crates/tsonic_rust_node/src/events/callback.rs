@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::Callable;
 
@@ -33,52 +31,15 @@ impl<E: 'static> EventCallback<E> {
     }
 }
 
-pub(super) enum ListenerCallback<E: 'static> {
-    Repeated(EventCallback<E>),
-    Once(Rc<RefCell<Option<EventCallback<E>>>>),
-}
-
-impl<E: 'static> Clone for ListenerCallback<E> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Repeated(callback) => Self::Repeated(callback.clone()),
-            Self::Once(callback) => Self::Once(Rc::clone(callback)),
-        }
-    }
-}
+pub(super) type ListenerCallback<E> = crate::retained_listener::RetainedListener<EventCallback<E>>;
 
 impl<E: 'static> ListenerCallback<E> {
-    pub(super) fn new(callback: EventCallback<E>, once: bool) -> Self {
-        if once {
-            Self::Once(Rc::new(RefCell::new(Some(callback))))
-        } else {
-            Self::Repeated(callback)
-        }
-    }
-
-    pub(super) fn is_pending(&self) -> bool {
-        match self {
-            Self::Repeated(_) => true,
-            Self::Once(callback) => callback.borrow().is_some(),
-        }
-    }
-
     pub(super) fn invoke(&self, arguments: &[JsValue], before: &impl Fn()) -> Result<bool, E> {
-        match self {
-            Self::Repeated(callback) => {
-                before();
-                callback.invoke(arguments).map(|()| true)
-            }
-            Self::Once(callback) => {
-                let selected = callback.borrow_mut().take();
-                match selected {
-                    Some(callback) => {
-                        before();
-                        callback.invoke(arguments).map(|()| true)
-                    }
-                    None => Ok(false),
-                }
-            }
-        }
+        self.with_callback(|callback| {
+            before();
+            callback.invoke(arguments)
+        })
+        .transpose()
+        .map(|result| result.is_some())
     }
 }

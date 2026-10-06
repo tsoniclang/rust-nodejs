@@ -184,13 +184,15 @@ fn completions_return_to_the_exact_source_thread() {
         std::thread::spawn(move || {
             let observed = Rc::new(Cell::new(None));
             let completion_observed = Rc::clone(&observed);
-            super::spawn(
-                move || Ok(expected),
-                move |result| {
-                    completion_observed.set(Some(result.map_err(TsonicError::from)?));
-                    Ok(())
-                },
-            )
+            super::with_default(|tasks| {
+                tasks.spawn(
+                    move || Ok(expected),
+                    move |result| {
+                        completion_observed.set(Some(result.map_err(TsonicError::from)?));
+                        Ok(())
+                    },
+                )
+            })
             .unwrap();
             let deadline = Instant::now() + Duration::from_secs(5);
             while super::has_pending_work() && Instant::now() < deadline {

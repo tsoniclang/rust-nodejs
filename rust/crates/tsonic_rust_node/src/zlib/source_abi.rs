@@ -137,37 +137,51 @@ pub fn inflate_raw_sync_source(
     inflate_raw_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn create_gzip_source(options: SourceZlibOptions) -> NodeResult<Gzip> {
+pub fn create_gzip_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<Gzip<E>> {
     Ok(create_gzip(Some(options.into_runtime()?)))
 }
 
-pub fn create_deflate_source(options: SourceZlibOptions) -> NodeResult<Deflate> {
+pub fn create_deflate_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<Deflate<E>> {
     Ok(create_deflate(Some(options.into_runtime()?)))
 }
 
-pub fn create_inflate_source(options: SourceZlibOptions) -> NodeResult<Inflate> {
+pub fn create_inflate_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<Inflate<E>> {
     Ok(create_inflate(Some(options.into_runtime()?)))
 }
 
-pub fn create_gunzip_source(options: SourceZlibOptions) -> NodeResult<Gunzip> {
+pub fn create_gunzip_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<Gunzip<E>> {
     Ok(create_gunzip(Some(options.into_runtime()?)))
 }
 
-pub fn create_deflate_raw_source(options: SourceZlibOptions) -> NodeResult<DeflateRaw> {
+pub fn create_deflate_raw_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<DeflateRaw<E>> {
     Ok(create_deflate_raw(Some(options.into_runtime()?)))
 }
 
-pub fn create_inflate_raw_source(options: SourceZlibOptions) -> NodeResult<InflateRaw> {
+pub fn create_inflate_raw_source<E: From<NodeError> + 'static>(
+    options: SourceZlibOptions,
+) -> NodeResult<InflateRaw<E>> {
     Ok(create_inflate_raw(Some(options.into_runtime()?)))
 }
 
-pub fn create_brotli_compress_source(options: SourceBrotliOptions) -> NodeResult<BrotliCompress> {
+pub fn create_brotli_compress_source<E: From<NodeError> + 'static>(
+    options: SourceBrotliOptions,
+) -> NodeResult<BrotliCompress<E>> {
     Ok(create_brotli_compress(Some(options.into_runtime()?)))
 }
 
-pub fn create_brotli_decompress_source(
+pub fn create_brotli_decompress_source<E: From<NodeError> + 'static>(
     options: SourceBrotliOptions,
-) -> NodeResult<BrotliDecompress> {
+) -> NodeResult<BrotliDecompress<E>> {
     Ok(create_brotli_decompress(Some(options.into_runtime()?)))
 }
 

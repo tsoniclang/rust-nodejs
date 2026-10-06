@@ -2,7 +2,7 @@ import { rustCallableTargetType, rustProgramErrorTargetType } from "@tsonic/targ
 import { rustNamedTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { readableCarrier, streamCarrier, writableCarrier } from "../stream/carriers.js";
-import { stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { stringCarrier, unitCarrier, nodeProgramErrorArguments } from "../../model/carriers.js";
 
 export const statsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Stats" };
 
@@ -13,7 +13,7 @@ export const rmOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "
 export const readStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.ReadStream",
   "tsonic_rust_node::fs::ReadStream",
-  [],
+  nodeProgramErrorArguments,
   [],
   undefined,
   [
@@ -25,7 +25,7 @@ export const readStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
 export const writeStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.WriteStream",
   "tsonic_rust_node::fs::WriteStream",
-  [],
+  nodeProgramErrorArguments,
   [],
   undefined,
   [

@@ -1,13 +1,14 @@
 import type { RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { providerCallbackType } from "../../declarations/builders.js";
 import { stringCarrier } from "../../model/carriers.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { providerNativeFallibility, sourceCallbackFallibility } from "../../model/operations.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 
 export function eventRows(
   exportId: string,
   receiverCarrier: RustTargetTypeRef,
   events: readonly (readonly [name: string, listener: RustTargetTypeRef])[],
+  failure: typeof providerNativeFallibility | typeof sourceCallbackFallibility = sourceCallbackFallibility,
 ): readonly RustProviderOperationDefinition[] {
   return (["on", "once", "off"] as const).flatMap(methodName => events.map(([eventName, listener]) => ({
     exportId,
@@ -22,7 +23,7 @@ export function eventRows(
     receiverCarrier,
     resultCarrier: receiverCarrier,
     parameterCarriers: [stringCarrier, listener],
-    ...providerNativeFallibility,
+    ...failure,
   })));
 }
 
@@ -56,6 +57,7 @@ export function fallibleReceiver(
   signatureId?: string,
   argModes?: readonly ("value" | "ref" | "mut-ref")[],
   operationKind: "method" | "property-set" = "method",
+  failure: typeof providerNativeFallibility | typeof sourceCallbackFallibility = sourceCallbackFallibility,
 ): RustProviderOperationDefinition {
   return {
     exportId,
@@ -70,7 +72,7 @@ export function fallibleReceiver(
     receiverCarrier,
     resultCarrier,
     parameterCarriers,
-    ...providerNativeFallibility,
+    ...failure,
   };
 }
 

@@ -97,7 +97,7 @@ impl ClientRequest {
         self.reused_socket = true;
     }
 
-    pub fn write(&mut self, chunk: Buffer) -> bool {
+    pub fn write(&mut self, chunk: Buffer) -> NodeResult<bool> {
         self.body.write(chunk)
     }
 

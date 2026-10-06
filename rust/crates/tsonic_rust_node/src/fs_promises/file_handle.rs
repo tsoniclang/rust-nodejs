@@ -1,3 +1,5 @@
+use crate::NodeError;
+
 impl FileHandle {
     pub fn fd(&self) -> i32 {
         self.fd
@@ -154,30 +156,40 @@ impl FileHandle {
         crate::stream::web::WritableStream::new()
     }
 
-    pub fn create_read_stream(&self) -> NodeResult<fs::ReadStream> {
-        self.create_read_stream_with_options(ReadStreamOptions::default())
+    pub fn create_read_stream<E: From<NodeError> + 'static>(
+        &self,
+        background: &crate::background::BackgroundTasks<E>,
+    ) -> NodeResult<fs::ReadStream<E>> {
+        self.create_read_stream_with_options(background, ReadStreamOptions::default())
     }
 
-    pub fn create_read_stream_with_options(
+    pub fn create_read_stream_with_options<E: From<NodeError> + 'static>(
         &self,
+        background: &crate::background::BackgroundTasks<E>,
         options: ReadStreamOptions,
-    ) -> NodeResult<fs::ReadStream> {
+    ) -> NodeResult<fs::ReadStream<E>> {
         fs::ReadStream::from_file(
+            background,
             format!("fd:{}", self.fd),
             fs::clone_file_descriptor(self.fd)?,
             &options,
         )
     }
 
-    pub fn create_write_stream(&self) -> NodeResult<fs::WriteStream> {
-        self.create_write_stream_with_options(WriteStreamOptions::default())
+    pub fn create_write_stream<E: From<NodeError> + 'static>(
+        &self,
+        background: &crate::background::BackgroundTasks<E>,
+    ) -> NodeResult<fs::WriteStream<E>> {
+        self.create_write_stream_with_options(background, WriteStreamOptions::default())
     }
 
-    pub fn create_write_stream_with_options(
+    pub fn create_write_stream_with_options<E: From<NodeError> + 'static>(
         &self,
+        background: &crate::background::BackgroundTasks<E>,
         options: WriteStreamOptions,
-    ) -> NodeResult<fs::WriteStream> {
+    ) -> NodeResult<fs::WriteStream<E>> {
         fs::WriteStream::from_file(
+            background,
             format!("fd:{}", self.fd),
             fs::clone_file_descriptor(self.fd)?,
             &options,

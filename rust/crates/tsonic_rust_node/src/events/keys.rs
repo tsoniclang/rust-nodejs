@@ -111,19 +111,13 @@ impl<E: 'static> CallableListenerMap<E> {
         }
     }
 
-    pub(super) fn remove(&mut self, name: EventName<'_>) {
+    pub(super) fn remove(
+        &mut self,
+        name: EventName<'_>,
+    ) -> Option<Rc<Vec<CallableListenerEntry<E>>>> {
         match name {
-            EventName::String(value) => {
-                self.strings.remove(value);
-            }
-            EventName::Symbol(value) => {
-                self.symbols.remove(value);
-            }
+            EventName::String(value) => self.strings.remove(value),
+            EventName::Symbol(value) => self.symbols.remove(value),
         }
-    }
-
-    pub(super) fn clear(&mut self) {
-        self.strings.clear();
-        self.symbols.clear();
     }
 }

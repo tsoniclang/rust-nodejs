@@ -3,8 +3,8 @@ import { booleanType, numberType, stringType, voidType } from "../../model/sourc
 import { bufferCarrier } from "../buffer/carriers.js";
 import { fileWatchCallbackCarrier, fileStatWatchCallbackCarrier, makeDirectoryOptionsCarrier, readStreamCarrier, readStreamOptionsCarrier, fsWatcherCarrier, rmOptionsCarrier, statsCarrier, writeStreamCarrier, writeStreamOptionsCarrier } from "./carriers.js";
 import { fnExport, methodMember, propertyMember, providerRef } from "../../declarations/builders.js";
-import { providerNativeFallibility } from "../../model/operations.js";
-import { nodeWatcherInput } from "../../model/dispatch.js";
+import { providerNativeFallibility, sourceCallbackFallibility } from "../../model/operations.js";
+import { nodeWatcherInput, nodeBackgroundInput } from "../../model/dispatch.js";
 import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
@@ -431,29 +431,33 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     {
       ...fallible("createReadStream", "node_fs::create_read_stream", readStreamCarrier, [stringCarrier]),
       signatureId: "node:fs::createReadStream(path)",
+      dispatchInputs: [nodeBackgroundInput],
     },
     {
       ...fallible("createReadStream", "node_fs::create_read_stream_with_options", readStreamCarrier, [stringCarrier, readStreamOptionsCarrier]),
       target: { form: "call", path: "node_fs::create_read_stream_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       signatureId: "node:fs::createReadStream(path,options)",
+      dispatchInputs: [nodeBackgroundInput],
     },
     {
       ...fallible("createWriteStream", "node_fs::create_write_stream", writeStreamCarrier, [stringCarrier]),
       signatureId: "node:fs::createWriteStream(path)",
+      dispatchInputs: [nodeBackgroundInput],
     },
     {
       ...fallible("createWriteStream", "node_fs::create_write_stream_with_options", writeStreamCarrier, [stringCarrier, writeStreamOptionsCarrier]),
       target: { form: "call", path: "node_fs::create_write_stream_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       signatureId: "node:fs::createWriteStream(path,options)",
+      dispatchInputs: [nodeBackgroundInput],
     },
     ...streamOptionRows(readStreamOptionsId, readStreamOptionsCarrier, true),
     ...streamOptionRows(writeStreamOptionsId, writeStreamOptionsCarrier, false),
     { exportId: writeStreamOptionsId, memberId: `${writeStreamOptionsId}.flush`, operationKind: "property", target: { form: "field", name: "flush" }, resultCarrier: rustOptionTargetType(boolCarrier), receiverCarrier: writeStreamOptionsCarrier },
     { exportId: writeStreamOptionsId, memberId: `${writeStreamOptionsId}.flush`, operationKind: "property-set", target: { form: "field", name: "flush" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(boolCarrier)], receiverCarrier: writeStreamOptionsCarrier },
-    { exportId: readStreamId, memberId: `${readStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: readStreamCarrier, parameterCarriers: [] },
+    { exportId: readStreamId, memberId: `${readStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: readStreamCarrier, parameterCarriers: [], ...sourceCallbackFallibility },
     { exportId: readStreamId, memberId: `${readStreamId}.path`, operationKind: "property", target: { form: "receiver-method", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: readStreamCarrier },
     { exportId: readStreamId, memberId: `${readStreamId}.bytesRead`, operationKind: "property", target: { form: "receiver-method", name: "bytes_read" }, resultCarrier: nativeUintCarrier, receiverCarrier: readStreamCarrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...sourceCallbackFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.path`, operationKind: "property", target: { form: "receiver-method", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: writeStreamCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "receiver-method", name: "bytes_written" }, resultCarrier: nativeUintCarrier, receiverCarrier: writeStreamCarrier },
     { exportId: watcherId, memberId: `${watcherId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },

@@ -4,6 +4,27 @@ use std::rc::Rc;
 use tsonic_rust_node::{buffer::Buffer, stream, zlib, NodeError};
 use tsonic_rust_runtime::{Callable, RetainedError};
 
+#[derive(Debug)]
+enum Failure {
+    Source(&'static str),
+    Native(NodeError),
+}
+
+#[test]
+fn source_domain_still_preserves_genuine_native_stream_guards() {
+    let stream = stream::Writable::<Failure>::new();
+    stream.end().unwrap();
+    let error = stream.write_string("after end").unwrap_err();
+    assert!(
+        matches!(error, Failure::Native(error) if error.code() == "ERR_STREAM_WRITE_AFTER_END")
+    );
+}
+impl From<NodeError> for Failure {
+    fn from(error: NodeError) -> Self {
+        Self::Native(error)
+    }
+}
+
 #[test]
 fn idle_codec_destruction_through_readable_releases_the_original_resource() {
     for mode in [
@@ -51,7 +72,10 @@ fn codec_destruction_shares_error_and_close_identity_across_all_base_projections
     let trace = Rc::new(RefCell::new(Vec::new()));
     let observed_errors = Rc::new(RefCell::new(Vec::new()));
     let removed = Callable::new(|(_error,): (RetainedError,)| {
-        Err::<(), _>("removed native listener was invoked")
+        Err::<(), NodeError>(NodeError::new(
+            "ERR_TEST_CALLBACK",
+            "removed native listener was invoked",
+        ))
     });
     duplex.on_error("error", &removed).unwrap();
     readable.off_error("error", &removed).unwrap();
@@ -104,7 +128,12 @@ fn duplex_drain_finish_and_close_use_their_owning_native_states_once() {
     let duplex = stream::transform_as_duplex(&transform);
     let readable = stream::transform_as_readable(&transform);
     let trace = Rc::new(RefCell::new(Vec::new()));
-    let removed = Callable::new(|()| Err::<(), _>("removed lifecycle listener"));
+    let removed = Callable::new(|()| {
+        Err::<(), NodeError>(NodeError::new(
+            "ERR_TEST_CALLBACK",
+            "removed lifecycle listener",
+        ))
+    });
     assert_eq!(duplex, duplex.on_drain("drain", &removed).unwrap());
     duplex.off_drain("drain", &removed).unwrap();
     duplex.once_drain("drain", &removed).unwrap();
@@ -151,7 +180,12 @@ fn error_callbacks_can_change_the_subsequent_shared_close_subscription() {
         callback_observed.set(callback_observed.get() + 1);
         Ok::<(), NodeError>(())
     });
-    let removed = Callable::new(|()| Err::<(), _>("removed close listener was invoked"));
+    let removed = Callable::new(|()| {
+        Err::<(), NodeError>(NodeError::new(
+            "ERR_TEST_CALLBACK",
+            "removed close listener was invoked",
+        ))
+    });
     duplex.once_close("close", &removed).unwrap();
     let callback_readable = readable.clone();
     let listener = Callable::new(move |(_error,): (RetainedError,)| {
@@ -175,7 +209,12 @@ fn native_resource_closure_does_not_depend_on_emitting_the_close_event() {
         emit_close: false,
         ..Default::default()
     });
-    let close = Callable::new(|()| Err::<(), _>("disabled close event was emitted"));
+    let close = Callable::new(|()| {
+        Err::<(), NodeError>(NodeError::new(
+            "ERR_TEST_CALLBACK",
+            "disabled close event was emitted",
+        ))
+    });
     writable.once_close("close", &close).unwrap();
     writable.cork();
     writable.write_string("pending native input").unwrap();
@@ -190,24 +229,22 @@ fn native_resource_closure_does_not_depend_on_emitting_the_close_event() {
 #[test]
 fn end_and_uncork_propagate_native_callback_failures_instead_of_discarding_them() {
     let writable = stream::Writable::new();
-    let finish = Callable::new(|()| Err::<(), _>("native finish callback"));
+    let finish = Callable::new(|()| Err::<(), Failure>(Failure::Source("native finish callback")));
     writable.once_finish("finish", &finish).unwrap();
     let failure = writable.end().unwrap_err();
-    assert_eq!(failure.code(), "ERR_TSONIC_CALLBACK");
-    assert_eq!(failure.message(), "native finish callback");
+    assert!(matches!(failure, Failure::Source("native finish callback")));
     assert!(writable.writable_finished());
 
     let writable = stream::Writable::with_options(stream::StreamOptions {
         high_water_mark: 1,
         ..Default::default()
     });
-    let drain = Callable::new(|()| Err::<(), _>("native drain callback"));
+    let drain = Callable::new(|()| Err::<(), Failure>(Failure::Source("native drain callback")));
     writable.once_drain("drain", &drain).unwrap();
     writable.cork();
     assert!(!writable.write_buffer(&Buffer::from_bytes(vec![1])).unwrap());
     let failure = writable.uncork().unwrap_err();
-    assert_eq!(failure.code(), "ERR_TSONIC_CALLBACK");
-    assert_eq!(failure.message(), "native drain callback");
+    assert!(matches!(failure, Failure::Source("native drain callback")));
     assert!(!writable.writable_need_drain());
     writable.end().unwrap();
     assert!(writable.writable_finished());
@@ -221,19 +258,26 @@ fn destruction_callback_failure_does_not_prevent_codec_cleanup_or_close() {
     let observed = Rc::clone(&closes);
     let close = Callable::new(move |()| {
         observed.set(observed.get() + 1);
-        Err::<(), _>("later native close listener failure")
+        Err::<(), Failure>(Failure::Source("later native close listener failure"))
     });
     duplex.once_close("close", &close).unwrap();
     let expected = RetainedError::from(tsonic_rust_runtime::JsError::error("supplied codec error"));
     let callback_expected = expected.clone();
     let listener = Callable::new(move |(error,): (RetainedError,)| {
         assert_eq!(error, callback_expected);
-        Err::<(), _>("native destruction listener")
+        Err::<(), Failure>(Failure::Source("native destruction listener"))
     });
     duplex.once_error("error", &listener).unwrap();
     let failure = duplex.destroy_chain(Some(expected)).unwrap_err();
-    assert_eq!(failure.code(), "ERR_TSONIC_CALLBACK");
-    assert_eq!(failure.message(), "native destruction listener");
+    assert!(matches!(
+        failure,
+        Failure::Source("native destruction listener")
+    ));
+    let failure = duplex.destroy_chain(None).unwrap_err();
+    assert!(matches!(
+        failure,
+        Failure::Source("later native close listener failure")
+    ));
     duplex.destroy_chain(None).unwrap();
     assert!(codec.closed());
     assert!(duplex.destroyed());

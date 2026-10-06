@@ -78,12 +78,42 @@ impl<TResource> RuntimeResources<TResource> {
 
 impl<TResource: RuntimeResource> RuntimeResources<TResource> {
     pub(crate) fn register(&self, ticket: TaskTicket, resource: TResource) {
-        let mut registrations = self.registrations.borrow_mut();
-        if registrations.len() >= self.limit {
-            registrations.retain(|_, entry| entry.resource.is_alive());
+        if self.registrations.borrow().len() >= self.limit {
+            self.prune();
         }
-        assert!(registrations.len() < self.limit || registrations.contains_key(&ticket));
-        registrations.insert(ticket, Registration { resource });
+        let previous = {
+            let mut registrations = self.registrations.borrow_mut();
+            assert!(registrations.len() < self.limit || registrations.contains_key(&ticket));
+            registrations.insert(ticket, Registration { resource })
+        };
+        drop(previous);
+    }
+
+    fn prune(&self) {
+        let boundary = self
+            .registrations
+            .borrow()
+            .last_key_value()
+            .map(|(ticket, _)| *ticket);
+        let Some(boundary) = boundary else {
+            return;
+        };
+        let mut after = None;
+        loop {
+            let removed = {
+                let mut registrations = self.registrations.borrow_mut();
+                let ticket = registrations
+                    .range((after.map_or(Unbounded, Excluded), Included(boundary)))
+                    .find(|(_, entry)| !entry.resource.is_alive())
+                    .map(|(ticket, _)| *ticket);
+                let Some(ticket) = ticket else {
+                    return;
+                };
+                after = Some(ticket);
+                registrations.remove(&ticket)
+            };
+            drop(removed);
+        }
     }
 
     fn next_resource(&self, frontier: &ResourceFrontier) -> Option<(TaskTicket, TResource)> {
@@ -109,8 +139,8 @@ impl<TResource: RuntimeResource> DispatchContexts for RuntimeResources<TResource
     type Frontier = ResourceFrontier;
 
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, Self::Error> {
-        let mut registrations = self.registrations.borrow_mut();
-        registrations.retain(|_, entry| entry.resource.is_alive());
+        self.prune();
+        let registrations = self.registrations.borrow();
         let mut frontier = ResourceFrontier {
             phase,
             boundary: registrations.last_key_value().map(|(ticket, _)| *ticket),

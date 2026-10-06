@@ -152,12 +152,14 @@ impl DetachedHttpWritableBackend {
     }
 }
 
-impl crate::stream::WritableBackend for DetachedHttpWritableBackend {
-    fn write(&self, chunk: Buffer) -> NodeResult<()> {
-        self.state.borrow_mut().write(chunk)
+impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E>
+    for DetachedHttpWritableBackend
+{
+    fn write(&self, chunk: Buffer) -> crate::stream::StreamBackendResult<(), E> {
+        self.state.borrow_mut().write(chunk).map_err(Into::into)
     }
 
-    fn flush(&self) -> NodeResult<()> {
+    fn flush(&self) -> crate::stream::StreamBackendResult<(), E> {
         let mut state = self.state.borrow_mut();
         state.start(None)?;
         state
@@ -166,14 +168,15 @@ impl crate::stream::WritableBackend for DetachedHttpWritableBackend {
             .ok_or_else(runtime_response_closed)?
             .flush()
             .map_err(runtime_http_io_error)
+            .map_err(Into::into)
     }
 
-    fn finish(&self) -> NodeResult<bool> {
+    fn finish(&self) -> crate::stream::StreamBackendResult<bool, E> {
         self.state.borrow_mut().finish()?;
         Ok(true)
     }
 
-    fn destroy(&self) -> NodeResult<()> {
+    fn destroy(&self) -> crate::stream::StreamBackendResult<(), E> {
         self.state.borrow_mut().stream.take();
         Ok(())
     }
@@ -183,39 +186,16 @@ impl crate::stream::WritableBackend for DetachedHttpWritableBackend {
     }
 }
 
-thread_local! {
-    static PENDING_DETACHED_RESPONSES: RefCell<Vec<ServerResponse>> = const { RefCell::new(Vec::new()) };
-}
-
-fn retain_detached_response(response: ServerResponse) {
-    if !response.writable_finished() && !response.destroyed() {
-        PENDING_DETACHED_RESPONSES.with(|responses| responses.borrow_mut().push(response));
-    }
-}
-
-fn has_pending_detached_responses() -> bool {
-    PENDING_DETACHED_RESPONSES.with(|responses| !responses.borrow().is_empty())
-}
-
-fn poll_detached_responses() -> bool {
-    PENDING_DETACHED_RESPONSES.with(|responses| {
-        let mut responses = responses.borrow_mut();
-        let before = responses.len();
-        responses.retain(|response| !response.writable_finished() && !response.destroyed());
-        responses.len() != before
-    })
-}
-
 #[cfg(test)]
 mod detached_response_tests {
     use super::{
-        accept_runtime_transport, has_pending_detached_responses, poll_detached_responses,
-        IncomingMessage, RuntimeTransport, ServerResponse,
+        accept_runtime_transport, HttpServers, IncomingMessage, RuntimeTransport, ServerResponse,
     };
     use std::cell::RefCell;
     use std::io::{Cursor, Read, Write};
     use std::net::SocketAddr;
     use std::rc::Rc;
+    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
     use tsonic_rust_runtime::{Callable, TsonicError};
 
     struct MemoryTransport {
@@ -249,16 +229,21 @@ mod detached_response_tests {
     #[test]
     fn detached_response_can_finish_after_request_callback_returns() {
         let output = Rc::new(RefCell::new(Vec::new()));
-        let retained = Rc::new(RefCell::new(None::<ServerResponse>));
+        let retained = Rc::new(RefCell::new(None::<ServerResponse<TsonicError>>));
         let retained_in_handler = Rc::clone(&retained);
         let transport = MemoryTransport {
             input: Cursor::new(b"GET /later HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec()),
             output: Rc::clone(&output),
         };
+        let roots = HttpServers::<TsonicError>::new();
         accept_runtime_transport(
+            &roots.handle(),
             Box::new(transport),
             Callable::new(
-                move |(request, response): (IncomingMessage, ServerResponse)| {
+                move |(request, response): (
+                    IncomingMessage<TsonicError>,
+                    ServerResponse<TsonicError>,
+                )| {
                     assert_eq!(request.url(), Some("/later".to_string()));
                     *retained_in_handler.borrow_mut() = Some(response);
                     Ok::<(), TsonicError>(())
@@ -267,13 +252,13 @@ mod detached_response_tests {
         )
         .unwrap();
 
-        assert!(has_pending_detached_responses());
+        assert!(roots.has_work());
         assert!(output.borrow().is_empty());
         let response = retained.borrow_mut().take().unwrap();
         response.write_string("a").unwrap();
         response.end_string("b").unwrap();
-        assert!(poll_detached_responses());
-        assert!(!has_pending_detached_responses());
+        roots.prepare(DispatchPhase::Http).unwrap();
+        assert!(!roots.has_work());
 
         let wire = output.borrow();
         assert!(wire.starts_with(b"HTTP/1.1 200 OK\r\n"));

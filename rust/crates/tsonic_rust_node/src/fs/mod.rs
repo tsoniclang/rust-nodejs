@@ -15,9 +15,13 @@ include!("metadata.rs");
 include!("constants_errors.rs");
 
 #[cfg(test)]
+mod native_stream_tests;
+
+#[cfg(test)]
 mod numeric_bounds {
     #[test]
     fn stream_integer_bounds_do_not_saturate() {
+        let background = crate::background::BackgroundTasks::<crate::NodeError>::new();
         let source = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
         for options in [
             super::ReadStreamOptions {
@@ -36,6 +40,7 @@ mod numeric_bounds {
             },
         ] {
             let result = super::ReadStream::from_file(
+                &background,
                 source.to_owned(),
                 std::fs::File::open(source).unwrap(),
                 &options,
@@ -51,6 +56,7 @@ mod numeric_bounds {
             ..Default::default()
         };
         let result = super::ReadStream::from_file(
+            &background,
             source.to_owned(),
             std::fs::File::open(source).unwrap(),
             &options,

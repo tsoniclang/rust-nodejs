@@ -158,24 +158,32 @@ impl CompressionStream {
 
 pub type DecompressionStream = CompressionStream;
 
-pub fn readable_to_web(readable: Readable) -> ReadableStream {
-    ReadableStream::from_chunks(readable.to_vec())
+pub fn readable_to_web<E: From<crate::NodeError> + 'static>(
+    readable: Readable<E>,
+) -> Result<ReadableStream, E> {
+    Ok(ReadableStream::from_chunks(readable.to_vec()?))
 }
 
-pub fn readable_from_web(stream: ReadableStream) -> Readable {
+pub fn readable_from_web<E: From<crate::NodeError> + 'static>(
+    stream: ReadableStream,
+) -> Readable<E> {
     Readable::from_chunks(stream.chunks)
 }
 
-pub fn writable_to_web(writable: Writable) -> WritableStream {
+pub fn writable_to_web<E: From<crate::NodeError> + 'static>(
+    writable: Writable<E>,
+) -> WritableStream {
     let mut stream = WritableStream::new();
     stream.chunks = writable.chunks().to_vec();
     stream
 }
 
-pub fn writable_from_web(stream: WritableStream) -> Writable {
-    let writable = Writable::new();
+pub fn writable_from_web<E: From<crate::NodeError> + 'static>(
+    stream: WritableStream,
+) -> Result<Writable<E>, E> {
+    let writable = Writable::<E>::new();
     for chunk in stream.chunks {
-        writable.write(chunk);
+        writable.write(chunk)?;
     }
-    writable
+    Ok(writable)
 }

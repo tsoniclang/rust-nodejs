@@ -110,11 +110,3 @@ impl From<NodeError> for tsonic_rust_runtime::RetainedError {
         Self::from(tsonic_rust_runtime::TsonicError::from(value))
     }
 }
-
-pub(crate) fn callback_runtime_error(error: impl fmt::Display) -> tsonic_rust_runtime::TsonicError {
-    NodeError::new("ERR_TSONIC_CALLBACK", error.to_string()).into()
-}
-
-pub(crate) fn callback_node_error(error: impl fmt::Display) -> NodeError {
-    NodeError::new("ERR_TSONIC_CALLBACK", error.to_string())
-}

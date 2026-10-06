@@ -1,15 +1,13 @@
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Duplex {
-    readable: Readable,
-    writable: Writable,
+pub struct Duplex<E: 'static = NodeError> {
+    readable: Readable<E>,
+    writable: Writable<E>,
     allow_half_open: bool,
 }
 
-impl Default for Duplex {
+impl<E: From<NodeError> + 'static> Default for Duplex<E> {
     fn default() -> Self {
-        let readable = Readable::default();
-        let writable = Writable::with_backend(
+        let readable = Readable::<E>::default();
+        let writable = Writable::<E>::with_backend(
             StreamOptions::default(),
             Rc::new(MemoryWritableBackend::default()),
             Some(readable.lifecycle()),
@@ -18,9 +16,9 @@ impl Default for Duplex {
     }
 }
 
-impl Duplex {
-    pub fn new(readable: Readable, writable: Writable) -> Self {
-        StreamLifecycle::join(&readable, &writable);
+impl<E: From<NodeError> + 'static> Duplex<E> {
+    pub fn new(readable: Readable<E>, writable: Writable<E>) -> Self {
+        StreamLifecycle::<E>::join(&readable, &writable);
         Self {
             readable,
             writable,
@@ -29,11 +27,11 @@ impl Duplex {
     }
 
     pub fn with_options(
-        readable: Readable,
-        writable: Writable,
+        readable: Readable<E>,
+        writable: Writable<E>,
         options: DuplexOptions,
     ) -> Self {
-        StreamLifecycle::join(&readable, &writable);
+        StreamLifecycle::<E>::join(&readable, &writable);
         for _ in 0..options.writable_corked {
             writable.cork();
         }
@@ -44,95 +42,95 @@ impl Duplex {
         }
     }
 
-    pub fn readable_handle(&self) -> Readable {
+    pub fn readable_handle(&self) -> Readable<E> {
         self.readable.clone()
     }
 
-    pub fn writable_handle(&self) -> Writable {
+    pub fn writable_handle(&self) -> Writable<E> {
         self.writable.clone()
     }
 
-    pub fn read(&self) -> Option<Buffer> {
+    pub fn read(&self) -> Result<Option<Buffer>, E> {
         self.readable.read()
     }
 
-    pub fn on_data<E: std::fmt::Display + 'static>(
+    pub fn on_data(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.on_data(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn once_data<E: std::fmt::Display + 'static>(
+    pub fn once_data(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.once_data(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn off_data<E>(
+    pub fn off_data(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.off_data(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn on_end<E: std::fmt::Display + 'static>(
+    pub fn on_end(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.on_end(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn once_end<E: std::fmt::Display + 'static>(
+    pub fn once_end(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.once_end(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn off_end<E>(
+    pub fn off_end(
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
-    ) -> NodeResult<Self> {
+    ) -> Result<Self, E> {
         self.readable.off_end(event, listener)?;
         Ok(self.clone())
     }
 
-    pub fn write(&self, chunk: Buffer) -> bool {
+    pub fn write(&self, chunk: Buffer) -> Result<bool, E> {
         self.writable.write(chunk)
     }
 
-    pub fn write_string(&self, chunk: &str) -> NodeResult<bool> {
+    pub fn write_string(&self, chunk: &str) -> Result<bool, E> {
         self.writable.write_string(chunk)
     }
 
-    pub fn write_buffer(&self, chunk: &Buffer) -> NodeResult<bool> {
+    pub fn write_buffer(&self, chunk: &Buffer) -> Result<bool, E> {
         self.writable.write_buffer(chunk)
     }
 
-    pub fn end(&self) -> NodeResult<Self> {
+    pub fn end(&self) -> Result<Self, E> {
         self.writable.end()?;
         Ok(self.clone())
     }
 
-    pub fn end_string(&self, chunk: &str) -> NodeResult<Self> {
+    pub fn end_string(&self, chunk: &str) -> Result<Self, E> {
         self.writable.end_string(chunk)?;
         Ok(self.clone())
     }
 
-    pub fn end_buffer(&self, chunk: &Buffer) -> NodeResult<Self> {
+    pub fn end_buffer(&self, chunk: &Buffer) -> Result<Self, E> {
         self.writable.end_buffer(chunk)?;
         Ok(self.clone())
     }
@@ -141,7 +139,7 @@ impl Duplex {
         self.writable.cork();
     }
 
-    pub fn uncork(&self) -> NodeResult<()> {
+    pub fn uncork(&self) -> Result<(), E> {
         self.writable.uncork()
     }
 
@@ -181,48 +179,61 @@ impl Duplex {
         self.readable.destroyed() || self.writable.destroyed()
     }
 
-    pub fn destroy(&self) {
-        self.writable.destroy();
+    pub fn destroy(&self) -> Result<(), E> {
+        self.writable.destroy()
     }
 
-    pub fn destroy_chain(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> NodeResult<Self> {
+    pub fn destroy_chain(
+        &self,
+        error: Option<tsonic_rust_runtime::RetainedError>,
+    ) -> Result<Self, E> {
         self.writable.destroy_chain(error)?;
         Ok(self.clone())
     }
-
 }
 
-impl WritableTarget for Duplex {
-    fn writable_handle(&self) -> Writable {
+impl<E: From<NodeError> + 'static> WritableTarget<E> for Duplex<E> {
+    fn writable_handle(&self) -> Writable<E> {
         self.writable.clone()
     }
 }
 
-struct TransformBackend {
+struct TransformBackend<E: 'static> {
     transform: fn(Buffer) -> Buffer,
-    readable: Readable,
+    readable: Readable<E>,
 }
 
-impl WritableBackend for TransformBackend {
-    fn bind(&self, owner: WeakWritable) {
+impl<E: From<NodeError> + 'static> WritableBackend<E> for TransformBackend<E> {
+    fn bind(&self, owner: WeakWritable<E>) {
         self.readable.set_capacity_handler(move || {
-            owner.upgrade().map_or(Ok(()), |writable| writable.poll_progress())
+            owner
+                .upgrade()
+                .map_or(Ok(()), |writable| writable.poll_progress())
         });
     }
 
-    fn write(&self, chunk: Buffer) -> NodeResult<()> {
-        self.readable.enqueue((self.transform)(chunk))?;
+    fn write(&self, chunk: Buffer) -> StreamBackendResult<(), E> {
+        self.readable
+            .enqueue((self.transform)(chunk))
+            .map_err(StreamBackendFailure::Callback)?;
         Ok(())
     }
 
-    fn finish(&self) -> NodeResult<bool> {
-        self.readable.finish_input()?;
+    fn finish(&self) -> StreamBackendResult<bool, E> {
+        self.readable
+            .finish_input()
+            .map_err(StreamBackendFailure::Callback)?;
         Ok(true)
     }
 
-    fn destroy(&self) -> NodeResult<()> {
-        self.readable.destroy();
-        Ok(())
+    fn finish_accepted(&self) -> bool {
+        self.readable.state.borrow().producer_ended
+    }
+
+    fn destroy(&self) -> StreamBackendResult<(), E> {
+        self.readable
+            .destroy()
+            .map_err(StreamBackendFailure::Callback)
     }
 
     fn buffered_bytes(&self) -> usize {
@@ -230,134 +241,204 @@ impl WritableBackend for TransformBackend {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transform {
-    inner: Duplex,
+pub struct Transform<E: 'static = NodeError> {
+    inner: Duplex<E>,
 }
 
-impl Transform {
+impl<E: From<NodeError> + 'static> Transform<E> {
     pub fn new(transform: fn(Buffer) -> Buffer) -> Self {
-        let readable = Readable::default();
-        let writable = Writable::with_backend(
+        let readable = Readable::<E>::default();
+        let writable = Writable::<E>::with_backend(
             StreamOptions::default(),
-            Rc::new(TransformBackend {
+            Rc::new(TransformBackend::<E> {
                 transform,
                 readable: readable.clone(),
             }),
             Some(readable.lifecycle()),
         );
         Self {
-            inner: Duplex::new(readable, writable),
+            inner: Duplex::<E>::new(readable, writable),
         }
     }
 
-    pub(crate) fn from_parts(readable: Readable, writable: Writable) -> Self {
+    pub(crate) fn from_parts(readable: Readable<E>, writable: Writable<E>) -> Self {
         Self {
-            inner: Duplex::new(readable, writable),
+            inner: Duplex::<E>::new(readable, writable),
         }
     }
 
-    pub fn duplex_handle(&self) -> Duplex {
+    pub fn duplex_handle(&self) -> Duplex<E> {
         self.inner.clone()
     }
 
-    pub fn readable_handle(&self) -> Readable {
+    pub fn readable_handle(&self) -> Readable<E> {
         self.inner.readable_handle()
     }
 
-    pub fn writable_handle(&self) -> Writable {
+    pub fn writable_handle(&self) -> Writable<E> {
         self.inner.writable_handle()
     }
 
-    pub fn write(&self, chunk: Buffer) -> bool {
+    pub fn write(&self, chunk: Buffer) -> Result<bool, E> {
         self.inner.write(chunk)
     }
 
-    pub fn write_string(&self, chunk: &str) -> NodeResult<bool> {
+    pub fn write_string(&self, chunk: &str) -> Result<bool, E> {
         self.inner.write_string(chunk)
     }
 
-    pub fn write_buffer(&self, chunk: &Buffer) -> NodeResult<bool> {
+    pub fn write_buffer(&self, chunk: &Buffer) -> Result<bool, E> {
         self.inner.write_buffer(chunk)
     }
 
-    pub fn read(&self) -> Option<Buffer> {
+    pub fn read(&self) -> Result<Option<Buffer>, E> {
         self.inner.read()
     }
 
-    pub fn end(&self) -> NodeResult<Self> {
+    pub fn end(&self) -> Result<Self, E> {
         self.inner.end()?;
         Ok(self.clone())
     }
 }
 
-impl WritableTarget for Transform {
-    fn writable_handle(&self) -> Writable {
+impl<E: From<NodeError> + 'static> WritableTarget<E> for Transform<E> {
+    fn writable_handle(&self) -> Writable<E> {
         self.inner.writable_handle()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PassThrough {
-    inner: Transform,
+pub struct PassThrough<E: 'static = NodeError> {
+    inner: Transform<E>,
 }
 
-impl Default for PassThrough {
+impl<E: From<NodeError> + 'static> Default for PassThrough<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl PassThrough {
+impl<E: From<NodeError> + 'static> PassThrough<E> {
     pub fn new() -> Self {
         Self {
-            inner: Transform::new(|chunk| chunk),
+            inner: Transform::<E>::new(|chunk| chunk),
         }
     }
 
-    pub fn write(&self, chunk: Buffer) -> bool {
+    pub fn write(&self, chunk: Buffer) -> Result<bool, E> {
         self.inner.write(chunk)
     }
 
-    pub fn read(&self) -> Option<Buffer> {
+    pub fn read(&self) -> Result<Option<Buffer>, E> {
         self.inner.read()
     }
 
-    pub fn end(&self) -> NodeResult<()> {
+    pub fn end(&self) -> Result<(), E> {
         self.inner.end().map(|_| ())
     }
 }
 
-impl WritableTarget for PassThrough {
-    fn writable_handle(&self) -> Writable {
+impl<E: From<NodeError> + 'static> WritableTarget<E> for PassThrough<E> {
+    fn writable_handle(&self) -> Writable<E> {
         self.inner.writable_handle()
     }
 }
 
-pub fn duplex_as_readable(value: &Duplex) -> Readable {
+pub fn duplex_as_readable<E: From<NodeError> + 'static>(value: &Duplex<E>) -> Readable<E> {
     value.readable_handle()
 }
 
-pub fn duplex_as_writable(value: &Duplex) -> Writable {
+pub fn duplex_as_writable<E: From<NodeError> + 'static>(value: &Duplex<E>) -> Writable<E> {
     value.writable_handle()
 }
 
-pub fn duplex_as_stream(value: &Duplex) -> Stream {
+pub fn duplex_as_stream<E: From<NodeError> + 'static>(value: &Duplex<E>) -> Stream<E> {
     readable_as_stream(&value.readable_handle())
 }
 
-pub fn transform_as_duplex(value: &Transform) -> Duplex {
+pub fn transform_as_duplex<E: From<NodeError> + 'static>(value: &Transform<E>) -> Duplex<E> {
     value.duplex_handle()
 }
 
-pub fn transform_as_readable(value: &Transform) -> Readable {
+pub fn transform_as_readable<E: From<NodeError> + 'static>(value: &Transform<E>) -> Readable<E> {
     value.duplex_handle().readable_handle()
 }
 
-pub fn transform_as_writable(value: &Transform) -> Writable {
+pub fn transform_as_writable<E: From<NodeError> + 'static>(value: &Transform<E>) -> Writable<E> {
     value.duplex_handle().writable_handle()
 }
 
-pub fn transform_as_stream(value: &Transform) -> Stream {
+pub fn transform_as_stream<E: From<NodeError> + 'static>(value: &Transform<E>) -> Stream<E> {
     readable_as_stream(&value.duplex_handle().readable_handle())
 }
+
+impl<E: 'static> Clone for Duplex<E> {
+    fn clone(&self) -> Self {
+        Self {
+            readable: self.readable.clone(),
+            writable: self.writable.clone(),
+            allow_half_open: self.allow_half_open,
+        }
+    }
+}
+impl<E: 'static> std::fmt::Debug for Duplex<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Duplex")
+            .field("readable", &self.readable)
+            .field("writable", &self.writable)
+            .field("allow_half_open", &self.allow_half_open)
+            .finish()
+    }
+}
+impl<E: 'static> PartialEq for Duplex<E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.readable == other.readable
+            && self.writable == other.writable
+            && self.allow_half_open == other.allow_half_open
+    }
+}
+impl<E: 'static> Eq for Duplex<E> {}
+
+impl<E: 'static> Clone for Transform<E> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+impl<E: 'static> std::fmt::Debug for Transform<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("Transform")
+            .field(&self.inner)
+            .finish()
+    }
+}
+impl<E: 'static> PartialEq for Transform<E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+impl<E: 'static> Eq for Transform<E> {}
+
+impl<E: 'static> Clone for PassThrough<E> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+impl<E: 'static> std::fmt::Debug for PassThrough<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("PassThrough")
+            .field(&self.inner)
+            .finish()
+    }
+}
+impl<E: 'static> PartialEq for PassThrough<E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+impl<E: 'static> Eq for PassThrough<E> {}

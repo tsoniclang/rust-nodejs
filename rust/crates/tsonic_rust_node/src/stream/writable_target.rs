@@ -1,9 +1,9 @@
-pub trait WritableTarget: Clone {
-    fn writable_handle(&self) -> Writable;
+pub trait WritableTarget<E: 'static = NodeError>: Clone {
+    fn writable_handle(&self) -> Writable<E>;
 }
 
-impl WritableTarget for Writable {
-    fn writable_handle(&self) -> Writable {
+impl<E: 'static> WritableTarget<E> for Writable<E> {
+    fn writable_handle(&self) -> Writable<E> {
         self.clone()
     }
 }

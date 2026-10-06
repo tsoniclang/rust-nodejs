@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext } from "./model/dispatch.js";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
@@ -388,6 +388,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.NetServers": "tsonic_rust_node::net::NetServers",
       "rust.node.Watchers": "tsonic_rust_node::fs::Watchers",
       "rust.node.TlsServers": "tsonic_rust_node::tls::TlsServers",
+      "rust.node.HttpServers": "tsonic_rust_node::http::HttpServers",
+      "rust.node.HttpHandle": "tsonic_rust_node::http::HttpHandle",
       "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
@@ -456,7 +458,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.MessageChannel": cloneOnlyCarrierTraits,
       "rust.node.EventEmitter": cloneOnlyCarrierTraits,
     },
-    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext],
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",

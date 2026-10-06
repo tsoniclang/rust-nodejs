@@ -59,7 +59,9 @@ const expectedModules = [
 
 function expectedDispatchGroup(targetArgumentIndex) {
   return {
-    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks", "tsonic.rust.node.timers"], targetArgumentIndex,
+    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks", "tsonic.rust.node.timers",
+      "tsonic.rust.node.workers", "tsonic.rust.node.signals", "tsonic.rust.node.net", "tsonic.rust.node.watchers",
+      "tsonic.rust.node.tls", "tsonic.rust.node.http"], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: [{ kind: "type", type: {
         kind: "target-named", id: "rust.program.TsonicError",
@@ -239,13 +241,27 @@ test("provider type relations carry exact closed target carriers", () => {
   assert.equal(contribution.kind, "rust-provider-policy");
   const { types, carrierPaths } = contribution.definition;
   const carrierId = (carrier) => carrier.kind === "target-specific" ? carrier.value.id : carrier.id;
+  const retainedOwners = new Set([
+    "node:process::ProcessWriteStream", "node:http::IncomingMessage", "node:http::ServerResponse", "node:http::Server",
+    "node:events::EventEmitter", "node:stream::Stream", "node:stream::Readable", "node:stream::Writable",
+    "node:stream::Duplex", "node:stream::Transform", "node:fs::ReadStream", "node:fs::WriteStream", "node:fs::FSWatcher",
+    "node:zlib::ZlibTransform", "node:net::Server", "node:tls::Server", "node:https::Server", "node:https::ClientRequest",
+    "node:readline::ReadLineOptions", "node:readline::Interface", "node:worker_threads::Worker",
+    "node:worker_threads::MessagePort", "node:worker_threads::MessageChannel",
+  ]);
+  const errorArguments = [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }];
   const namedRelations = types.map((relation) => {
     const carrier = relation.targetCarrier;
-    if (carrier.kind !== "target-specific") return relation;
+    if (carrier.kind !== "target-specific") {
+      if (!retainedOwners.has(relation.exportId)) return relation;
+      assert.equal(carrier.kind, "target-named", relation.exportId);
+      assert.deepEqual(carrier.genericArguments, errorArguments, relation.exportId);
+      return { ...relation, targetCarrier: { kind: "target-named", id: carrier.id } };
+    }
     assert.equal(carrier.target, "rust");
     assert.equal(carrier.name, "named-type");
     assert.equal(carrier.value.path, carrierPaths[carrier.value.id]);
-    assert.deepEqual(carrier.value.genericArguments, []);
+    assert.deepEqual(carrier.value.genericArguments, retainedOwners.has(relation.exportId) ? errorArguments : [], relation.exportId);
     assert.deepEqual(carrier.value.genericDefaults, []);
     assert.deepEqual(carrier.value.traits, { implementations:
       relation.exportId === "node:zlib::ZlibTransform"
@@ -355,6 +371,10 @@ test("provider type relations carry exact closed target carriers", () => {
       expectedUpcasts.get(relation.exportId) ?? [],
       relation.exportId,
     );
+    for (const upcast of carrier.value.upcasts) {
+      const projected = upcast.target.kind === "target-specific" ? upcast.target.value : upcast.target;
+      assert.deepEqual(projected.genericArguments ?? [], retainedOwners.has(relation.exportId) ? errorArguments : [], upcast.path);
+    }
   }
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
     implementations: [

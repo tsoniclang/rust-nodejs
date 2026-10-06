@@ -1,8 +1,8 @@
-import { rustProgramErrorTargetType, rustJsTimerDispatchContextId } from "@tsonic/target-rust/provider";
+import { rustJsTimerDispatchContextId } from "@tsonic/target-rust/provider";
 import type { RustDispatchContextDefinition, RustDispatchContextGroupInput, RustDispatchContextInput } from "@tsonic/target-rust/provider";
-import { emptyCallbackCarrier } from "./carriers.js";
+import { emptyCallbackCarrier, nodeProgramErrorArguments } from "./carriers.js";
 
-const errorArguments = [{ kind: "type" as const, type: rustProgramErrorTargetType() }];
+const errorArguments = nodeProgramErrorArguments;
 export const nodeTimerCallbackCarrier = emptyCallbackCarrier;
 
 export const nodeBackgroundContext: RustDispatchContextDefinition = {
@@ -93,6 +93,19 @@ export const nodeTlsInput: RustDispatchContextInput = {
   contextId: nodeTlsContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
 };
 
+export const nodeHttpContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.http",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.HttpServers", genericArguments: errorArguments },
+  construct: { form: "call", path: "tsonic_rust_node::http::HttpServers::new", const: true },
+  handleCarrier: { kind: "target-named", id: "rust.node.HttpHandle", genericArguments: errorArguments },
+  handle: { form: "receiver-method", name: "handle" },
+  composedContexts: [],
+};
+export const nodeHttpInput: RustDispatchContextInput = {
+  contextId: nodeHttpContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
 export const nodeTimerContext: RustDispatchContextDefinition = {
   id: "tsonic.rust.node.timers",
   requiredCrate: "tsonic_rust_node",
@@ -107,7 +120,7 @@ export const nodeTimerInput: RustDispatchContextInput = {
 
 export function nodeDispatchGroup(targetArgumentIndex: number, jsEnabled: boolean): RustDispatchContextGroupInput {
   return {
-    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id, nodeNetContext.id, nodeWatcherContext.id, nodeTlsContext.id,
+    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id, nodeNetContext.id, nodeWatcherContext.id, nodeTlsContext.id, nodeHttpContext.id,
       ...(jsEnabled ? [rustJsTimerDispatchContextId] : [])], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: errorArguments,

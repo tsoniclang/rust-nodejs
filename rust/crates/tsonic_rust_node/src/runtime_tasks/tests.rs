@@ -179,9 +179,11 @@ fn native_and_component_tasks_use_one_phase_order_without_reboxing() {
     let root = RuntimeTasks::<Failure>::new();
     let observed = Rc::new(RefCell::new(Vec::new()));
     let native_observed = Rc::clone(&observed);
-    crate::event_loop::enqueue_runtime_task(move || {
-        native_observed.borrow_mut().push(1);
-        Ok(())
+    crate::runtime_tasks::with_default(|tasks| {
+        tasks.enqueue(move || {
+            native_observed.borrow_mut().push(1);
+            Ok(())
+        })
     })
     .unwrap();
     let typed_observed = Rc::clone(&observed);
@@ -191,9 +193,11 @@ fn native_and_component_tasks_use_one_phase_order_without_reboxing() {
     })
     .unwrap();
     let last_observed = Rc::clone(&observed);
-    crate::event_loop::enqueue_runtime_task(move || {
-        last_observed.borrow_mut().push(3);
-        Ok(())
+    crate::runtime_tasks::with_default(|tasks| {
+        tasks.enqueue(move || {
+            last_observed.borrow_mut().push(3);
+            Ok(())
+        })
     })
     .unwrap();
     assert!(

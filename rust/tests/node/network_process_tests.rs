@@ -421,7 +421,11 @@ fn http_request_shape_uses_exact_headers_and_one_body_stream() {
     assert!(http::validate_header_name("bad header").is_err());
     assert!(http::validate_header_value("x-token", "bad\nvalue").is_err());
 
-    let request = http::IncomingMessage::new("POST", "/submit", b"payload".to_vec());
+    let request = http::IncomingMessage::<tsonic_rust_node::NodeError>::new(
+        "POST",
+        "/submit",
+        b"payload".to_vec(),
+    );
     assert_eq!(request.method(), Some("POST".to_string()));
     assert_eq!(request.url(), Some("/submit".to_string()));
     assert_eq!(request.http_version(), "1.1");
@@ -433,10 +437,15 @@ fn http_request_shape_uses_exact_headers_and_one_body_stream() {
         .is_none());
     assert!(request.headers_distinct().get_values("bad header").is_err());
     assert_eq!(
-        request.read().unwrap().to_string(Some("utf8")).unwrap(),
+        request
+            .read()
+            .unwrap()
+            .unwrap()
+            .to_string(Some("utf8"))
+            .unwrap(),
         "payload"
     );
-    assert!(request.read().is_none());
+    assert!(request.read().unwrap().is_none());
     request.destroy_chain(None).unwrap();
     assert!(request.destroyed());
 }
@@ -551,9 +560,9 @@ fn http_agent_and_client_request_expose_common_state() {
     request.remove_header("x-client");
     assert_eq!(request.get_header("x-client"), None);
     assert!(request.get_headers().is_empty());
-    assert!(
-        request.write(tsonic_rust_node::buffer::Buffer::from_string("body", Some("utf8")).unwrap())
-    );
+    assert!(request
+        .write(tsonic_rust_node::buffer::Buffer::from_string("body", Some("utf8")).unwrap())
+        .unwrap());
     request
         .end(Some(
             tsonic_rust_node::buffer::Buffer::from_string("!", Some("utf8")).unwrap(),
