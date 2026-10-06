@@ -1,4 +1,4 @@
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroUsize;
 use std::rc::{Rc, Weak};
@@ -57,7 +57,6 @@ struct SourceThreadCompletions<TError> {
     receiver: Receiver<WorkCompletion>,
     in_flight: BTreeMap<TaskTicket, PendingCompletion<TError>>,
     ready: VecDeque<(u64, PendingCompletion<TError>)>,
-    next_ready_ticket: u64,
 }
 
 impl<TError> SourceThreadCompletions<TError> {
@@ -68,7 +67,6 @@ impl<TError> SourceThreadCompletions<TError> {
             receiver,
             in_flight: BTreeMap::new(),
             ready: VecDeque::new(),
-            next_ready_ticket: 0,
         }
     }
 
@@ -209,6 +207,7 @@ where
 }
 
 thread_local! {
+    static NEXT_COMPLETION_TICKET: Cell<u64> = const { Cell::new(0) };
     static BACKGROUND_TASK_BUDGET: OnceCell<TaskBudget> = const { OnceCell::new() };
     static SOURCE_THREAD_COMPLETIONS: BackgroundTasks<TsonicError> =
         const { BackgroundTasks::new() };
@@ -237,6 +236,7 @@ where
     SOURCE_THREAD_COMPLETIONS.with(|source| source.spawn(work, completion))
 }
 
+#[cfg(test)]
 pub(crate) fn poll() -> Result<bool, TsonicError> {
     SOURCE_THREAD_COMPLETIONS.with(BackgroundTasks::poll)
 }
@@ -256,30 +256,40 @@ fn poll_completions<TError: From<TsonicError>>(
     };
     let mut did_work = false;
     loop {
-        let callback = {
-            let mut source = source.borrow_mut();
-            if source
-                .ready
-                .front()
-                .is_some_and(|(ticket, _)| *ticket <= boundary)
-            {
-                source.ready.pop_front().map(|(_, callback)| callback)
-            } else {
-                None
-            }
-        };
-        let Some(PendingCompletion {
-            reservation,
-            callback,
-        }) = callback
-        else {
+        if !poll_next_completion(source, boundary)? {
             break;
-        };
-        drop(reservation);
-        callback.complete()?;
+        }
         did_work = true;
     }
     Ok(did_work)
+}
+
+fn poll_next_completion<TError: From<TsonicError>>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+    boundary: u64,
+) -> Result<bool, TError> {
+    let callback = {
+        let mut source = source.borrow_mut();
+        if source
+            .ready
+            .front()
+            .is_some_and(|(ticket, _)| *ticket <= boundary)
+        {
+            source.ready.pop_front().map(|(_, callback)| callback)
+        } else {
+            None
+        }
+    };
+    let Some(PendingCompletion {
+        reservation,
+        callback,
+    }) = callback
+    else {
+        return Ok(false);
+    };
+    drop(reservation);
+    callback.complete()?;
+    Ok(true)
 }
 
 fn publish_completions<TError>(
@@ -289,11 +299,16 @@ fn publish_completions<TError>(
     loop {
         match source.receiver.try_recv() {
             Ok(value) => {
-                let next = source.next_ready_ticket.checked_add(1).ok_or_else(|| {
-                    crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_WORK_LIMIT",
-                        "background ready ticket range is exhausted",
-                    )
+                let ticket = NEXT_COMPLETION_TICKET.with(|sequence| {
+                    let ticket = sequence.get();
+                    let next = ticket.checked_add(1).ok_or_else(|| {
+                        crate::NodeError::new(
+                            "ERR_NODE_BACKGROUND_WORK_LIMIT",
+                            "background ready ticket range is exhausted",
+                        )
+                    })?;
+                    sequence.set(next);
+                    Ok::<_, crate::NodeError>(ticket)
                 })?;
                 let callback = source.in_flight.remove(&value.id).ok_or_else(|| {
                     crate::NodeError::new(
@@ -301,8 +316,6 @@ fn publish_completions<TError>(
                         "background work completed without its exact callback",
                     )
                 })?;
-                let ticket = source.next_ready_ticket;
-                source.next_ready_ticket = next;
                 source.ready.push_back((ticket, callback));
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -315,6 +328,54 @@ fn publish_completions<TError>(
         }
     }
     Ok(source.ready.back().map(|(ticket, _)| *ticket))
+}
+
+impl<TError: From<TsonicError>> crate::dispatch::DispatchContexts for BackgroundTasks<TError> {
+    type Error = TError;
+    type Frontier = Option<u64>;
+
+    fn prepare(&self, phase: crate::dispatch::DispatchPhase) -> Result<Self::Frontier, TError> {
+        if phase != crate::dispatch::DispatchPhase::Background {
+            return Ok(None);
+        }
+        self.source.get().map_or(Ok(None), |source| {
+            publish_completions(source)
+                .map_err(TsonicError::from)
+                .map_err(TError::from)
+        })
+    }
+
+    fn next_ready(&self, frontier: &Self::Frontier) -> Option<u64> {
+        let boundary = (*frontier)?;
+        self.source.get().and_then(|source| {
+            source
+                .borrow()
+                .ready
+                .front()
+                .and_then(|(ticket, _)| (*ticket <= boundary).then_some(*ticket))
+        })
+    }
+
+    fn poll_next(&self, frontier: &Self::Frontier) -> Result<bool, TError> {
+        match (self.source.get(), frontier) {
+            (Some(source), Some(boundary)) => poll_next_completion(source, *boundary),
+            _ => Ok(false),
+        }
+    }
+
+    fn has_work(&self) -> bool {
+        self.has_pending_work()
+    }
+
+    fn next_delay(&self) -> Option<std::time::Duration> {
+        None
+    }
+}
+
+pub(crate) fn with_default<TValue>(
+    callback: impl FnOnce(&BackgroundTasks<TsonicError>) -> TValue,
+) -> TValue {
+    SOURCE_THREAD_COMPLETIONS.with(callback)
 }
 
 #[cfg(test)]

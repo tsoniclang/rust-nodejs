@@ -6,6 +6,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
+use crate::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_js::event_loop::EventLoopDriver;
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 use tsonic_rust_runtime::TsonicResult;
@@ -65,14 +66,38 @@ fn has_runtime_work() -> bool {
 }
 
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
-    tsonic_rust_js::event_loop::run_with_driver(&mut NodeDriver)
+    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())
 }
 
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    tsonic_rust_js::event_loop::block_on_with_driver(future, &mut NodeDriver)
+    block_on_with_contexts(
+        future,
+        DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    )
 }
 
-struct NodeDriver;
+pub fn run_with_contexts<TContexts: DispatchContexts>(
+    contexts: TContexts,
+) -> Result<(), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::run_with_driver(&mut NodeDriver { contexts })
+}
+
+pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
+    future: impl Future<Output = TOutput>,
+    contexts: TContexts,
+) -> Result<TOutput, TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::block_on_with_driver(future, &mut NodeDriver { contexts })
+}
+
+struct NodeDriver<TContexts> {
+    contexts: TContexts,
+}
 
 struct NodeWake(Arc<mio::Waker>);
 
@@ -86,58 +111,102 @@ impl Wake for NodeWake {
     }
 }
 
-impl EventLoopDriver for NodeDriver {
-    type Error = tsonic_rust_runtime::TsonicError;
+impl<TContexts: DispatchContexts> EventLoopDriver for NodeDriver<TContexts>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    type Error = TContexts::Error;
 
-    fn poll(&mut self) -> TsonicResult<bool> {
-        let js_timer_work = tsonic_rust_js::timers::poll_timers()?;
-        let can_dispatch_signals = has_runtime_work();
-        let background_work = crate::background::poll()?;
-        let task_work = poll_runtime_tasks()?;
-        let signal_work = can_dispatch_signals && crate::process::poll_signals()?;
-        let timer_work = crate::timers::poll_runtime_timers()?;
-        let server_work = crate::http::poll_runtime_servers()?;
-        let net_work = crate::net::poll_runtime_servers()?;
-        let tls_work = crate::tls::poll_runtime_servers()?;
-        let watcher_work = crate::fs::poll_runtime_watchers()?;
-        let worker_work = crate::worker_threads::poll_runtime_workers()?;
-        let port_work = crate::worker_threads::poll_runtime_ports()?;
-        Ok(js_timer_work
-            || background_work
-            || task_work
-            || signal_work
-            || timer_work
-            || server_work
-            || net_work
-            || tls_work
-            || watcher_work
-            || worker_work
-            || port_work)
+    fn poll(&mut self) -> Result<bool, Self::Error> {
+        let mut did_work = false;
+        let mut can_dispatch_signals = false;
+        for phase in [
+            DispatchPhase::JsTimers,
+            DispatchPhase::Background,
+            DispatchPhase::RuntimeTasks,
+            DispatchPhase::Signals,
+            DispatchPhase::Timers,
+            DispatchPhase::Http,
+            DispatchPhase::Net,
+            DispatchPhase::Tls,
+            DispatchPhase::Watchers,
+            DispatchPhase::Workers,
+            DispatchPhase::Ports,
+        ] {
+            let work = if phase == DispatchPhase::Background {
+                crate::background::with_default(|native| {
+                    crate::dispatch::poll_phase(
+                        &crate::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?
+            } else {
+                let frontier = self.contexts.prepare(phase)?;
+                let native =
+                    poll_native_phase(phase, can_dispatch_signals).map_err(Self::Error::from)?;
+                let selected = crate::dispatch::poll_prepared(&self.contexts, &frontier)?;
+                native || selected
+            };
+            did_work |= work;
+            if phase == DispatchPhase::JsTimers {
+                can_dispatch_signals = has_runtime_work() || self.contexts.has_work();
+            }
+        }
+        Ok(did_work)
     }
 
     fn has_work(&self) -> bool {
-        has_runtime_work() || tsonic_rust_js::timers::has_timers()
+        has_runtime_work() || tsonic_rust_js::timers::has_timers() || self.contexts.has_work()
     }
 
-    fn wait(&mut self) -> TsonicResult<()> {
+    fn wait(&mut self) -> Result<(), Self::Error> {
         let timer_delay = [
             crate::timers::next_runtime_timer_delay(),
             tsonic_rust_js::timers::next_timer_delay(),
             crate::fs::next_runtime_watcher_delay(),
             crate::worker_threads::next_runtime_reap_delay(),
+            self.contexts.next_delay(),
         ]
         .into_iter()
         .flatten()
         .min();
-        crate::readiness::wait(timer_delay)?;
+        crate::readiness::wait(timer_delay)
+            .map_err(tsonic_rust_runtime::TsonicError::from)
+            .map_err(Self::Error::from)?;
         Ok(())
     }
 
-    fn waker(&mut self) -> TsonicResult<Waker> {
-        Ok(Waker::from(Arc::new(NodeWake(crate::readiness::waker()?))))
+    fn waker(&mut self) -> Result<Waker, Self::Error> {
+        let wake = crate::readiness::waker()
+            .map_err(tsonic_rust_runtime::TsonicError::from)
+            .map_err(Self::Error::from)?;
+        Ok(Waker::from(Arc::new(NodeWake(wake))))
     }
 }
 
+fn poll_native_phase(phase: DispatchPhase, can_dispatch_signals: bool) -> TsonicResult<bool> {
+    match phase {
+        DispatchPhase::JsTimers => tsonic_rust_js::timers::poll_timers(),
+        DispatchPhase::Background => {
+            unreachable!("native background belongs to the composed phase")
+        }
+        DispatchPhase::RuntimeTasks => poll_runtime_tasks(),
+        DispatchPhase::Signals => {
+            if can_dispatch_signals {
+                crate::process::poll_signals().map_err(tsonic_rust_runtime::TsonicError::from)
+            } else {
+                Ok(false)
+            }
+        }
+        DispatchPhase::Timers => crate::timers::poll_runtime_timers(),
+        DispatchPhase::Http => crate::http::poll_runtime_servers(),
+        DispatchPhase::Net => crate::net::poll_runtime_servers(),
+        DispatchPhase::Tls => crate::tls::poll_runtime_servers(),
+        DispatchPhase::Watchers => crate::fs::poll_runtime_watchers(),
+        DispatchPhase::Workers => crate::worker_threads::poll_runtime_workers(),
+        DispatchPhase::Ports => crate::worker_threads::poll_runtime_ports(),
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;

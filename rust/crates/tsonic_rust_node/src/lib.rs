@@ -13,6 +13,7 @@ pub mod cluster;
 pub mod crypto;
 pub mod dgram;
 pub mod diagnostics_channel;
+pub mod dispatch;
 pub mod dns;
 pub mod error;
 mod event_loop;
@@ -49,4 +50,4 @@ pub mod worker_threads;
 pub mod zlib;
 
 pub use error::{NodeError, NodeResult};
-pub use event_loop::{block_on, run_event_loop};
+pub use event_loop::{block_on, block_on_with_contexts, run_event_loop, run_with_contexts};

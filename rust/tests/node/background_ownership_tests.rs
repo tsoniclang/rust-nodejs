@@ -30,7 +30,6 @@ struct NativeRegistry<TError> {
     _receiver: Receiver<TaskTicket>,
     _in_flight: BTreeMap<TaskTicket, NativePending<TError>>,
     _ready: VecDeque<(u64, NativePending<TError>)>,
-    _next_ready_ticket: u64,
 }
 
 #[test]
@@ -61,7 +60,6 @@ fn demanded_background_registry_matches_one_idiomatic_native_weak_owner() {
             _receiver: receiver,
             _in_flight: BTreeMap::new(),
             _ready: VecDeque::new(),
-            _next_ready_ticket: 0,
         }));
         black_box(Rc::downgrade(&root));
         black_box(root);
@@ -83,6 +81,31 @@ fn warmed_background_queries_and_weak_handle_clones_allocate_nothing() {
                 panic!("empty native registry cannot fail: {error}");
             });
             assert!(!black_box(ready));
+        }
+    });
+    assert_eq!(cost, (0, 0));
+}
+
+#[test]
+fn composed_background_dispatch_queries_allocate_nothing() {
+    use tsonic_rust_node::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+    let first = BackgroundTasks::<Failure>::new();
+    let second = BackgroundTasks::<Failure>::new();
+    black_box(first.handle());
+    black_box(second.handle());
+    let contexts = tsonic_rust_node::dispatch::prepend(
+        &first,
+        tsonic_rust_node::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
+    );
+    let cost = measure(|| {
+        for _ in 0..1024 {
+            let frontier = contexts
+                .prepare(DispatchPhase::Background)
+                .unwrap_or_else(|Failure(error)| panic!("empty group cannot fail: {error}"));
+            assert!(contexts.next_ready(&frontier).is_none());
+            assert!(matches!(contexts.poll_next(&frontier), Ok(false)));
+            assert!(!black_box(contexts.has_work()));
+            assert!(contexts.next_delay().is_none());
         }
     });
     assert_eq!(cost, (0, 0));

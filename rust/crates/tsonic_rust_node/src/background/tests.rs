@@ -140,9 +140,13 @@ fn malformed_completion_and_ticket_exhaustion_fail_before_invocation() {
         assert_eq!(invoked.get(), 1);
     }
     let source = RefCell::new(super::SourceThreadCompletions::<TsonicError>::new());
-    source.borrow_mut().next_ready_ticket = u64::MAX;
     register_ready(&source, || panic!("overflow must not invoke callbacks"));
-    assert!(super::poll_completions(&source).is_err());
+    super::NEXT_COMPLETION_TICKET.with(|sequence| {
+        let previous = sequence.replace(u64::MAX);
+        let failed = super::poll_completions(&source).is_err();
+        sequence.set(previous);
+        assert!(failed);
+    });
     assert_eq!(source.borrow().pending(), 1);
     assert!(source.borrow().ready.is_empty());
 }
@@ -215,6 +219,12 @@ impl From<TsonicError> for Failure {
 }
 
 struct OtherFailure(Failure);
+
+impl From<OtherFailure> for Failure {
+    fn from(value: OtherFailure) -> Self {
+        value.0
+    }
+}
 
 impl From<TsonicError> for OtherFailure {
     fn from(value: TsonicError) -> Self {
@@ -527,3 +537,5 @@ fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
     assert!(!root.has_pending_work());
     assert_eq!(super::background_task_budget().pending(), 0);
 }
+
+mod composition;
