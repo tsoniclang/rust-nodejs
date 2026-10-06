@@ -342,6 +342,99 @@ fn dropping_the_source_owner_releases_callbacks_and_capacity_before_native_work_
 }
 
 #[test]
+fn weak_scheduling_handles_do_not_retain_their_callback_owner() {
+    let budget = super::background_task_budget();
+    let root = super::BackgroundTasks::<Failure>::new();
+    let handle = root.handle();
+    let scheduled = handle.clone();
+    assert!(handle.source.ptr_eq(&scheduled.source));
+    let retained = Rc::new(Cell::new(17));
+    let released = Rc::downgrade(&retained);
+    let (release, blocked) = std::sync::mpsc::sync_channel(1);
+    handle
+        .spawn(
+            move || {
+                blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(())
+            },
+            move |_| {
+                retained.set(29);
+                scheduled
+                    .spawn(|| Ok(()), |_| Ok(()))
+                    .map_err(TsonicError::from)?;
+                panic!("released callback must not execute");
+            },
+        )
+        .unwrap();
+    assert!(released.upgrade().is_some());
+    assert_eq!(budget.pending(), 1);
+    drop(root);
+    assert!(handle.source.upgrade().is_none());
+    assert!(released.upgrade().is_none());
+    assert_eq!(budget.pending(), 0);
+    let rejected = handle.spawn(
+        || -> crate::NodeResult<()> { panic!("closed owner cannot submit native work") },
+        |_| Ok(()),
+    );
+    assert_eq!(rejected.unwrap_err().code(), "ERR_NODE_BACKGROUND_CLOSED");
+    assert_eq!(budget.pending(), 0);
+    release.send(()).unwrap();
+}
+
+#[test]
+fn weak_reentrant_scheduling_retains_exact_failures_without_a_source_borrow() {
+    let budget = super::background_task_budget();
+    let root = super::BackgroundTasks::<Failure>::new();
+    let handle = root.handle();
+    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+    let failure = expected.clone();
+    let observed = Rc::new(Cell::new(0));
+    let recorded = observed.clone();
+    root.spawn(
+        || Ok(()),
+        move |_| {
+            recorded.set(1);
+            let recorded = recorded.clone();
+            handle
+                .spawn(
+                    || Ok(()),
+                    move |_| {
+                        recorded.set(2);
+                        Ok(())
+                    },
+                )
+                .map_err(TsonicError::from)?;
+            Err(Failure::Payload(failure))
+        },
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let returned = loop {
+        match root.poll() {
+            Err(error) => break error,
+            Ok(_) => {
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+        }
+    };
+    let Failure::Payload(returned) = returned else {
+        panic!("reentrant callback must retain its original failure");
+    };
+    assert!(Rc::ptr_eq(&returned, &expected));
+    assert_eq!(returned.get(), 9_007_199_254_740_993);
+    assert_eq!(observed.get(), 1);
+    assert_eq!(budget.pending(), 1);
+    while root.has_pending_work() && Instant::now() < deadline {
+        assert!(root.poll().is_ok());
+        std::thread::yield_now();
+    }
+    assert!(!root.has_pending_work());
+    assert_eq!(observed.get(), 2);
+    assert_eq!(budget.pending(), 0);
+}
+
+#[test]
 fn native_failures_lift_once_without_replacing_the_source_identity() {
     let root = super::BackgroundTasks::<Failure>::new();
     let identity = Rc::new(Cell::new(None));
@@ -382,4 +475,55 @@ fn native_failures_lift_once_without_replacing_the_source_identity() {
         identity.get()
     );
     assert_eq!(source.message(), "original-native-message");
+}
+
+struct ReentrantFailure(TsonicError);
+
+thread_local! {
+    static REENTRANT_NATIVE_FAULT_HANDLE: RefCell<Option<super::BackgroundHandle<ReentrantFailure>>> =
+        const { RefCell::new(None) };
+}
+
+impl From<TsonicError> for ReentrantFailure {
+    fn from(value: TsonicError) -> Self {
+        REENTRANT_NATIVE_FAULT_HANDLE.with_borrow(|handle| {
+            if let Some(handle) = handle {
+                handle.spawn(|| Ok(()), |_| Ok(())).unwrap();
+            }
+        });
+        Self(value)
+    }
+}
+
+#[test]
+fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
+    let root = super::BackgroundTasks::<ReentrantFailure>::new();
+    let handle = root.handle();
+    REENTRANT_NATIVE_FAULT_HANDLE.set(Some(handle));
+    let unregistered = super::background_task_budget().reserve().unwrap();
+    root.scheduling_source()
+        .borrow()
+        .sender
+        .try_send(super::WorkCompletion {
+            id: unregistered.ticket(),
+        })
+        .unwrap();
+    let returned = root
+        .poll()
+        .err()
+        .expect("unregistered native completion must fail");
+    assert_eq!(
+        returned.0.source_error().message(),
+        "background work completed without its exact callback"
+    );
+    assert!(root.has_pending_work());
+    REENTRANT_NATIVE_FAULT_HANDLE.set(None);
+    drop(unregistered);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while root.has_pending_work() && Instant::now() < deadline {
+        assert!(root.poll().is_ok());
+        std::thread::yield_now();
+    }
+    assert!(!root.has_pending_work());
+    assert_eq!(super::background_task_budget().pending(), 0);
 }

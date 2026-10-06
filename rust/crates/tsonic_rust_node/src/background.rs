@@ -1,6 +1,7 @@
 use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroUsize;
+use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
@@ -77,7 +78,19 @@ impl<TError> SourceThreadCompletions<TError> {
 }
 
 pub struct BackgroundTasks<TError> {
-    source: OnceCell<RefCell<SourceThreadCompletions<TError>>>,
+    source: OnceCell<Rc<RefCell<SourceThreadCompletions<TError>>>>,
+}
+
+pub struct BackgroundHandle<TError> {
+    source: Weak<RefCell<SourceThreadCompletions<TError>>>,
+}
+
+impl<TError> Clone for BackgroundHandle<TError> {
+    fn clone(&self) -> Self {
+        Self {
+            source: self.source.clone(),
+        }
+    }
 }
 
 impl<TError> Default for BackgroundTasks<TError> {
@@ -98,6 +111,17 @@ impl<TError> BackgroundTasks<TError> {
             .get()
             .is_some_and(|source| source.borrow().pending() != 0)
     }
+
+    pub fn handle(&self) -> BackgroundHandle<TError> {
+        BackgroundHandle {
+            source: Rc::downgrade(self.scheduling_source()),
+        }
+    }
+
+    fn scheduling_source(&self) -> &Rc<RefCell<SourceThreadCompletions<TError>>> {
+        self.source
+            .get_or_init(|| Rc::new(RefCell::new(SourceThreadCompletions::new())))
+    }
 }
 
 impl<TError: From<TsonicError>> BackgroundTasks<TError> {
@@ -109,44 +133,79 @@ impl<TError: From<TsonicError>> BackgroundTasks<TError> {
     where
         TResult: Send + 'static,
     {
-        let reservation = background_task_budget().reserve().map_err(|error| {
-            crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string())
-        })?;
-        let wake = crate::readiness::waker()?;
-        let id = reservation.ticket();
-        let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
-        let source = self
-            .source
-            .get_or_init(|| RefCell::new(SourceThreadCompletions::new()));
-        let completion_sender = {
-            let mut source = source.borrow_mut();
-            source.in_flight.insert(
-                id,
-                PendingCompletion {
-                    reservation,
-                    callback: Box::new(TypedBackgroundCompletion {
-                        result_receiver,
-                        callback: completion,
-                    }),
-                },
-            );
-            source.sender.clone()
-        };
-        let submitted = worker::submit(move || {
-            let result = worker::execute(work);
-            let _ = result_sender.send(result);
-            let _ = completion_sender.send(WorkCompletion { id });
-            let _ = wake.wake();
-        });
-        if submitted.is_err() {
-            source.borrow_mut().in_flight.remove(&id);
-        }
-        submitted
+        let reservation = reserve_background_task()?;
+        spawn_on_source(self.scheduling_source(), reservation, work, completion)
     }
 
     pub fn poll(&self) -> Result<bool, TError> {
-        self.source.get().map_or(Ok(false), poll_completions)
+        self.source
+            .get()
+            .map_or(Ok(false), |source| poll_completions(source))
     }
+}
+
+impl<TError: From<TsonicError>> BackgroundHandle<TError> {
+    pub fn spawn<TResult>(
+        &self,
+        work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
+        completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+    ) -> crate::NodeResult<()>
+    where
+        TResult: Send + 'static,
+    {
+        let source = self.source.upgrade().ok_or_else(|| {
+            crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            )
+        })?;
+        let reservation = reserve_background_task()?;
+        spawn_on_source(&source, reservation, work, completion)
+    }
+}
+
+fn reserve_background_task() -> crate::NodeResult<TaskReservation> {
+    background_task_budget()
+        .reserve()
+        .map_err(|error| crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string()))
+}
+
+fn spawn_on_source<TResult, TError: From<TsonicError>>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+    reservation: TaskReservation,
+    work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
+    completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+) -> crate::NodeResult<()>
+where
+    TResult: Send + 'static,
+{
+    let wake = crate::readiness::waker()?;
+    let id = reservation.ticket();
+    let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
+    let completion_sender = {
+        let mut source = source.borrow_mut();
+        source.in_flight.insert(
+            id,
+            PendingCompletion {
+                reservation,
+                callback: Box::new(TypedBackgroundCompletion {
+                    result_receiver,
+                    callback: completion,
+                }),
+            },
+        );
+        source.sender.clone()
+    };
+    let submitted = worker::submit(move || {
+        let result = worker::execute(work);
+        let _ = result_sender.send(result);
+        let _ = completion_sender.send(WorkCompletion { id });
+        let _ = wake.wake();
+    });
+    if submitted.is_err() {
+        source.borrow_mut().in_flight.remove(&id);
+    }
+    submitted
 }
 
 thread_local! {
@@ -189,38 +248,9 @@ pub(crate) fn has_pending_work() -> bool {
 fn poll_completions<TError: From<TsonicError>>(
     source: &RefCell<SourceThreadCompletions<TError>>,
 ) -> Result<bool, TError> {
-    let boundary = {
-        let mut source = source.borrow_mut();
-        loop {
-            match source.receiver.try_recv() {
-                Ok(value) => {
-                    let next = source.next_ready_ticket.checked_add(1).ok_or_else(|| {
-                        TError::from(TsonicError::from(crate::NodeError::new(
-                            "ERR_NODE_BACKGROUND_WORK_LIMIT",
-                            "background ready ticket range is exhausted",
-                        )))
-                    })?;
-                    let callback = source.in_flight.remove(&value.id).ok_or_else(|| {
-                        TError::from(TsonicError::from(crate::NodeError::new(
-                            "ERR_NODE_BACKGROUND_RESULT",
-                            "background work completed without its exact callback",
-                        )))
-                    })?;
-                    let ticket = source.next_ready_ticket;
-                    source.next_ready_ticket = next;
-                    source.ready.push_back((ticket, callback));
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    return Err(TError::from(TsonicError::from(crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_WORKER",
-                        "background completion channel is unavailable",
-                    ))));
-                }
-            }
-        }
-        source.ready.back().map(|(ticket, _)| *ticket)
-    };
+    let boundary = publish_completions(source)
+        .map_err(TsonicError::from)
+        .map_err(TError::from)?;
     let Some(boundary) = boundary else {
         return Ok(false);
     };
@@ -250,6 +280,41 @@ fn poll_completions<TError: From<TsonicError>>(
         did_work = true;
     }
     Ok(did_work)
+}
+
+fn publish_completions<TError>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+) -> crate::NodeResult<Option<u64>> {
+    let mut source = source.borrow_mut();
+    loop {
+        match source.receiver.try_recv() {
+            Ok(value) => {
+                let next = source.next_ready_ticket.checked_add(1).ok_or_else(|| {
+                    crate::NodeError::new(
+                        "ERR_NODE_BACKGROUND_WORK_LIMIT",
+                        "background ready ticket range is exhausted",
+                    )
+                })?;
+                let callback = source.in_flight.remove(&value.id).ok_or_else(|| {
+                    crate::NodeError::new(
+                        "ERR_NODE_BACKGROUND_RESULT",
+                        "background work completed without its exact callback",
+                    )
+                })?;
+                let ticket = source.next_ready_ticket;
+                source.next_ready_ticket = next;
+                source.ready.push_back((ticket, callback));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err(crate::NodeError::new(
+                    "ERR_NODE_BACKGROUND_WORKER",
+                    "background completion channel is unavailable",
+                ));
+            }
+        }
+    }
+    Ok(source.ready.back().map(|(ticket, _)| *ticket))
 }
 
 #[cfg(test)]
