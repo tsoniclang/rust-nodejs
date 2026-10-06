@@ -70,7 +70,8 @@ test("advertised duplex lifecycle operations retain exact receivers and finaliza
       for (const row of rows) {
         assert.equal(row.isFallible, true, `${id}.${member}`);
         assert.equal(row.errorBoundary, "provider-native", `${id}.${member}`);
-        assert.equal(row.errorCarrier.value.id, "rust.node.NodeError", `${id}.${member}`);
+        assert.equal(row.errorCarrier.kind, "target-named", `${id}.${member}`);
+        assert.equal(row.errorCarrier.id, "rust.node.NodeError", `${id}.${member}`);
         assert.equal(row.receiverCarrier.value.id, `rust.node.${owner}`, `${id}.${member}`);
       }
     }

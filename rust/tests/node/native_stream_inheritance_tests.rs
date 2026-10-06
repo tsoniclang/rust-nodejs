@@ -117,9 +117,7 @@ fn projected_codec_destruction_retains_error_identity_for_shared_lifecycle_liste
     });
     readable.once_error("error", &listener).unwrap();
     writable.once_error("error", &listener).unwrap();
-    let error = RetainedError::from(tsonic_rust_runtime::JsError::error(
-        "native codec failure",
-    ));
+    let error = RetainedError::from(tsonic_rust_runtime::JsError::error("native codec failure"));
     zlib::zlib_as_duplex(&codec)
         .destroy_chain(Some(error.clone()))
         .unwrap();

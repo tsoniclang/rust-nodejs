@@ -46,7 +46,8 @@ fn codec_destruction_shares_error_and_close_identity_across_all_base_projections
     let duplex = zlib::zlib_as_duplex(&codec);
     let readable = zlib::zlib_as_readable(&codec);
     let writable = zlib::zlib_as_writable(&codec);
-    let expected = RetainedError::from(tsonic_rust_runtime::JsError::error("native codec identity"));
+    let expected =
+        RetainedError::from(tsonic_rust_runtime::JsError::error("native codec identity"));
     let trace = Rc::new(RefCell::new(Vec::new()));
     let observed_errors = Rc::new(RefCell::new(Vec::new()));
     let removed = Callable::new(|(_error,): (RetainedError,)| {
@@ -160,7 +161,9 @@ fn error_callbacks_can_change_the_subsequent_shared_close_subscription() {
         Ok::<(), NodeError>(())
     });
     duplex.once_error("error", &listener).unwrap();
-    let expected = RetainedError::from(tsonic_rust_runtime::JsError::error("native lifecycle error"));
+    let expected = RetainedError::from(tsonic_rust_runtime::JsError::error(
+        "native lifecycle error",
+    ));
     readable.destroy_chain(Some(expected)).unwrap();
     assert_eq!(observed.get(), 1);
     assert!(codec.closed());
@@ -256,7 +259,10 @@ fn uncork_codec_failure_destroys_both_sides_without_a_successful_finish() {
     assert!(codec.closed());
     assert!(duplex.destroyed());
     assert!(!duplex.writable_finished());
-    assert!(zlib::zlib_as_readable(&codec).read_buffer(None).unwrap().is_none());
+    assert!(zlib::zlib_as_readable(&codec)
+        .read_buffer(None)
+        .unwrap()
+        .is_none());
     assert!(duplex.write_string("late data").is_err());
     tsonic_rust_node::run_event_loop().unwrap();
 }
