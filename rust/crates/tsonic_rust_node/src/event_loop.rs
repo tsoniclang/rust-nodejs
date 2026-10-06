@@ -1,51 +1,55 @@
 const MAX_PENDING_RUNTIME_TASKS: usize = 1 << 20;
 
+use std::cell::OnceCell;
 use std::future::Future;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
-use std::time::Duration;
 
 use tsonic_rust_js::event_loop::EventLoopDriver;
+use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 use tsonic_rust_runtime::TsonicResult;
 
 thread_local! {
-    static RUNTIME_TASKS: std::cell::RefCell<std::collections::VecDeque<RuntimeTask>> =
-        std::cell::RefCell::new(std::collections::VecDeque::new());
+    static RUNTIME_TASK_BUDGET: OnceCell<TaskBudget> = const { OnceCell::new() };
+    static RUNTIME_TASKS: OnceCell<TaskQueue<tsonic_rust_runtime::TsonicError>> =
+        const { OnceCell::new() };
 }
 
-type RuntimeTask = Box<dyn FnOnce() -> tsonic_rust_runtime::TsonicResult<()>>;
+pub(crate) fn runtime_task_budget() -> TaskBudget {
+    RUNTIME_TASK_BUDGET.with(|budget| {
+        budget
+            .get_or_init(|| {
+                TaskBudget::new(
+                    NonZeroUsize::new(MAX_PENDING_RUNTIME_TASKS).expect("finite native task limit"),
+                )
+            })
+            .clone()
+    })
+}
 
 pub(crate) fn enqueue_runtime_task(
     task: impl FnOnce() -> tsonic_rust_runtime::TsonicResult<()> + 'static,
 ) -> crate::NodeResult<()> {
     RUNTIME_TASKS.with(|tasks| {
-        let mut tasks = tasks.borrow_mut();
-        if tasks.len() >= MAX_PENDING_RUNTIME_TASKS {
-            return Err(crate::NodeError::new(
-                "ERR_NODE_RUNTIME_TASK_LIMIT",
-                "pending Node runtime tasks exceed the finite queue limit",
-            ));
-        }
-        tasks.push_back(Box::new(task));
-        Ok(())
+        tasks
+            .get_or_init(|| TaskQueue::new(runtime_task_budget()))
+            .enqueue(task)
+            .map(|_| ())
+            .map_err(crate::NodeError::from)
     })
 }
 
 fn poll_runtime_tasks() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let tasks = RUNTIME_TASKS.with(|tasks| {
-        let mut tasks = tasks.borrow_mut();
-        let count = tasks.len();
-        tasks.drain(..count).collect::<Vec<_>>()
-    });
-    let did_work = !tasks.is_empty();
-    for task in tasks {
-        task()?;
-    }
-    Ok(did_work)
+    RUNTIME_TASKS.with(|tasks| tasks.get().map_or(Ok(false), TaskQueue::poll_ready))
 }
 
 fn has_runtime_tasks() -> bool {
-    RUNTIME_TASKS.with(|tasks| !tasks.borrow().is_empty())
+    RUNTIME_TASKS.with(|tasks| {
+        tasks
+            .get()
+            .is_some_and(|tasks| tasks.front_ticket().is_some())
+    })
 }
 
 fn has_runtime_work() -> bool {
@@ -83,7 +87,10 @@ impl Wake for NodeWake {
 }
 
 impl EventLoopDriver for NodeDriver {
+    type Error = tsonic_rust_runtime::TsonicError;
+
     fn poll(&mut self) -> TsonicResult<bool> {
+        let js_timer_work = tsonic_rust_js::timers::poll_timers()?;
         let can_dispatch_signals = has_runtime_work();
         let background_work = crate::background::poll()?;
         let task_work = poll_runtime_tasks()?;
@@ -95,7 +102,8 @@ impl EventLoopDriver for NodeDriver {
         let watcher_work = crate::fs::poll_runtime_watchers()?;
         let worker_work = crate::worker_threads::poll_runtime_workers()?;
         let port_work = crate::worker_threads::poll_runtime_ports()?;
-        Ok(background_work
+        Ok(js_timer_work
+            || background_work
             || task_work
             || signal_work
             || timer_work
@@ -108,13 +116,13 @@ impl EventLoopDriver for NodeDriver {
     }
 
     fn has_work(&self) -> bool {
-        has_runtime_work()
+        has_runtime_work() || tsonic_rust_js::timers::has_timers()
     }
 
-    fn wait(&mut self, js_timer_delay: Option<Duration>) -> TsonicResult<()> {
+    fn wait(&mut self) -> TsonicResult<()> {
         let timer_delay = [
             crate::timers::next_runtime_timer_delay(),
-            js_timer_delay,
+            tsonic_rust_js::timers::next_timer_delay(),
             crate::fs::next_runtime_watcher_delay(),
             crate::worker_threads::next_runtime_reap_delay(),
         ]
@@ -139,6 +147,36 @@ mod tests {
     use std::task::{Poll, Waker};
     use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, PromiseResolve};
     use tsonic_rust_runtime::Callable;
+
+    #[test]
+    fn context_free_queries_do_not_allocate_a_native_task_root() {
+        assert!(!super::has_runtime_tasks());
+        assert!(!super::poll_runtime_tasks().unwrap());
+        assert!(super::RUNTIME_TASKS.with(|tasks| tasks.get().is_none()));
+        assert!(super::RUNTIME_TASK_BUDGET.with(|budget| budget.get().is_none()));
+    }
+
+    #[test]
+    fn runtime_tasks_preserve_exact_failures_and_uninvoked_work() {
+        let original = tsonic_rust_runtime::JsError::error("original native failure");
+        let retained = original.clone();
+        let observed = std::rc::Rc::new(Cell::new(0));
+        let completed = std::rc::Rc::clone(&observed);
+        super::enqueue_runtime_task(move || Err(retained.into())).unwrap();
+        super::enqueue_runtime_task(move || {
+            completed.set(7);
+            Ok(())
+        })
+        .unwrap();
+        let failure = super::poll_runtime_tasks().unwrap_err();
+        assert!(matches!(failure, tsonic_rust_runtime::TsonicError::Js(_)));
+        assert!(failure.source_error().has_same_identity(&original));
+        assert_eq!(observed.get(), 0);
+        assert!(super::has_runtime_tasks());
+        assert!(super::poll_runtime_tasks().unwrap());
+        assert_eq!(observed.get(), 7);
+        assert!(!super::has_runtime_tasks());
+    }
 
     #[test]
     fn mio_driver_receives_native_future_wakes_without_a_polling_timer() {

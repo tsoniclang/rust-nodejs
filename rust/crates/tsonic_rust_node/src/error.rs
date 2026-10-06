@@ -72,6 +72,18 @@ impl tsonic_rust_runtime::ToSourceString for NodeError {
 
 pub type NodeResult<T> = Result<T, NodeError>;
 
+impl From<tsonic_rust_runtime::dispatch_queue::TaskQueueError> for NodeError {
+    fn from(value: tsonic_rust_runtime::dispatch_queue::TaskQueueError) -> Self {
+        use tsonic_rust_runtime::dispatch_queue::TaskQueueError;
+        let code = match value {
+            TaskQueueError::Capacity => "ERR_NODE_RUNTIME_TASK_LIMIT",
+            TaskQueueError::TicketExhausted => "ERR_NODE_RUNTIME_TASK_TICKET_LIMIT",
+            TaskQueueError::Closed => "ERR_NODE_RUNTIME_TASK_CLOSED",
+        };
+        Self::new(code, value.to_string())
+    }
+}
+
 impl From<NodeError> for tsonic_rust_runtime::TsonicError {
     fn from(value: NodeError) -> Self {
         tsonic_rust_runtime::TsonicError::Node {
