@@ -7,17 +7,14 @@ use tsonic_rust_runtime::{Callable, RetainedError};
 
 #[test]
 fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
-    let root = std::env::current_dir()
-        .unwrap()
-        .join(".temp")
-        .join(format!(
-            "native-stream-inheritance-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+    let root = std::env::current_dir().unwrap().join(".temp").join(format!(
+        "native-stream-inheritance-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     std::fs::create_dir_all(&root).unwrap();
     let path = root.join("output.txt");
     let file = fs::create_write_stream_with_options(
@@ -41,8 +38,14 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
         callback_calls.set(callback_calls.get() + 1);
         Ok::<(), NodeError>(())
     });
-    assert_eq!(writable, writable.on_error("error", &removed_error).unwrap());
-    assert_eq!(writable, writable.off_error("error", &removed_error).unwrap());
+    assert_eq!(
+        writable,
+        writable.on_error("error", &removed_error).unwrap()
+    );
+    assert_eq!(
+        writable,
+        writable.off_error("error", &removed_error).unwrap()
+    );
     assert_eq!(
         writable,
         writable.once_error("error", &removed_error).unwrap()
@@ -114,9 +117,7 @@ fn projected_codec_destruction_retains_error_identity_and_emits_once_per_side() 
     });
     readable.once_error("error", &listener).unwrap();
     writable.once_error("error", &listener).unwrap();
-    let error = RetainedError::from(tsonic_rust_runtime::JsError::error(
-        "native codec failure",
-    ));
+    let error = RetainedError::from(tsonic_rust_runtime::JsError::error("native codec failure"));
     zlib::zlib_as_duplex(&codec)
         .destroy_chain(Some(error.clone()))
         .unwrap();
