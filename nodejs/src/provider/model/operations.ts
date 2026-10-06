@@ -17,6 +17,12 @@ export const providerNativeFallibility: {
   errorCarrier: nodeErrorCarrier,
 };
 
+export const sourceCallbackFallibility = {
+  isFallible: true,
+  errorBoundary: "source-program",
+  nativeErrorCarriers: [nodeErrorCarrier],
+} as const;
+
 export const cloneOnlyCarrierTraits = {
   implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
 } as const;

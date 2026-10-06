@@ -117,12 +117,15 @@ fn process_next_tick_executes_without_event_loop_guessing() {
 #[test]
 fn worker_message_channel_structured_clones_js_values() {
     assert_eq!(worker_threads::initialize_worker_process().unwrap(), None);
-    let spawn_error = match worker_threads::Worker::spawn_default("") {
+    let spawn_error = match worker_threads::resources::with_default(|resources| {
+        worker_threads::Worker::spawn_default("", resources)
+    }) {
         Ok(_) => panic!("empty worker entry identity must reject"),
         Err(error) => error,
     };
     assert_eq!(spawn_error.code, "ERR_WORKER_PATH");
-    let mut channel = worker_threads::MessageChannel::new();
+    let channel =
+        worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
     channel.port1.start();
     assert!(channel.port1.has_ref());
     channel.port1.unref();
@@ -134,11 +137,15 @@ fn worker_message_channel_structured_clones_js_values() {
         .post_message(JsValue::from("hello".to_string()))
         .unwrap();
     assert_eq!(
-        worker_threads::receive_message_on_port(&channel.port2),
-        Some(JsValue::from("hello".to_string()))
+        worker_threads::receive_message_on_port(&channel.port2).unwrap(),
+        JsValue::from("hello".to_string())
     );
     assert!(worker_threads::is_main_thread());
-    assert!(worker_threads::parent_port().is_none());
+    assert!(
+        worker_threads::resources::with_default(worker_threads::parent_port)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(worker_threads::worker_data(), JsValue::Null);
 }
 
@@ -178,7 +185,8 @@ fn worker_structured_clone_preserves_cycles_and_repeated_aliases() {
     assert!(direct.strict_equal(&direct_self));
 
     let aliases = JsArray::from_dense(vec![value.clone(), value.clone()]);
-    let ports = worker_threads::MessageChannel::new();
+    let ports =
+        worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
     ports.port1.post_message(JsValue::array(aliases)).unwrap();
     let received = worker_threads::receive_message_on_port(&ports.port2).unwrap();
     let received = received.as_array().unwrap();
@@ -239,7 +247,8 @@ fn worker_message_port_round_trips_structure_without_identity() {
         ("items", JsValue::array(sparse)),
     ]));
 
-    let channel = worker_threads::MessageChannel::new();
+    let channel =
+        worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
     channel.port1.post_message(original.clone()).unwrap();
     let received = worker_threads::receive_message_on_port(&channel.port2).unwrap();
 

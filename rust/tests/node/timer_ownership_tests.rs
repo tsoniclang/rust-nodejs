@@ -123,8 +123,10 @@ fn selected_timer_queries_and_empty_dispatch_allocate_nothing() {
     let cost = measure(|| {
         assert!(!timers.has_pending_work());
         assert!(!timers.poll().unwrap());
-        let contexts = tsonic_rust_runtime::dispatch::prepend(&timers,
-            tsonic_rust_runtime::dispatch::DispatchEnd::new());
+        let contexts = tsonic_rust_runtime::dispatch::prepend(
+            &timers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        );
         tsonic_rust_node::run_with_contexts(&contexts).unwrap();
     });
     assert_eq!(cost, (0, 0));

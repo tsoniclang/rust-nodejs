@@ -77,237 +77,32 @@ fn kill_native(_pid: i32, _signal: i32) -> NodeResult<bool> {
     ))
 }
 
-pub fn once<E>(signal: &str, listener: &Callable<(), Result<(), E>>) -> NodeResult<Process>
-where
-    E: std::fmt::Display + 'static,
-{
-    #[cfg(unix)]
-    native::once(signal, listener)?;
-    #[cfg(not(unix))]
-    {
-        let _ = listener;
-        signal_number(signal)?;
-    }
-    Ok(Process)
-}
+mod tasks;
+pub use tasks::{with_default as with_default_signals, SignalTasks};
 
-pub fn remove_listener<E>(
+pub fn once<E: 'static>(
+    tasks: &SignalTasks<E>,
     signal: &str,
     listener: &Callable<(), Result<(), E>>,
-) -> NodeResult<Process>
-where
-    E: 'static,
-{
-    #[cfg(unix)]
-    native::remove_listener(signal, listener)?;
-    #[cfg(not(unix))]
-    {
-        let _ = listener;
-        signal_number(signal)?;
-    }
+) -> NodeResult<Process> {
+    tasks.once(signal, listener)?;
     Ok(Process)
 }
 
-pub fn poll_signals() -> NodeResult<bool> {
-    #[cfg(unix)]
-    {
-        native::poll()
-    }
-    #[cfg(not(unix))]
-    {
-        Ok(false)
-    }
+pub fn remove_listener<E: 'static>(
+    tasks: &SignalTasks<E>,
+    signal: &str,
+    listener: &Callable<(), Result<(), E>>,
+) -> NodeResult<Process> {
+    tasks.remove_listener(signal, listener)?;
+    Ok(Process)
 }
 
-#[cfg(unix)]
-mod native {
-    use super::*;
-    use crate::events::EventEmitter;
-    use std::cell::RefCell;
-    use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, OnceLock};
-    use std::thread::ThreadId;
-    use tsonic_rust_js::JsValue;
-
-    static OWNER: OnceLock<ThreadId> = OnceLock::new();
-    thread_local! {
-        static STATE: RefCell<SignalState> = RefCell::new(SignalState::default());
-    }
-
-    struct SignalFlags {
-        wake: crate::readiness::SignalWake,
-        pending: Arc<AtomicBool>,
-        default_action: Arc<AtomicBool>,
-        default_enabled: bool,
-        event: JsValue,
-    }
-
-    #[derive(Default)]
-    struct SignalState {
-        emitter: EventEmitter,
-        signals: BTreeMap<i32, SignalFlags>,
-    }
-
-    impl Drop for SignalState {
-        fn drop(&mut self) {
-            for flags in self.signals.values() {
-                flags
-                    .default_action
-                    .store(flags.default_enabled, Ordering::SeqCst);
-            }
-        }
-    }
-
-    fn check_owner() -> NodeResult<()> {
-        if !crate::worker_threads::is_main_thread() {
-            return Err(NodeError::new(
-                "ERR_UNSUPPORTED_OPERATION",
-                "process signal listeners are unavailable in workers",
-            ));
-        }
-        let current = std::thread::current().id();
-        if *OWNER.get_or_init(|| current) != current {
-            return Err(NodeError::new(
-                "ERR_UNSUPPORTED_OPERATION",
-                "process signal listeners belong to one event-loop thread",
-            ));
-        }
-        Ok(())
-    }
-
-    fn event(name: &str) -> JsValue {
-        JsValue::String((name).to_owned())
-    }
-
-    fn registration_error(error: std::io::Error) -> NodeError {
-        let code = error
-            .raw_os_error()
-            .map(|code| format!("{:?}", nix::errno::Errno::from_raw(code)))
-            .unwrap_or_else(|| "ERR_SIGNAL_REGISTRATION".to_owned());
-        NodeError::new(code, error.to_string())
-    }
-
-    pub(super) fn once<E>(name: &str, listener: &Callable<(), Result<(), E>>) -> NodeResult<()>
-    where
-        E: std::fmt::Display + 'static,
-    {
-        check_owner()?;
-        let signal = signal_number(name)?;
-        if signal_hook::consts::FORBIDDEN.contains(&signal) {
-            return Err(NodeError::new(
-                "ERR_UNSUPPORTED_OPERATION",
-                "this native signal cannot safely register an asynchronous listener",
-            ));
-        }
-        STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            if let std::collections::btree_map::Entry::Vacant(entry) = state.signals.entry(signal) {
-                let default_enabled = signal != nix::libc::SIGPIPE;
-                let flags = SignalFlags {
-                    wake: crate::readiness::SignalWake::new(signal)?,
-                    pending: Arc::new(AtomicBool::new(false)),
-                    default_action: Arc::new(AtomicBool::new(default_enabled)),
-                    default_enabled,
-                    event: event(name),
-                };
-                let default_hook = signal_hook::flag::register_conditional_default(
-                    signal,
-                    Arc::clone(&flags.default_action),
-                )
-                .map_err(registration_error)?;
-                if let Err(error) = signal_hook::flag::register(signal, Arc::clone(&flags.pending))
-                {
-                    signal_hook::low_level::unregister(default_hook);
-                    return Err(registration_error(error));
-                }
-                entry.insert(flags);
-            }
-            let selected = state
-                .signals
-                .get(&signal)
-                .expect("registered signal")
-                .event
-                .clone();
-            state.emitter.once_callable(&selected, listener)?;
-            state
-                .signals
-                .get(&signal)
-                .expect("registered signal")
-                .default_action
-                .store(false, Ordering::SeqCst);
-            Ok(())
-        })
-    }
-
-    pub(super) fn remove_listener<E>(
-        name: &str,
-        listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<()>
-    where
-        E: 'static,
-    {
-        check_owner()?;
-        STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            let event = event(name);
-            state.emitter.off_callable(&event, listener)?;
-            if state.emitter.callable_listener_count(&event)? == 0 {
-                if let Ok(signal) = signal_number(name) {
-                    if let Some(flags) = state.signals.get(&signal) {
-                        flags
-                            .default_action
-                            .store(flags.default_enabled, Ordering::SeqCst);
-                    }
-                }
-            }
-            Ok(())
-        })
-    }
-
-    pub(super) fn poll() -> NodeResult<bool> {
-        if OWNER
-            .get()
-            .is_none_or(|owner| *owner != std::thread::current().id())
-        {
-            return Ok(false);
-        }
-        STATE.with(|state| -> NodeResult<()> {
-            for flags in state.borrow().signals.values() {
-                flags.wake.drain()?;
-            }
-            Ok(())
-        })?;
-        let pending = STATE.with(|state| {
-            state
-                .borrow()
-                .signals
-                .iter()
-                .filter_map(|(signal, flags)| {
-                    flags
-                        .pending
-                        .swap(false, Ordering::SeqCst)
-                        .then_some(*signal)
-                })
-                .collect::<Vec<_>>()
-        });
-        let mut dispatched = false;
-        for signal in pending {
-            let emission = STATE.with(|state| -> NodeResult<_> {
-                let mut state = state.borrow_mut();
-                let flags = state.signals.get(&signal).expect("retained signal");
-                let event = flags.event.clone();
-                let emission = state.emitter.prepare_callable_emission(&event, &[])?;
-                if state.emitter.callable_listener_count(&event)? == 0 {
-                    let flags = state.signals.get(&signal).expect("retained signal");
-                    flags
-                        .default_action
-                        .store(flags.default_enabled, Ordering::SeqCst);
-                }
-                Ok(emission)
-            })?;
-            dispatched |= emission.invoke(&[])?;
-        }
-        Ok(dispatched)
-    }
+pub fn poll_signals() -> tsonic_rust_runtime::TsonicResult<bool> {
+    with_default_signals(|tasks| {
+        tsonic_rust_runtime::dispatch::poll_phase(
+            tasks,
+            tsonic_rust_runtime::dispatch::DispatchPhase::Signals,
+        )
+    })
 }

@@ -24,8 +24,7 @@ fn has_runtime_work() -> bool {
         || crate::tls::has_refed_runtime_servers()
         || crate::timers::has_refed_runtime_timers()
         || crate::fs::has_refed_runtime_watchers()
-        || crate::worker_threads::has_refed_runtime_workers()
-        || crate::worker_threads::has_refed_runtime_ports()
+        || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
 }
 
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
@@ -121,10 +120,29 @@ where
                         phase,
                     )
                 })?,
+                DispatchPhase::Workers | DispatchPhase::Ports => {
+                    crate::worker_threads::resources::with_default(|native| {
+                        tsonic_rust_runtime::dispatch::poll_phase(
+                            &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                            phase,
+                        )
+                    })?
+                }
+                DispatchPhase::Signals => {
+                    if can_dispatch_signals {
+                        crate::process::with_default_signals(|native| {
+                            tsonic_rust_runtime::dispatch::poll_phase(
+                                &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                                phase,
+                            )
+                        })?
+                    } else {
+                        false
+                    }
+                }
                 _ => {
                     let frontier = self.contexts.prepare(phase)?;
-                    let native = poll_native_phase(phase, can_dispatch_signals)
-                        .map_err(Self::Error::from)?;
+                    let native = poll_native_phase(phase).map_err(Self::Error::from)?;
                     let selected =
                         tsonic_rust_runtime::dispatch::poll_prepared(&self.contexts, &frontier)?;
                     native || selected
@@ -147,7 +165,7 @@ where
             crate::timers::next_runtime_timer_delay(),
             tsonic_rust_js::timers::next_timer_delay(),
             crate::fs::next_runtime_watcher_delay(),
-            crate::worker_threads::next_runtime_reap_delay(),
+            crate::worker_threads::resources::with_default(DispatchContexts::next_delay),
             self.contexts.next_delay(),
         ]
         .into_iter()
@@ -167,27 +185,21 @@ where
     }
 }
 
-fn poll_native_phase(phase: DispatchPhase, can_dispatch_signals: bool) -> TsonicResult<bool> {
+fn poll_native_phase(phase: DispatchPhase) -> TsonicResult<bool> {
     match phase {
         DispatchPhase::JsTimers
         | DispatchPhase::Background
         | DispatchPhase::RuntimeTasks
-        | DispatchPhase::Timers => {
+        | DispatchPhase::Timers
+        | DispatchPhase::Workers
+        | DispatchPhase::Ports
+        | DispatchPhase::Signals => {
             unreachable!("native queued work belongs to its composed phase")
-        }
-        DispatchPhase::Signals => {
-            if can_dispatch_signals {
-                crate::process::poll_signals().map_err(tsonic_rust_runtime::TsonicError::from)
-            } else {
-                Ok(false)
-            }
         }
         DispatchPhase::Http => crate::http::poll_runtime_servers(),
         DispatchPhase::Net => crate::net::poll_runtime_servers(),
         DispatchPhase::Tls => crate::tls::poll_runtime_servers(),
         DispatchPhase::Watchers => crate::fs::poll_runtime_watchers(),
-        DispatchPhase::Workers => crate::worker_threads::poll_runtime_workers(),
-        DispatchPhase::Ports => crate::worker_threads::poll_runtime_ports(),
     }
 }
 #[cfg(test)]

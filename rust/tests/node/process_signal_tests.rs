@@ -3,8 +3,9 @@
 use std::cell::Cell;
 use std::os::unix::process::ExitStatusExt;
 use std::rc::Rc;
-use tsonic_rust_node::{process, NodeError};
+use tsonic_rust_node::process;
 use tsonic_rust_runtime::Callable;
+use tsonic_rust_runtime::TsonicError;
 
 #[test]
 fn process_signal_delivery_is_isolated_and_restores_native_defaults() {
@@ -14,6 +15,8 @@ fn process_signal_delivery_is_isolated_and_restores_native_defaults() {
         "once-default",
         "no-keepalive",
         "reentrant",
+        "typed-domains",
+        "typed-drop",
     ] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -24,7 +27,7 @@ fn process_signal_delivery_is_isolated_and_restores_native_defaults() {
             .env("TSONIC_SIGNAL_PROOF", scenario)
             .output()
             .unwrap();
-        if matches!(scenario, "remove" | "once-default") {
+        if matches!(scenario, "remove" | "once-default" | "typed-drop") {
             assert_eq!(
                 output.status.signal(),
                 Some(nix::libc::SIGUSR1),
@@ -41,16 +44,20 @@ fn process_signal_child() {
     let Ok(scenario) = std::env::var("TSONIC_SIGNAL_PROOF") else {
         return;
     };
+    if scenario == "typed-domains" || scenario == "typed-drop" {
+        verify_typed_signal_owners(&scenario);
+        return;
+    }
     let count = Rc::new(Cell::new(0));
     let listener = Callable::new({
         let count = Rc::clone(&count);
         move |()| {
             count.set(count.get() + 1);
-            Ok::<(), NodeError>(())
+            Ok::<(), TsonicError>(())
         }
     });
     let pid = process::pid() as f64;
-    process::once("SIGUSR1", &listener).unwrap();
+    process::with_default_signals(|tasks| process::once(tasks, "SIGUSR1", &listener)).unwrap();
     if scenario == "no-keepalive" {
         process::kill_named(pid, "SIGUSR1").unwrap();
         let started = std::time::Instant::now();
@@ -60,7 +67,10 @@ fn process_signal_child() {
         return;
     }
     if scenario == "remove" {
-        process::remove_listener("SIGUSR1", &listener.clone()).unwrap();
+        process::with_default_signals(|tasks| {
+            process::remove_listener(tasks, "SIGUSR1", &listener.clone())
+        })
+        .unwrap();
         process::kill_named(pid, "SIGUSR1").unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
         panic!("removed listener must restore the signal's native default");
@@ -68,10 +78,10 @@ fn process_signal_child() {
     if scenario == "reentrant" {
         let next = listener.clone();
         let nested = Callable::new(move |()| {
-            process::once("SIGUSR1", &next)?;
-            Ok::<(), NodeError>(())
+            process::with_default_signals(|tasks| process::once(tasks, "SIGUSR1", &next))?;
+            Ok::<(), TsonicError>(())
         });
-        process::once("SIGUSR1", &nested).unwrap();
+        process::with_default_signals(|tasks| process::once(tasks, "SIGUSR1", &nested)).unwrap();
     }
     process::kill_named(pid, "SIGUSR1").unwrap();
     assert_eq!(count.get(), 0);
@@ -88,12 +98,76 @@ fn process_signal_child() {
         poll_until_received();
         assert_eq!(count.get(), 2);
     }
-    let signal_error = process::once("SIGKILL", &listener).unwrap_err();
+    let signal_error =
+        process::with_default_signals(|tasks| process::once(tasks, "SIGKILL", &listener))
+            .unwrap_err();
     assert_eq!(signal_error.code, "ERR_UNSUPPORTED_OPERATION");
     assert_eq!(
-        process::once("INVALID", &listener).unwrap_err().code,
+        process::with_default_signals(|tasks| process::once(tasks, "INVALID", &listener))
+            .unwrap_err()
+            .code,
         "ERR_UNKNOWN_SIGNAL"
     );
+}
+
+enum SignalFailure {
+    Original(Rc<Cell<i64>>),
+    Native(tsonic_rust_node::NodeError),
+}
+
+impl From<tsonic_rust_node::NodeError> for SignalFailure {
+    fn from(error: tsonic_rust_node::NodeError) -> Self {
+        Self::Native(error)
+    }
+}
+
+fn verify_typed_signal_owners(scenario: &str) {
+    use tsonic_rust_runtime::dispatch::{
+        poll_phase, prepend, DispatchContexts, DispatchEnd, DispatchPhase,
+    };
+    let first = process::SignalTasks::<SignalFailure>::new();
+    let second = process::SignalTasks::<SignalFailure>::new();
+    let original = Rc::new(Cell::new(9_007_199_254_740_993));
+    let captured = Rc::clone(&original);
+    let failed = Callable::new(move |()| Err(SignalFailure::Original(Rc::clone(&captured))));
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    let pending = Callable::new(move |()| {
+        observed.set(observed.get() + 1);
+        Ok::<(), SignalFailure>(())
+    });
+    process::once(&first, "SIGUSR1", &failed).unwrap();
+    process::once(&second, "SIGUSR1", &pending).unwrap();
+    assert!(!first.has_work());
+    assert!(!second.has_work());
+    if scenario == "typed-drop" {
+        drop(first);
+        drop(second);
+        process::kill_named(process::pid(), "SIGUSR1").unwrap();
+        panic!("dropping the final typed root must restore the native signal default");
+    }
+    process::kill_named(process::pid(), "SIGUSR1").unwrap();
+    let group = prepend(
+        &first,
+        prepend(&second, DispatchEnd::<SignalFailure>::new()),
+    );
+    let returned = poll_phase(&group, DispatchPhase::Signals)
+        .err()
+        .expect("original typed signal failure");
+    match returned {
+        SignalFailure::Original(value) => {
+            assert!(Rc::ptr_eq(&value, &original));
+            assert_eq!(value.get(), 9_007_199_254_740_993);
+        }
+        SignalFailure::Native(error) => {
+            panic!("native error replaced source failure: {}", error.code())
+        }
+    }
+    assert_eq!(calls.get(), 0);
+    assert_eq!(poll_phase(&group, DispatchPhase::Signals).ok(), Some(true));
+    assert_eq!(calls.get(), 1);
+    assert_eq!(poll_phase(&group, DispatchPhase::Signals).ok(), Some(false));
+    assert_eq!(calls.get(), 1);
 }
 
 fn poll_until_received() {

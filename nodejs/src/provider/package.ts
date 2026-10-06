@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext } from "./model/dispatch.js";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
@@ -383,6 +383,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.WorkerOptions": "tsonic_rust_node::worker_threads::WorkerOptions",
       "rust.node.MessagePort": "tsonic_rust_node::worker_threads::MessagePort",
       "rust.node.MessageChannel": "tsonic_rust_node::worker_threads::MessageChannel",
+      "rust.node.WorkerResources": "tsonic_rust_node::worker_threads::WorkerResources",
+      "rust.node.SignalTasks": "tsonic_rust_node::process::SignalTasks",
       "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
@@ -448,8 +450,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Worker": workerThreadCarrierTraits.worker,
       "rust.node.WorkerOptions": workerThreadCarrierTraits.options,
       "rust.node.MessagePort": workerThreadCarrierTraits.port,
+      "rust.node.MessageChannel": cloneOnlyCarrierTraits,
+      "rust.node.EventEmitter": cloneOnlyCarrierTraits,
     },
-    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext],
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",

@@ -18,27 +18,27 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
     let calls0 = Rc::clone(&calls);
     let listener0 = Callable::new(move |()| {
         calls0.borrow_mut().push(0);
-        Ok::<(), String>(())
+        Ok::<(), tsonic_rust_node::NodeError>(())
     });
     let calls1 = Rc::clone(&calls);
     let listener1 = Callable::new(move |(_first,): (JsValue,)| {
         calls1.borrow_mut().push(1);
-        Ok::<(), String>(())
+        Ok::<(), tsonic_rust_node::NodeError>(())
     });
     let calls2 = Rc::clone(&calls);
     let listener2 = Callable::new(move |(_first, _second): (JsValue, JsValue)| {
         calls2.borrow_mut().push(2);
-        Ok::<(), String>(())
+        Ok::<(), tsonic_rust_node::NodeError>(())
     });
     let calls3 = Rc::clone(&calls);
     let listener3 = Callable::new(
         move |(_first, _second, _third): (JsValue, JsValue, JsValue)| {
             calls3.borrow_mut().push(3);
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_node::NodeError>(())
         },
     );
 
-    let mut emitter = EventEmitter::new();
+    let emitter = EventEmitter::<tsonic_rust_node::NodeError>::new();
     emitter.prepend_callable(&event, &listener0).unwrap();
     emitter.prepend_callable1(&event, &listener1).unwrap();
     emitter.prepend_callable2(&event, &listener2).unwrap();
@@ -101,7 +101,7 @@ fn callable_event_source_abi_preserves_listener_identity_and_arity() {
 #[test]
 fn event_emitter_dispatches_in_registration_order() {
     let seen = Rc::new(RefCell::new(Vec::new()));
-    let mut emitter = EventEmitter::new();
+    let emitter = EventEmitter::<tsonic_rust_node::NodeError>::new();
     let first = Rc::clone(&seen);
     emitter.on("data", move |args| {
         first
@@ -144,7 +144,7 @@ fn event_emitter_supports_prepend_remove_and_static_helpers() {
     assert!(events::capture_rejections());
 
     let seen = Rc::new(RefCell::new(Vec::new()));
-    let mut emitter = EventEmitter::new();
+    let emitter = EventEmitter::<tsonic_rust_node::NodeError>::new();
     assert_eq!(emitter.get_max_listeners(), 12);
     assert!(emitter.capture_rejections());
 
@@ -179,22 +179,24 @@ fn event_emitter_supports_prepend_remove_and_static_helpers() {
     assert_eq!(emitter.listener_count("ready"), 0);
     assert!(!emitter.has_listeners("ready"));
 
-    let mut via_static = EventEmitter::new();
+    let mut via_static = EventEmitter::<tsonic_rust_node::NodeError>::new();
     events::on(&mut via_static, "tick", |_| {});
     events::once(&mut via_static, "tick", |_| {});
     assert_eq!(events::listener_count(&via_static, "tick"), 2);
     assert!(via_static.emit("tick", &[]));
     assert_eq!(events::listener_count(&via_static, "tick"), 1);
 
-    let mut one = EventEmitter::new();
-    let mut two = EventEmitter::new();
+    let mut one = EventEmitter::<tsonic_rust_node::NodeError>::new();
+    let mut two = EventEmitter::<tsonic_rust_node::NodeError>::new();
     tsonic_rust_node::events::set_max_listeners(7, &mut [&mut one, &mut two]);
     assert_eq!(one.get_max_listeners(), 7);
     assert_eq!(two.get_max_listeners(), 7);
 
-    let capturing = EventEmitter::with_options(tsonic_rust_node::events::EventEmitterOptions {
-        capture_rejections: true,
-    });
+    let capturing = EventEmitter::<tsonic_rust_node::NodeError>::with_options(
+        tsonic_rust_node::events::EventEmitterOptions {
+            capture_rejections: true,
+        },
+    );
     assert!(capturing.capture_rejections());
     events::set_capture_rejections(false);
     events::set_default_max_listeners(previous_default);

@@ -4,32 +4,37 @@ use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use tsonic_rust_js::JsValue;
+use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::Callable;
 
 use crate::error::{NodeError, NodeResult};
-use crate::events::EventEmitter;
+use crate::events::{EventEmitter, WeakEventEmitter};
 
 use super::clone::{decode, encode, ClonedValue};
 use super::protocol::{TransportEvent, WorkerFrameKind, WorkerTransport};
+use super::WorkerResources;
 
 const MAXIMUM_QUEUED_MESSAGES: usize = 1 << 16;
 
-#[derive(Clone)]
-pub struct MessagePort {
+#[cfg(test)]
+mod tests;
+
+pub struct MessagePort<E: 'static = tsonic_rust_runtime::TsonicError> {
     state: Rc<RefCell<MessagePortState>>,
-    emitter: Rc<RefCell<EventEmitter>>,
+    emitter: EventEmitter<E>,
 }
 
-struct MessagePortState {
+pub(super) struct MessagePortState {
+    reservation: TaskReservation,
     peer: Option<Weak<RefCell<MessagePortState>>>,
     transport: Option<WorkerTransport>,
     incoming: Option<Receiver<TransportEvent>>,
-    messages: VecDeque<ClonedValue>,
-    errors: VecDeque<String>,
+    messages: VecDeque<(TaskTicket, ClonedValue)>,
+    errors: VecDeque<(TaskTicket, String)>,
     started: bool,
     closed: bool,
     refed: bool,
-    close_pending: bool,
+    close_pending: Option<TaskTicket>,
 }
 
 enum PortSignal {
@@ -38,10 +43,21 @@ enum PortSignal {
     Close,
 }
 
-impl MessagePort {
-    fn local() -> Self {
+impl<E: 'static> Clone for MessagePort<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: Rc::clone(&self.state),
+            emitter: self.emitter.clone(),
+        }
+    }
+}
+
+impl<E: From<NodeError> + 'static> MessagePort<E> {
+    fn local(resources: &WorkerResources<E>) -> NodeResult<Self> {
+        let reservation = super::resources::reserve_resource()?;
         let value = Self {
             state: Rc::new(RefCell::new(MessagePortState {
+                reservation,
                 peer: None,
                 transport: None,
                 incoming: None,
@@ -50,34 +66,24 @@ impl MessagePort {
                 started: false,
                 closed: false,
                 refed: true,
-                close_pending: false,
+                close_pending: None,
             })),
-            emitter: Rc::new(RefCell::new(EventEmitter::new())),
+            emitter: EventEmitter::new(),
         };
-        register_port(&value);
-        value
+        resources.register_port(&value);
+        Ok(value)
     }
 
-    pub(crate) fn from_transport(
-        transport: WorkerTransport,
-        incoming: Receiver<TransportEvent>,
-    ) -> Self {
+    pub(super) fn from_state(
+        resources: &WorkerResources<E>,
+        state: Rc<RefCell<MessagePortState>>,
+    ) -> NodeResult<Self> {
         let value = Self {
-            state: Rc::new(RefCell::new(MessagePortState {
-                peer: None,
-                transport: Some(transport),
-                incoming: Some(incoming),
-                messages: VecDeque::new(),
-                errors: VecDeque::new(),
-                started: false,
-                closed: false,
-                refed: true,
-                close_pending: false,
-            })),
-            emitter: Rc::new(RefCell::new(EventEmitter::new())),
+            state,
+            emitter: EventEmitter::new(),
         };
-        register_port(&value);
-        value
+        resources.register_port(&value);
+        Ok(value)
     }
 
     fn connect(&self, peer: &Self) {
@@ -104,39 +110,38 @@ impl MessagePort {
         result
     }
 
-    pub fn receive_message(&self) -> Option<JsValue> {
+    pub fn receive_message(&self) -> NodeResult<Option<JsValue>> {
         let mut state = self.state.borrow_mut();
-        state.ingest_transport();
-        state.messages.pop_front().map(|value| value.to_js())
+        state.ingest_transport()?;
+        Ok(state.messages.pop_front().map(|(_, value)| value.to_js()))
     }
 
     pub fn start(&self) {
         self.state.borrow_mut().started = true;
     }
 
-    pub fn close(&self) {
+    pub fn close(&self) -> NodeResult<()> {
         let transport = {
             let mut state = self.state.borrow_mut();
             if state.closed {
-                return;
+                return Ok(());
             }
-            state.closed = true;
-            state.refed = false;
-            state.close_pending = true;
+            state.mark_closed()?;
             state.transport.take()
         };
         if let Some(transport) = transport {
             let _ = transport.send(WorkerFrameKind::Close, &[]);
             transport.close();
         }
+        Ok(())
     }
 
-    pub fn unref(&mut self) -> &mut Self {
+    pub fn unref(&self) -> &Self {
         self.state.borrow_mut().refed = false;
         self
     }
 
-    pub fn ref_chain(&mut self) -> &mut Self {
+    pub fn ref_chain(&self) -> &Self {
         let mut state = self.state.borrow_mut();
         if !state.closed {
             state.refed = true;
@@ -149,122 +154,154 @@ impl MessagePort {
         self.state.borrow().refed
     }
 
-    pub fn on_callable<E>(
-        &mut self,
+    pub fn on_callable(
+        &self,
         event: &JsValue,
         listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: std::fmt::Display + 'static,
-    {
+    ) -> NodeResult<&Self> {
         self.start();
-        self.emitter.borrow_mut().on_callable(event, listener)?;
+        self.emitter.on_callable(event, listener)?;
         Ok(self)
     }
 
-    pub fn on_callable1<E>(
-        &mut self,
+    pub fn on_callable1(
+        &self,
         event: &JsValue,
         listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: std::fmt::Display + 'static,
-    {
+    ) -> NodeResult<&Self> {
         self.start();
-        self.emitter.borrow_mut().on_callable1(event, listener)?;
+        self.emitter.on_callable1(event, listener)?;
         Ok(self)
     }
 
-    pub fn once_callable<E>(
-        &mut self,
+    pub fn once_callable(
+        &self,
         event: &JsValue,
         listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: std::fmt::Display + 'static,
-    {
+    ) -> NodeResult<&Self> {
         self.start();
-        self.emitter.borrow_mut().once_callable(event, listener)?;
+        self.emitter.once_callable(event, listener)?;
         Ok(self)
     }
 
-    pub fn once_callable1<E>(
-        &mut self,
+    pub fn once_callable1(
+        &self,
         event: &JsValue,
         listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: std::fmt::Display + 'static,
-    {
+    ) -> NodeResult<&Self> {
         self.start();
-        self.emitter.borrow_mut().once_callable1(event, listener)?;
+        self.emitter.once_callable1(event, listener)?;
         Ok(self)
     }
 
-    pub fn off_callable<E>(
-        &mut self,
+    pub fn off_callable(
+        &self,
         event: &JsValue,
         listener: &Callable<(), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: 'static,
-    {
-        self.emitter.borrow_mut().off_callable(event, listener)?;
+    ) -> NodeResult<&Self> {
+        self.emitter.off_callable(event, listener)?;
         Ok(self)
     }
 
-    pub fn off_callable1<E>(
-        &mut self,
+    pub fn off_callable1(
+        &self,
         event: &JsValue,
         listener: &Callable<(JsValue,), Result<(), E>>,
-    ) -> NodeResult<&mut Self>
-    where
-        E: 'static,
-    {
-        self.emitter.borrow_mut().off_callable1(event, listener)?;
+    ) -> NodeResult<&Self> {
+        self.emitter.off_callable1(event, listener)?;
         Ok(self)
     }
 
-    fn poll(&self) -> NodeResult<bool> {
-        let signals = {
+    pub(super) fn capture(&self) -> Result<Option<TaskTicket>, E> {
+        let captured = {
             let mut state = self.state.borrow_mut();
-            state.ingest_transport();
-            if !state.started {
-                return Ok(false);
-            }
-            let mut signals = Vec::new();
-            while let Some(value) = state.messages.pop_front() {
-                signals.push(PortSignal::Message(value.to_js()));
-            }
-            while let Some(error) = state.errors.pop_front() {
-                signals.push(PortSignal::Error(error));
-            }
-            if state.close_pending {
-                state.close_pending = false;
-                signals.push(PortSignal::Close);
-            }
-            signals
-        };
-        for signal in &signals {
-            let converted;
-            let (event, arguments): (&str, &[JsValue]) = match signal {
-                PortSignal::Message(value) => ("message", std::slice::from_ref(value)),
-                PortSignal::Error(error) => {
-                    converted = JsValue::String((error).to_owned());
-                    ("error", std::slice::from_ref(&converted))
+            state.ingest_transport().map(|()| {
+                if !state.started {
+                    return None;
                 }
-                PortSignal::Close => ("close", &[]),
-            };
-            let emission = self
-                .emitter
-                .borrow_mut()
-                .prepare_callable_emission(&event_name(event), arguments)?;
-            emission.invoke(arguments)?;
-        }
-        Ok(!signals.is_empty())
+                [
+                    state.messages.back().map(|(ticket, _)| *ticket),
+                    state.errors.back().map(|(ticket, _)| *ticket),
+                    state.close_pending,
+                ]
+                .into_iter()
+                .flatten()
+                .max()
+            })
+        };
+        captured.map_err(E::from)
     }
 
-    fn is_refed_active(&self) -> bool {
+    pub(super) fn poll(&self, boundary: Option<TaskTicket>) -> Result<bool, E> {
+        let Some(boundary) = boundary else {
+            return Ok(false);
+        };
+        let mut dispatched = false;
+        loop {
+            let value = {
+                let mut state = self.state.borrow_mut();
+                if !state
+                    .messages
+                    .front()
+                    .is_some_and(|(ticket, _)| *ticket <= boundary)
+                {
+                    break;
+                }
+                state.messages.pop_front().map(|(_, value)| value)
+            };
+            let Some(value) = value else {
+                break;
+            };
+            self.dispatch_signal(PortSignal::Message(value.to_js()))?;
+            dispatched = true;
+        }
+        loop {
+            let error = {
+                let mut state = self.state.borrow_mut();
+                if !state
+                    .errors
+                    .front()
+                    .is_some_and(|(ticket, _)| *ticket <= boundary)
+                {
+                    break;
+                }
+                state.errors.pop_front().map(|(_, error)| error)
+            };
+            let Some(error) = error else {
+                break;
+            };
+            self.dispatch_signal(PortSignal::Error(error))?;
+            dispatched = true;
+        }
+        if self
+            .state
+            .borrow()
+            .close_pending
+            .is_some_and(|ticket| ticket <= boundary)
+        {
+            self.state.borrow_mut().close_pending = None;
+            self.dispatch_signal(PortSignal::Close)?;
+            dispatched = true;
+        }
+        Ok(dispatched)
+    }
+
+    fn dispatch_signal(&self, signal: PortSignal) -> Result<(), E> {
+        let converted;
+        let (event, arguments): (&str, &[JsValue]) = match &signal {
+            PortSignal::Message(value) => ("message", std::slice::from_ref(value)),
+            PortSignal::Error(error) => {
+                converted = JsValue::String(error.clone());
+                ("error", std::slice::from_ref(&converted))
+            }
+            PortSignal::Close => ("close", &[]),
+        };
+        let emission = self.emitter.prepare_named_emission(event, arguments)?;
+        emission.invoke(arguments)?;
+        Ok(())
+    }
+
+    pub(super) fn is_refed_active(&self) -> bool {
         let state = self.state.borrow();
         state.started && state.refed && !state.closed
     }
@@ -284,15 +321,32 @@ impl MessagePortState {
                 "message port queue exceeds the finite message limit",
             ));
         }
-        self.messages.push_back(payload);
+        self.messages
+            .push_back((super::resources::admit_signal()?, payload));
         Ok(())
     }
 
-    fn ingest_transport(&mut self) {
-        loop {
+    fn push_error(&mut self, error: String) -> NodeResult<()> {
+        self.errors
+            .push_back((super::resources::admit_signal()?, error));
+        Ok(())
+    }
+
+    fn mark_closed(&mut self) -> NodeResult<()> {
+        if !self.closed {
+            self.close_pending = Some(super::resources::admit_signal()?);
+            self.closed = true;
+            self.refed = false;
+        }
+        self.incoming = None;
+        Ok(())
+    }
+
+    fn ingest_transport(&mut self) -> NodeResult<()> {
+        while self.messages.len() + self.errors.len() < MAXIMUM_QUEUED_MESSAGES {
             let event = {
                 let Some(incoming) = self.incoming.as_ref() else {
-                    return;
+                    return Ok(());
                 };
                 incoming.try_recv()
             };
@@ -301,114 +355,119 @@ impl MessagePortState {
                     WorkerFrameKind::Message => match decode(&frame.payload) {
                         Ok(value) => {
                             if let Err(error) = self.enqueue(value) {
-                                self.errors.push_back(error.to_string());
+                                self.push_error(error.to_string())?;
                             }
                         }
-                        Err(error) => self.errors.push_back(error.to_string()),
+                        Err(error) => self.push_error(error.to_string())?,
                     },
                     WorkerFrameKind::Error => {
-                        self.errors
-                            .push_back(String::from_utf8_lossy(&frame.payload).into_owned());
+                        self.push_error(String::from_utf8_lossy(&frame.payload).into_owned())?;
                     }
                     WorkerFrameKind::Close => {
-                        self.closed = true;
-                        self.refed = false;
-                        self.close_pending = true;
+                        self.mark_closed()?;
+                        break;
                     }
-                    _ => self
-                        .errors
-                        .push_back("unexpected worker transport frame".to_string()),
+                    _ => self.push_error("unexpected worker transport frame".to_string())?,
                 },
                 Ok(TransportEvent::Failure(error)) => {
-                    self.errors.push_back(error);
-                    self.closed = true;
-                    self.refed = false;
-                    self.close_pending = true;
+                    self.push_error(error)?;
+                    self.mark_closed()?;
+                    break;
                 }
                 Ok(TransportEvent::End) => {
-                    self.closed = true;
-                    self.refed = false;
-                    self.close_pending = true;
+                    self.mark_closed()?;
                     break;
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    self.closed = true;
-                    self.refed = false;
-                    self.close_pending = true;
+                    self.mark_closed()?;
                     break;
                 }
             }
         }
+        Ok(())
     }
 }
 
-pub struct MessageChannel {
-    pub port1: MessagePort,
-    pub port2: MessagePort,
+pub struct MessageChannel<E: 'static = tsonic_rust_runtime::TsonicError> {
+    pub port1: MessagePort<E>,
+    pub port2: MessagePort<E>,
 }
 
-impl MessageChannel {
-    pub fn new() -> Self {
-        let port1 = MessagePort::local();
-        let port2 = MessagePort::local();
+impl<E: 'static> Clone for MessageChannel<E> {
+    fn clone(&self) -> Self {
+        Self {
+            port1: self.port1.clone(),
+            port2: self.port2.clone(),
+        }
+    }
+}
+
+impl<E: From<NodeError> + 'static> MessageChannel<E> {
+    pub fn new(resources: &WorkerResources<E>) -> NodeResult<Self> {
+        let port1 = MessagePort::local(resources)?;
+        let port2 = MessagePort::local(resources)?;
         port1.connect(&port2);
         port2.connect(&port1);
-        Self { port1, port2 }
+        Ok(Self { port1, port2 })
     }
 }
 
-impl Default for MessageChannel {
-    fn default() -> Self {
-        Self::new()
+pub(super) struct RuntimePort<E: 'static> {
+    state: Weak<RefCell<MessagePortState>>,
+    emitter: WeakEventEmitter<E>,
+}
+
+impl<E: 'static> Clone for RuntimePort<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            emitter: self.emitter.clone(),
+        }
     }
 }
 
-type RuntimePort = (Weak<RefCell<MessagePortState>>, Weak<RefCell<EventEmitter>>);
-
-thread_local! {
-    static PORTS: RefCell<Vec<RuntimePort>> =
-        const { RefCell::new(Vec::new()) };
-}
-
-fn register_port(port: &MessagePort) {
-    PORTS.with(|ports| {
-        ports
-            .borrow_mut()
-            .push((Rc::downgrade(&port.state), Rc::downgrade(&port.emitter)));
-    });
-}
-
-pub(crate) fn poll_runtime_ports() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let ports = PORTS.with(|ports| {
-        let mut ports = ports.borrow_mut();
-        ports.retain(|(state, emitter)| state.strong_count() > 0 && emitter.strong_count() > 0);
-        ports
-            .iter()
-            .filter_map(|(state, emitter)| Some((state.upgrade()?, emitter.upgrade()?)))
-            .map(|(state, emitter)| MessagePort { state, emitter })
-            .collect::<Vec<_>>()
-    });
-    let mut did_work = false;
-    for port in ports {
-        did_work |= port
-            .poll()
-            .map_err(tsonic_rust_runtime::TsonicError::from)?;
+impl<E: From<NodeError> + 'static> MessagePort<E> {
+    pub(super) fn ticket(&self) -> TaskTicket {
+        self.state.borrow().reservation.ticket()
     }
-    Ok(did_work)
+
+    pub(super) fn downgrade(&self) -> RuntimePort<E> {
+        RuntimePort {
+            state: Rc::downgrade(&self.state),
+            emitter: self.emitter.downgrade(),
+        }
+    }
 }
 
-pub(crate) fn has_refed_runtime_ports() -> bool {
-    PORTS.with(|ports| {
-        ports.borrow().iter().any(|(state, emitter)| {
-            let (Some(state), Some(emitter)) = (state.upgrade(), emitter.upgrade()) else {
-                return false;
-            };
-            MessagePort { state, emitter }.is_refed_active()
+impl<E: 'static> RuntimePort<E> {
+    pub(super) fn is_alive(&self) -> bool {
+        self.state.strong_count() > 0 && self.emitter.is_alive()
+    }
+
+    pub(super) fn upgrade(&self) -> Option<MessagePort<E>> {
+        Some(MessagePort {
+            state: self.state.upgrade()?,
+            emitter: self.emitter.upgrade()?,
         })
-    })
+    }
 }
 
-fn event_name(value: &str) -> JsValue {
-    JsValue::String((value).to_owned())
+pub(super) fn transport_state(
+    transport: WorkerTransport,
+    incoming: Receiver<TransportEvent>,
+) -> NodeResult<Rc<RefCell<MessagePortState>>> {
+    let reservation = super::resources::reserve_resource()?;
+    Ok(Rc::new(RefCell::new(MessagePortState {
+        reservation,
+        peer: None,
+        transport: Some(transport),
+        incoming: Some(incoming),
+        messages: VecDeque::new(),
+        errors: VecDeque::new(),
+        started: false,
+        closed: false,
+        refed: true,
+        close_pending: None,
+    })))
 }

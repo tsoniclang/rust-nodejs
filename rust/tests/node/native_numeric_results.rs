@@ -125,7 +125,8 @@ fn native_integer_rows_and_worker_values_do_not_round() {
     ));
     assert!(matches!(rows[0]["minimum"], JsValue::Integer(i64::MIN)));
     for original in [JsValue::from(i64::MIN), JsValue::from(u64::MAX)] {
-        let channel = worker_threads::MessageChannel::new();
+        let channel =
+            worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
         channel.port1.post_message(original.clone()).unwrap();
         let transported = worker_threads::receive_message_on_port(&channel.port2).unwrap();
         assert_eq!(transported, original);

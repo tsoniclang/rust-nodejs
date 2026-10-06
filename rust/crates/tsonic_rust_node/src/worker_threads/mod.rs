@@ -1,11 +1,13 @@
 mod clone;
 mod port;
 mod protocol;
+pub mod resources;
 mod worker;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
+use std::rc::Rc;
 use std::time::Duration;
 
 use tsonic_rust_js::JsValue;
@@ -17,6 +19,7 @@ use protocol::{io_error, read_frame, write_frame, WorkerFrameKind, WorkerTranspo
 
 pub use clone::ClonedValue as StructuredCloneValue;
 pub use port::{MessageChannel, MessagePort};
+pub use resources::WorkerResources;
 pub use worker::{Worker, WorkerOptions};
 
 pub(crate) const WORKER_ARGUMENT_MARKER: &str = "--tsonic-node-worker-v1";
@@ -27,7 +30,7 @@ const MAXIMUM_ENVIRONMENT_ENTRIES: usize = 1 << 20;
 struct WorkerProcessContext {
     thread_id: i32,
     worker_data: JsValue,
-    parent_port: MessagePort,
+    parent_port: Rc<RefCell<port::MessagePortState>>,
     environment_data: BTreeMap<String, ClonedValue>,
 }
 
@@ -111,7 +114,7 @@ pub fn initialize_worker_process() -> NodeResult<Option<String>> {
     let environment_data = decode_environment_data_snapshot(&environment_data.payload)?;
     stream.set_read_timeout(None).map_err(io_error)?;
     let (transport, incoming) = WorkerTransport::start(stream)?;
-    let parent_port = MessagePort::from_transport(transport, incoming);
+    let parent_port = port::transport_state(transport, incoming)?;
     WORKER_CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.is_some() {
@@ -132,8 +135,11 @@ pub fn initialize_worker_process() -> NodeResult<Option<String>> {
     Ok(Some(entry_identity))
 }
 
-pub fn receive_message_on_port(port: &MessagePort) -> Option<JsValue> {
+pub fn receive_message_on_port<E: From<NodeError> + 'static>(
+    port: &MessagePort<E>,
+) -> NodeResult<JsValue> {
     port.receive_message()
+        .map(|value| value.unwrap_or(JsValue::Null))
 }
 
 pub fn is_main_thread() -> bool {
@@ -150,13 +156,19 @@ pub fn thread_id() -> i32 {
     })
 }
 
-pub fn parent_port() -> Option<MessagePort> {
+fn parent_port_state() -> Option<Rc<RefCell<port::MessagePortState>>> {
     WORKER_CONTEXT.with(|context| {
         context
             .borrow()
             .as_ref()
-            .map(|context| context.parent_port.clone())
+            .map(|context| Rc::clone(&context.parent_port))
     })
+}
+
+pub fn parent_port<E: From<NodeError> + 'static>(
+    resources: &WorkerResources<E>,
+) -> NodeResult<Option<MessagePort<E>>> {
+    resources.parent_port()
 }
 
 pub fn worker_data() -> JsValue {
@@ -373,6 +385,3 @@ impl<'a> SnapshotReader<'a> {
         Ok(value)
     }
 }
-
-pub(crate) use port::{has_refed_runtime_ports, poll_runtime_ports};
-pub(crate) use worker::{has_refed_runtime_workers, next_runtime_reap_delay, poll_runtime_workers};
