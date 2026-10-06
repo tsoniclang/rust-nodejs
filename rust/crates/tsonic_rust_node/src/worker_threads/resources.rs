@@ -1,17 +1,18 @@
 use super::port::{MessagePort, RuntimePort};
 use super::worker::{RuntimeWorker, Worker};
 use crate::error::{NodeError, NodeResult};
-use crate::runtime_resources::{ResourceFrontier, RuntimeResource, RuntimeResources};
+use crate::runtime_resources::{
+    NativeResourceBudget, ResourceFrontier, RuntimeResource, RuntimeResources,
+};
 use std::cell::OnceCell;
-use std::num::NonZeroUsize;
 use std::time::Duration;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
-use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
+use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 
 const MAXIMUM_WORKER_RESOURCES: usize = 1 << 20;
 
 thread_local! {
-    static RESOURCE_BUDGET: OnceCell<TaskBudget> = const { OnceCell::new() };
+    static RESOURCE_BUDGET: NativeResourceBudget = const { NativeResourceBudget::new(MAXIMUM_WORKER_RESOURCES) };
     static DEFAULT_RESOURCES: WorkerResources<tsonic_rust_runtime::TsonicError> = const { WorkerResources::new() };
 }
 
@@ -161,31 +162,11 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
 }
 
 pub(super) fn reserve_resource() -> NodeResult<TaskReservation> {
-    RESOURCE_BUDGET.with(|budget| {
-        budget
-            .get_or_init(|| {
-                TaskBudget::new(
-                    NonZeroUsize::new(MAXIMUM_WORKER_RESOURCES)
-                        .expect("finite worker resource limit"),
-                )
-            })
-            .reserve()
-            .map_err(NodeError::from)
-    })
+    RESOURCE_BUDGET.with(NativeResourceBudget::reserve)
 }
 
 pub(super) fn admit_signal() -> NodeResult<TaskTicket> {
-    RESOURCE_BUDGET.with(|budget| {
-        budget
-            .get_or_init(|| {
-                TaskBudget::new(
-                    NonZeroUsize::new(MAXIMUM_WORKER_RESOURCES)
-                        .expect("finite worker resource limit"),
-                )
-            })
-            .admit()
-            .map_err(NodeError::from)
-    })
+    RESOURCE_BUDGET.with(NativeResourceBudget::admit)
 }
 
 pub fn with_default<TOutput>(

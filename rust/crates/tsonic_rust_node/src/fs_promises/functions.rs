@@ -361,20 +361,34 @@ pub fn glob(pattern: &str) -> NodeResult<Vec<String>> {
     fs::glob_sync(pattern)
 }
 
-pub fn watch(path: &str) -> NodeResult<FsWatcher> {
-    fs::watch(path)
+pub fn watch<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<FsWatcher<E>> {
+    fs::watch(roots, path)
 }
 
-pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWatcher> {
-    fs::watch_with_options(path, options)
+pub fn watch_with_options<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchOptions,
+) -> NodeResult<FsWatcher<E>> {
+    fs::watch_with_options(roots, path, options)
 }
 
-pub fn watch_file(path: &str) -> NodeResult<StatWatcher> {
-    fs::watch_file(path)
+pub fn watch_file<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<StatWatcher<E>> {
+    fs::watch_file(roots, path)
 }
 
-pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeResult<StatWatcher> {
-    fs::watch_file_with_options(path, options)
+pub fn watch_file_with_options<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchFileOptions,
+) -> NodeResult<StatWatcher<E>> {
+    fs::watch_file_with_options(roots, path, options)
 }
 
 pub async fn read_file_string_async(path: &str, encoding: &str) -> NodeResult<String> {

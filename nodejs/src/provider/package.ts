@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext } from "./model/dispatch.js";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
@@ -385,6 +385,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.MessageChannel": "tsonic_rust_node::worker_threads::MessageChannel",
       "rust.node.WorkerResources": "tsonic_rust_node::worker_threads::WorkerResources",
       "rust.node.SignalTasks": "tsonic_rust_node::process::SignalTasks",
+      "rust.node.NetServers": "tsonic_rust_node::net::NetServers",
+      "rust.node.Watchers": "tsonic_rust_node::fs::Watchers",
       "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
@@ -453,7 +455,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.MessageChannel": cloneOnlyCarrierTraits,
       "rust.node.EventEmitter": cloneOnlyCarrierTraits,
     },
-    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext],
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",

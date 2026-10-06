@@ -57,6 +57,30 @@ export const nodeSignalInput: RustDispatchContextInput = {
   contextId: nodeSignalContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
 };
 
+export const nodeNetContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.net",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.NetServers", genericArguments: errorArguments },
+  construct: { form: "call", path: "tsonic_rust_node::net::NetServers::new", const: true },
+  composedContexts: [],
+};
+
+export const nodeNetInput: RustDispatchContextInput = {
+  contextId: nodeNetContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
+export const nodeWatcherContext: RustDispatchContextDefinition = {
+  id: "tsonic.rust.node.watchers",
+  requiredCrate: "tsonic_rust_node",
+  rootCarrier: { kind: "target-named", id: "rust.node.Watchers", genericArguments: errorArguments },
+  construct: { form: "call", path: "tsonic_rust_node::fs::Watchers::new", const: true },
+  composedContexts: [],
+};
+
+export const nodeWatcherInput: RustDispatchContextInput = {
+  contextId: nodeWatcherContext.id, view: "root", targetArgumentIndex: 0, mode: "ref",
+};
+
 export const nodeTimerContext: RustDispatchContextDefinition = {
   id: "tsonic.rust.node.timers",
   requiredCrate: "tsonic_rust_node",
@@ -71,7 +95,7 @@ export const nodeTimerInput: RustDispatchContextInput = {
 
 export function nodeDispatchGroup(targetArgumentIndex: number, jsEnabled: boolean): RustDispatchContextGroupInput {
   return {
-    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id,
+    contextIds: [nodeBackgroundContext.id, nodeRuntimeTaskContext.id, nodeTimerContext.id, nodeWorkerContext.id, nodeSignalContext.id, nodeNetContext.id, nodeWatcherContext.id,
       ...(jsEnabled ? [rustJsTimerDispatchContextId] : [])], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: errorArguments,

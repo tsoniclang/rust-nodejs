@@ -562,7 +562,9 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap()
         .iter()
         .any(|path| path.ends_with("a.txt")));
-    let mut watcher = fs_promises::watch_with_options(
+    let watchers = fs_promises::Watchers::<tsonic_rust_node::NodeError>::new();
+    let watcher = fs_promises::watch_with_options(
+        &watchers,
         &file_text,
         fs_promises::WatchOptions {
             persistent: false,
@@ -573,9 +575,12 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     assert!(!watcher.has_ref());
     watcher.close();
     assert!(watcher.closed());
-    let mut stat_watcher =
-        fs_promises::watch_file_with_options(&file_text, fs_promises::WatchFileOptions::default())
-            .unwrap();
+    let stat_watcher = fs_promises::watch_file_with_options(
+        &watchers,
+        &file_text,
+        fs_promises::WatchFileOptions::default(),
+    )
+    .unwrap();
     assert!(stat_watcher.has_ref());
     stat_watcher.close();
     let file_change = fs_promises::FileChangeInfo {

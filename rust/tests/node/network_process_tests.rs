@@ -57,7 +57,7 @@ FE4CTN/wKnzOFgSS3cjWy3A8WfhHn6KDHRaZ3MdDNUhJr8zb1Ek4J3MDysZcXHbA
 
 #[test]
 fn net_socket_and_http_client_use_real_local_tcp() {
-    let mut server = net::create_server();
+    let mut server = net::with_default(net::create_server).unwrap();
     server.bind("127.0.0.1", 0).unwrap();
     assert!(server.address().unwrap().port > 0);
     let port = server.local_port().unwrap();
@@ -79,7 +79,7 @@ fn net_socket_and_http_client_use_real_local_tcp() {
     assert!(net::is_ipv4("127.0.0.1"));
     assert!(net::is_ipv6("::1"));
 
-    let mut server = net::create_server();
+    let mut server = net::with_default(net::create_server).unwrap();
     server.bind("127.0.0.1", 0).unwrap();
     let port = server.local_port().unwrap();
     let handle = thread::spawn(move || {
@@ -118,30 +118,30 @@ fn net_socket_and_http_client_use_real_local_tcp() {
 fn net_source_abi_listen_and_default_host_adapters_are_exact() {
     let callback_count = std::rc::Rc::new(std::cell::Cell::new(0));
 
-    let mut port_server = net::create_server();
+    let port_server = net::with_default(net::create_server).unwrap();
     port_server.listen_port(0.0).unwrap();
     assert!(port_server.listening());
     port_server.close();
 
-    let mut host_server = net::create_server();
+    let host_server = net::with_default(net::create_server).unwrap();
     host_server.listen_port_host(0.0, "127.0.0.1").unwrap();
     assert!(host_server.listening());
     host_server.close();
 
-    let mut callback_server = net::create_server();
+    let callback_server = net::with_default(net::create_server).unwrap();
     let callback_state = std::rc::Rc::clone(&callback_count);
     callback_server
         .listen_port_callable(
             0.0,
             Callable::new(move |()| {
                 callback_state.set(callback_state.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             }),
         )
         .unwrap();
     callback_server.close();
 
-    let mut host_callback_server = net::create_server();
+    let host_callback_server = net::with_default(net::create_server).unwrap();
     let callback_state = std::rc::Rc::clone(&callback_count);
     host_callback_server
         .listen_port_host_callable(
@@ -149,7 +149,7 @@ fn net_source_abi_listen_and_default_host_adapters_are_exact() {
             "127.0.0.1",
             Callable::new(move |()| {
                 callback_state.set(callback_state.get() + 1);
-                Ok::<(), String>(())
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
             }),
         )
         .unwrap();
@@ -157,7 +157,7 @@ fn net_source_abi_listen_and_default_host_adapters_are_exact() {
     tsonic_rust_node::run_event_loop().unwrap();
     assert_eq!(callback_count.get(), 2);
 
-    let mut bound = net::create_bound_server("127.0.0.1", 0).unwrap();
+    let bound = net::with_default(|roots| net::create_bound_server(roots, "127.0.0.1", 0)).unwrap();
     assert!(bound.listening());
     bound.close();
 
@@ -172,16 +172,23 @@ fn net_source_abi_listen_and_default_host_adapters_are_exact() {
     first.end(None).unwrap();
     let connected = std::rc::Rc::new(std::cell::Cell::new(false));
     let connected_state = std::rc::Rc::clone(&connected);
+    let tasks =
+        tsonic_rust_node::runtime_tasks::RuntimeTasks::<tsonic_rust_runtime::TsonicError>::new();
     let mut second = net::create_connection_default_host_callable(
+        &tasks,
         f64::from(port),
         Callable::new(move |()| {
             connected_state.set(true);
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
     )
     .unwrap();
     second.end(None).unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &tasks,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    ))
+    .unwrap();
     assert!(connected.get());
     accepted.join().unwrap();
 }
@@ -281,14 +288,19 @@ fn net_option_and_policy_shapes_are_closed_and_fact_backed() {
     assert_eq!(socket_address.port, 80);
     assert_eq!(net::SocketAddress::new("::1", 443).unwrap().family, "IPv6");
 
-    let mut server = net::create_server_with_options(&net::ListenOptions {
-        host: "127.0.0.1".to_string(),
-        port: 0,
-        backlog: Some(8),
-        ipv6_only: false,
-        exclusive: true,
-        readable_all: false,
-        writable_all: false,
+    let mut server = net::with_default(|roots| {
+        net::create_server_with_options(
+            roots,
+            &net::ListenOptions {
+                host: "127.0.0.1".to_string(),
+                port: 0,
+                backlog: Some(8),
+                ipv6_only: false,
+                exclusive: true,
+                readable_all: false,
+                writable_all: false,
+            },
+        )
     })
     .unwrap();
     assert!(server.listening());
@@ -334,7 +346,7 @@ fn net_option_and_policy_shapes_are_closed_and_fact_backed() {
     socket.end(None).unwrap();
     handle.join().unwrap();
 
-    let mut server = net::create_server();
+    let mut server = net::with_default(net::create_server).unwrap();
     server.bind("127.0.0.1", 0).unwrap();
     let port = server.local_port().unwrap();
     let handle = thread::spawn(move || {

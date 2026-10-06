@@ -1,4 +1,4 @@
-import { rustCallableTargetType } from "@tsonic/target-rust/provider";
+import { rustCallableTargetType, rustProgramErrorTargetType } from "@tsonic/target-rust/provider";
 import { rustNamedTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { readableCarrier, streamCarrier, writableCarrier } from "../stream/carriers.js";
@@ -38,7 +38,10 @@ export const readStreamOptionsCarrier: RustTargetTypeRef = { kind: "target-named
 
 export const writeStreamOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.WriteStreamOptions" };
 
-export const fsWatcherCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.FsWatcher" };
+export const fsWatcherCarrier: RustTargetTypeRef = {
+  kind: "target-named", id: "rust.node.FsWatcher",
+  genericArguments: [{ kind: "type", type: rustProgramErrorTargetType() }],
+};
 
 export const fileWatchCallbackCarrier = rustCallableTargetType(
   [stringCarrier, stringCarrier],

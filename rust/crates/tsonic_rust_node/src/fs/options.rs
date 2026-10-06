@@ -219,8 +219,8 @@ impl Default for WatchOptions {
             encoding: Some("utf8".to_string()),
             ignore: Vec::new(),
             signal_aborted: false,
-            max_queue: usize::MAX,
-            overflow: "ignore".to_string(),
+            max_queue: watchers::MAXIMUM_PENDING_EVENTS,
+            overflow: "error".to_string(),
         }
     }
 }

@@ -20,10 +20,10 @@ fn has_runtime_work() -> bool {
     crate::background::has_pending_work()
         || has_runtime_tasks()
         || crate::http::has_active_runtime_servers()
-        || crate::net::has_refed_runtime_servers()
+        || crate::net::with_default(DispatchContexts::has_work)
         || crate::tls::has_refed_runtime_servers()
         || crate::timers::has_refed_runtime_timers()
-        || crate::fs::has_refed_runtime_watchers()
+        || crate::fs::with_default_watchers(DispatchContexts::has_work)
         || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
 }
 
@@ -128,6 +128,18 @@ where
                         )
                     })?
                 }
+                DispatchPhase::Net => crate::net::with_default(|native| {
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
+                DispatchPhase::Watchers => crate::fs::with_default_watchers(|native| {
+                    tsonic_rust_runtime::dispatch::poll_phase(
+                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+                        phase,
+                    )
+                })?,
                 DispatchPhase::Signals => {
                     if can_dispatch_signals {
                         crate::process::with_default_signals(|native| {
@@ -164,7 +176,7 @@ where
         let timer_delay = [
             crate::timers::next_runtime_timer_delay(),
             tsonic_rust_js::timers::next_timer_delay(),
-            crate::fs::next_runtime_watcher_delay(),
+            crate::fs::with_default_watchers(DispatchContexts::next_delay),
             crate::worker_threads::resources::with_default(DispatchContexts::next_delay),
             self.contexts.next_delay(),
         ]
@@ -193,13 +205,13 @@ fn poll_native_phase(phase: DispatchPhase) -> TsonicResult<bool> {
         | DispatchPhase::Timers
         | DispatchPhase::Workers
         | DispatchPhase::Ports
+        | DispatchPhase::Net
+        | DispatchPhase::Watchers
         | DispatchPhase::Signals => {
             unreachable!("native queued work belongs to its composed phase")
         }
         DispatchPhase::Http => crate::http::poll_runtime_servers(),
-        DispatchPhase::Net => crate::net::poll_runtime_servers(),
         DispatchPhase::Tls => crate::tls::poll_runtime_servers(),
-        DispatchPhase::Watchers => crate::fs::poll_runtime_watchers(),
     }
 }
 #[cfg(test)]

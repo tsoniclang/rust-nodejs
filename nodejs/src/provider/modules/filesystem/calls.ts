@@ -4,6 +4,7 @@ import { bufferCarrier } from "../buffer/carriers.js";
 import { fileWatchCallbackCarrier, fileStatWatchCallbackCarrier, makeDirectoryOptionsCarrier, readStreamCarrier, readStreamOptionsCarrier, fsWatcherCarrier, rmOptionsCarrier, statsCarrier, writeStreamCarrier, writeStreamOptionsCarrier } from "./carriers.js";
 import { fnExport, methodMember, propertyMember, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { nodeWatcherInput } from "../../model/dispatch.js";
 import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
@@ -399,6 +400,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     {
       ...fallible("watch", "node_fs::watch", fsWatcherCarrier, [stringCarrier]),
       signatureId: "node:fs::watch(path)",
+      dispatchInputs: [nodeWatcherInput],
     },
     {
       exportId: "node:fs::watch",
@@ -407,6 +409,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       target: { form: "call", path: "node_fs::watch_callable", argModes: ["ref", "value"] },
       resultCarrier: fsWatcherCarrier,
       parameterCarriers: [stringCarrier, fileWatchCallbackCarrier],
+      dispatchInputs: [nodeWatcherInput],
       ...providerNativeFallibility,
     },
     {
@@ -415,6 +418,7 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
       target: { form: "call", path: "node_fs::watch_file_callable", argModes: ["ref", "value"] },
       resultCarrier: { kind: "tuple", elements: [] },
       parameterCarriers: [stringCarrier, fileStatWatchCallbackCarrier],
+      dispatchInputs: [nodeWatcherInput],
       ...providerNativeFallibility,
     },
     {
@@ -452,9 +456,9 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     { exportId: writeStreamId, memberId: `${writeStreamId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: writeStreamCarrier, parameterCarriers: [], ...providerNativeFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.path`, operationKind: "property", target: { form: "receiver-method", name: "path" }, resultCarrier: stringCarrier, receiverCarrier: writeStreamCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.bytesWritten`, operationKind: "property", target: { form: "receiver-method", name: "bytes_written" }, resultCarrier: nativeUintCarrier, receiverCarrier: writeStreamCarrier },
-    { exportId: watcherId, memberId: `${watcherId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
-    { exportId: watcherId, memberId: `${watcherId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
-    { exportId: watcherId, memberId: `${watcherId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref", mutatesReceiver: true }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: true }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
+    { exportId: watcherId, memberId: `${watcherId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: { kind: "tuple", elements: [] }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
+    { exportId: watcherId, memberId: `${watcherId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_" }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: false }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
+    { exportId: watcherId, memberId: `${watcherId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref" }, resultCarrier: { kind: "reference", referent: fsWatcherCarrier, mutable: false }, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: watcherId, memberId: `${watcherId}.hasRef`, operationKind: "method", target: { form: "receiver-method", name: "has_ref" }, resultCarrier: boolCarrier, receiverCarrier: fsWatcherCarrier, parameterCarriers: [] },
     { exportId: statsId, memberId: `${statsId}.isFile`, operationKind: "method", target: { form: "receiver-method", name: "is_file" }, resultCarrier: boolCarrier },
     { exportId: statsId, memberId: `${statsId}.isDirectory`, operationKind: "method", target: { form: "receiver-method", name: "is_directory" }, resultCarrier: boolCarrier },

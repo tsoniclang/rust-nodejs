@@ -11,30 +11,67 @@ pub fn glob_sync(pattern: &str) -> NodeResult<Vec<String>> {
     Ok(matches)
 }
 
+use std::sync::atomic::{AtomicBool, Ordering as WatchOrdering};
+use std::sync::{mpsc, Arc};
+use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
+use tsonic_rust_runtime::Callable;
+
+mod watchers;
+pub use watchers::{with_default_watchers, Watchers};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FsWatchEvent {
     pub event_type: String,
     pub filename: String,
 }
 
-struct FsWatcherState {
+struct WatchInput {
+    receiver: mpsc::Receiver<notify::Result<notify::Event>>,
+    overflowed: Arc<AtomicBool>,
+}
+
+enum WatchCallback<E> {
+    Event(Callable<(String, String), Result<(), E>>),
+    Stat(Callable<(Stats, Stats), Result<(), E>>),
+}
+
+struct FsWatcherState<E> {
+    reservation: Option<TaskReservation>,
     path: String,
     watcher: Option<notify::RecommendedWatcher>,
-    receiver: Option<std::sync::mpsc::Receiver<notify::Result<notify::Event>>>,
-    pending_events: std::collections::VecDeque<FsWatchEvent>,
+    input: Option<WatchInput>,
+    pending_events: VecDeque<(TaskTicket, FsWatchEvent)>,
+    pending_notification: Option<(notify::Event, usize)>,
+    pending_stat: Option<(TaskTicket, Stats, Stats)>,
+    maximum_events: usize,
     previous: Option<Stats>,
     stat_interval: Option<std::time::Duration>,
     last_stat_check: std::time::Instant,
+    callback: Option<WatchCallback<E>>,
     closed: bool,
     refed: bool,
 }
 
-#[derive(Clone)]
-pub struct FsWatcher {
-    state: std::rc::Rc<std::cell::RefCell<FsWatcherState>>,
+impl<E> Drop for FsWatcherState<E> {
+    fn drop(&mut self) {
+        self.input.take();
+        self.watcher.take();
+    }
 }
 
-impl std::fmt::Debug for FsWatcher {
+pub struct FsWatcher<E: 'static = tsonic_rust_runtime::TsonicError> {
+    state: Rc<RefCell<FsWatcherState<E>>>,
+}
+
+impl<E: 'static> Clone for FsWatcher<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: Rc::clone(&self.state),
+        }
+    }
+}
+
+impl<E: 'static> std::fmt::Debug for FsWatcher<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let state = self.state.borrow();
         formatter
@@ -46,58 +83,34 @@ impl std::fmt::Debug for FsWatcher {
     }
 }
 
-impl FsWatcher {
-    pub fn poll(&mut self) -> NodeResult<Option<FsWatchEvent>> {
+impl<E: 'static> FsWatcher<E> {
+    pub fn poll(&self) -> NodeResult<Option<FsWatchEvent>> {
         let mut state = self.state.borrow_mut();
         if state.closed {
             return Err(NodeError::new("ERR_WATCHER_CLOSED", "watcher is closed"));
         }
-        if let Some(event) = state.pending_events.pop_front() {
-            return Ok(Some(event));
+        if state.input.is_none() {
+            return Err(NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "stat watchers do not expose filesystem event polling",
+            ));
         }
-        let received = state
-            .receiver
-            .as_ref()
-            .ok_or_else(|| {
-                NodeError::new(
-                    "ERR_INVALID_ARG_TYPE",
-                    "stat watchers do not expose filesystem event polling",
-                )
-            })?
-            .try_recv();
-        match received {
-            Ok(Ok(event)) => {
-                let event_type = watch_event_type(&event.kind).to_string();
-                let filenames = watch_event_filenames(&state.path, &event.paths);
-                state
-                    .pending_events
-                    .extend(filenames.into_iter().map(|filename| FsWatchEvent {
-                        event_type: event_type.clone(),
-                        filename,
-                    }));
-                Ok(state.pending_events.pop_front())
-            }
-            Ok(Err(error)) => Err(NodeError::new("EIO", error.to_string())),
-            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(NodeError::new(
-                "ERR_WATCHER_CLOSED",
-                "filesystem notification channel is closed",
-            )),
+        if state.pending_events.is_empty() {
+            state.ingest_events()?;
         }
+        Ok(state.pending_events.pop_front().map(|(_, event)| event))
     }
 
-    pub fn close(&mut self) {
-        let mut state = self.state.borrow_mut();
-        state.closed = true;
-        state.watcher = None;
+    pub fn close(&self) {
+        close_watcher_state(&self.state);
     }
 
-    pub fn ref_(&mut self) -> &mut Self {
+    pub fn ref_(&self) -> &Self {
         self.state.borrow_mut().refed = true;
         self
     }
 
-    pub fn unref(&mut self) -> &mut Self {
+    pub fn unref(&self) -> &Self {
         self.state.borrow_mut().refed = false;
         self
     }
@@ -111,20 +124,130 @@ impl FsWatcher {
     }
 }
 
-pub fn watch(path: &str) -> NodeResult<FsWatcher> {
-    watch_with_options(path, WatchOptions::default())
+fn close_watcher_state<E>(owner: &RefCell<FsWatcherState<E>>) {
+    let (input, watcher, reservation, callback) = {
+        let mut state = owner.borrow_mut();
+        state.closed = true;
+        state.refed = false;
+        state.pending_events.clear();
+        state.pending_notification = None;
+        state.pending_stat = None;
+        (
+            state.input.take(),
+            state.watcher.take(),
+            state.reservation.take(),
+            state.callback.take(),
+        )
+    };
+    drop(input);
+    drop(watcher);
+    drop(reservation);
+    drop(callback);
 }
 
-pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWatcher> {
+impl<E> FsWatcherState<E> {
+    fn ingest_events(&mut self) -> NodeResult<()> {
+        let input = self.input.as_ref().ok_or_else(|| {
+            NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "stat watchers do not expose filesystem event polling",
+            )
+        })?;
+        if input.overflowed.swap(false, WatchOrdering::AcqRel) {
+            return Err(watchers::queue_limit());
+        }
+        while self.pending_events.len() < self.maximum_events {
+            if let Some((event, next_path)) = &mut self.pending_notification {
+                let ticket = watchers::admit_event()?;
+                let filename = watch_event_filename(&self.path, event.paths.get(*next_path));
+                self.pending_events.push_back((
+                    ticket,
+                    FsWatchEvent {
+                        event_type: watch_event_type(&event.kind).to_owned(),
+                        filename,
+                    },
+                ));
+                *next_path += 1;
+                if *next_path >= event.paths.len().max(1) {
+                    self.pending_notification = None;
+                }
+                continue;
+            }
+            match input.receiver.try_recv() {
+                Ok(Ok(event)) => self.pending_notification = Some((event, 0)),
+                Ok(Err(error)) => return Err(NodeError::new("EIO", error.to_string())),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(NodeError::new(
+                        "ERR_WATCHER_CLOSED",
+                        "filesystem notification channel is closed",
+                    ))
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn capture_stat(&mut self) -> NodeResult<()> {
+        if self.pending_stat.is_some() {
+            return Ok(());
+        }
+        let interval = self.stat_interval.ok_or_else(|| {
+            NodeError::new(
+                "ERR_INVALID_ARG_TYPE",
+                "filesystem event watchers do not expose stat polling",
+            )
+        })?;
+        if self.last_stat_check.elapsed() < interval {
+            return Ok(());
+        }
+        self.last_stat_check = std::time::Instant::now();
+        let current = stats_for_watch_path(&self.path);
+        let previous = self
+            .previous
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(empty_watch_stats);
+        if current != previous {
+            let ticket = watchers::admit_event()?;
+            self.previous = Some(current.clone());
+            self.pending_stat = Some((ticket, current, previous));
+        }
+        Ok(())
+    }
+}
+
+pub fn watch<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<FsWatcher<E>> {
+    watch_with_options(roots, path, WatchOptions::default())
+}
+
+pub fn watch_with_options<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchOptions,
+) -> NodeResult<FsWatcher<E>> {
     if options.signal_aborted {
         return Err(NodeError::new("ABORT_ERR", "watch was aborted"));
     }
-    use notify::Watcher;
-
-    let (sender, receiver) = std::sync::mpsc::channel();
+    if options.max_queue == 0 || options.max_queue > watchers::MAXIMUM_PENDING_EVENTS {
+        return Err(NodeError::new(
+            "ERR_OUT_OF_RANGE",
+            "watch queue must fit the finite native event budget",
+        ));
+    }
+    use notify::Watcher as _;
+    let reservation = watchers::reserve_resource()?;
+    let (sender, receiver) = mpsc::sync_channel(options.max_queue);
+    let overflowed = Arc::new(AtomicBool::new(false));
+    let native_overflow = Arc::clone(&overflowed);
     let wake = crate::readiness::waker()?;
     let mut watcher = notify::recommended_watcher(move |event| {
-        let _ = sender.send(event);
+        if let Err(mpsc::TrySendError::Full(_)) = sender.try_send(event) {
+            native_overflow.store(true, WatchOrdering::Release);
+        }
         let _ = wake.wake();
     })
     .map_err(|error| NodeError::new("EIO", error.to_string()))?;
@@ -138,124 +261,39 @@ pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWat
             },
         )
         .map_err(|error| NodeError::new("EIO", error.to_string()))?;
-    Ok(FsWatcher {
-        state: std::rc::Rc::new(std::cell::RefCell::new(FsWatcherState {
-            path: path.to_string(),
+    let value = FsWatcher {
+        state: Rc::new(RefCell::new(FsWatcherState {
+            reservation: Some(reservation),
+            path: path.to_owned(),
             watcher: Some(watcher),
-            receiver: Some(receiver),
-            pending_events: std::collections::VecDeque::new(),
+            input: Some(WatchInput {
+                receiver,
+                overflowed,
+            }),
+            pending_events: VecDeque::new(),
+            pending_notification: None,
+            pending_stat: None,
+            maximum_events: options.max_queue,
             previous: Some(stats_for_watch_path(path)),
             stat_interval: None,
             last_stat_check: std::time::Instant::now(),
+            callback: None,
             closed: false,
             refed: options.persistent,
         })),
-    })
+    };
+    roots.register_handle(&value);
+    Ok(value)
 }
 
-type RuntimeWatchCallback =
-    tsonic_rust_runtime::Callable<(String, String), tsonic_rust_runtime::TsonicResult<()>>;
-type RuntimeStatWatchCallback =
-    tsonic_rust_runtime::Callable<(Stats, Stats), tsonic_rust_runtime::TsonicResult<()>>;
-
-enum RuntimeWatcherCallback {
-    Event(RuntimeWatchCallback),
-    Stat(RuntimeStatWatchCallback),
-}
-
-struct RuntimeWatcher {
-    state: std::rc::Rc<std::cell::RefCell<FsWatcherState>>,
-    callback: RuntimeWatcherCallback,
-}
-
-thread_local! {
-    static RUNTIME_WATCHERS: std::cell::RefCell<std::collections::BTreeMap<u64, RuntimeWatcher>> =
-        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
-}
-
-static NEXT_RUNTIME_WATCHER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-pub fn watch_callable<E>(
+pub fn watch_callable<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
     path: &str,
-    callback: tsonic_rust_runtime::Callable<(String, String), Result<(), E>>,
-) -> NodeResult<FsWatcher>
-where
-    E: std::fmt::Display + 'static,
-{
-    let watcher = watch(path)?;
-    let callback = tsonic_rust_runtime::Callable::new(move |arguments| {
-        callback
-            .call(arguments)
-            .map_err(crate::error::callback_runtime_error)
-    });
-    let id = NEXT_RUNTIME_WATCHER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow_mut().insert(
-            id,
-            RuntimeWatcher {
-                state: std::rc::Rc::clone(&watcher.state),
-                callback: RuntimeWatcherCallback::Event(callback),
-            },
-        );
-    });
+    callback: Callable<(String, String), Result<(), E>>,
+) -> NodeResult<FsWatcher<E>> {
+    let watcher = watch(roots, path)?;
+    watcher.state.borrow_mut().callback = Some(WatchCallback::Event(callback));
     Ok(watcher)
-}
-
-pub(crate) fn has_refed_runtime_watchers() -> bool {
-    RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow().values().any(|watcher| {
-            let state = watcher.state.borrow();
-            state.refed && !state.closed
-        })
-    })
-}
-
-pub(crate) fn poll_runtime_watchers() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let active = RUNTIME_WATCHERS.with(|watchers| {
-        let mut watchers = watchers.borrow_mut();
-        watchers.retain(|_, watcher| !watcher.state.borrow().closed);
-        watchers
-            .values()
-            .map(|watcher| {
-                let state = std::rc::Rc::clone(&watcher.state);
-                (
-                    FsWatcher { state },
-                    match &watcher.callback {
-                        RuntimeWatcherCallback::Event(callback) => {
-                            RuntimeWatcherCallback::Event(callback.clone())
-                        }
-                        RuntimeWatcherCallback::Stat(callback) => {
-                            RuntimeWatcherCallback::Stat(callback.clone())
-                        }
-                    },
-                )
-            })
-            .collect::<Vec<_>>()
-    });
-    let mut did_work = false;
-    for (mut watcher, callback) in active {
-        match callback {
-            RuntimeWatcherCallback::Event(callback) => {
-                while let Some(event) = watcher
-                    .poll()
-                    .map_err(tsonic_rust_runtime::TsonicError::from)?
-                {
-                    did_work = true;
-                    callback.call((event.event_type, event.filename))?;
-                }
-            }
-            RuntimeWatcherCallback::Stat(callback) => {
-                if let Some((current, previous)) = watcher
-                    .poll_stat_change()
-                    .map_err(tsonic_rust_runtime::TsonicError::from)?
-                {
-                    did_work = true;
-                    callback.call((current, previous))?;
-                }
-            }
-        }
-    }
-    Ok(did_work)
 }
 
 fn watch_event_type(kind: &notify::EventKind) -> &'static str {
@@ -266,155 +304,94 @@ fn watch_event_type(kind: &notify::EventKind) -> &'static str {
     }
 }
 
-fn watch_event_filenames(path: &str, event_paths: &[std::path::PathBuf]) -> Vec<String> {
-    if event_paths.is_empty() {
-        return vec![path.to_string()];
-    }
+fn watch_event_filename(path: &str, event_path: Option<&std::path::PathBuf>) -> String {
     let watched_path = std::path::Path::new(path);
-    event_paths
-        .iter()
-        .map(|event_path| {
+    event_path
+        .and_then(|event_path| {
             event_path
                 .strip_prefix(watched_path)
                 .ok()
                 .filter(|relative| !relative.as_os_str().is_empty())
-                .map(|relative| relative.to_string_lossy().to_string())
+                .map(|relative| relative.to_string_lossy().into_owned())
                 .or_else(|| {
                     event_path
                         .file_name()
-                        .map(|name| name.to_string_lossy().to_string())
+                        .map(|name| name.to_string_lossy().into_owned())
                 })
-                .unwrap_or_else(|| path.to_string())
         })
-        .collect()
+        .unwrap_or_else(|| path.to_owned())
 }
 
-pub fn watch_file(path: &str) -> NodeResult<FsWatcher> {
-    watch(path)
+pub fn watch_file<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<FsWatcher<E>> {
+    watch_file_with_options(roots, path, WatchFileOptions::default())
 }
 
-pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeResult<FsWatcher> {
+pub fn watch_file_with_options<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchFileOptions,
+) -> NodeResult<FsWatcher<E>> {
     if options.interval_ms == 0 {
         return Err(NodeError::new(
             "ERR_OUT_OF_RANGE",
             "watchFile interval must be greater than zero",
         ));
     }
-    Ok(FsWatcher {
-        state: std::rc::Rc::new(std::cell::RefCell::new(FsWatcherState {
-            path: path.to_string(),
+    let value = FsWatcher {
+        state: Rc::new(RefCell::new(FsWatcherState {
+            reservation: Some(watchers::reserve_resource()?),
+            path: path.to_owned(),
             watcher: None,
-            receiver: None,
-            pending_events: std::collections::VecDeque::new(),
+            input: None,
+            pending_events: VecDeque::new(),
+            pending_notification: None,
+            pending_stat: None,
+            maximum_events: watchers::MAXIMUM_PENDING_EVENTS,
             previous: Some(stats_for_watch_path(path)),
             stat_interval: Some(std::time::Duration::from_millis(options.interval_ms)),
             last_stat_check: std::time::Instant::now(),
+            callback: None,
             closed: false,
             refed: options.persistent,
         })),
-    })
+    };
+    roots.register_handle(&value);
+    Ok(value)
 }
 
-pub type StatWatcher = FsWatcher;
+pub type StatWatcher<E = tsonic_rust_runtime::TsonicError> = FsWatcher<E>;
 
-pub fn watch_file_callable<E>(
+pub fn watch_file_callable<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
     path: &str,
-    callback: tsonic_rust_runtime::Callable<(Stats, Stats), Result<(), E>>,
-) -> NodeResult<()>
-where
-    E: std::fmt::Display + 'static,
-{
-    watch_file_options_callable(path, WatchFileOptions::default(), callback)
+    callback: Callable<(Stats, Stats), Result<(), E>>,
+) -> NodeResult<()> {
+    watch_file_options_callable(roots, path, WatchFileOptions::default(), callback)
 }
 
-pub fn watch_file_options_callable<E>(
+pub fn watch_file_options_callable<E: From<NodeError> + 'static>(
+    roots: &Watchers<E>,
     path: &str,
     options: WatchFileOptions,
-    callback: tsonic_rust_runtime::Callable<(Stats, Stats), Result<(), E>>,
-) -> NodeResult<()>
-where
-    E: std::fmt::Display + 'static,
-{
-    let watcher = watch_file_with_options(path, options)?;
-    let callback = tsonic_rust_runtime::Callable::new(move |arguments| {
-        callback
-            .call(arguments)
-            .map_err(crate::error::callback_runtime_error)
-    });
-    let id = NEXT_RUNTIME_WATCHER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow_mut().insert(
-            id,
-            RuntimeWatcher {
-                state: std::rc::Rc::clone(&watcher.state),
-                callback: RuntimeWatcherCallback::Stat(callback),
-            },
-        );
-    });
+    callback: Callable<(Stats, Stats), Result<(), E>>,
+) -> NodeResult<()> {
+    let watcher = watch_file_with_options(roots, path, options)?;
+    watcher.state.borrow_mut().callback = Some(WatchCallback::Stat(callback));
+    roots.retain_stat(&watcher);
     Ok(())
 }
 
 pub fn unwatch_file(path: &str) {
-    RUNTIME_WATCHERS.with(|watchers| {
-        watchers.borrow_mut().retain(|_, watcher| {
-            if watcher.state.borrow().path == path
-                && matches!(&watcher.callback, RuntimeWatcherCallback::Stat(_))
-            {
-                watcher.state.borrow_mut().closed = true;
-                false
-            } else {
-                true
-            }
-        });
-    });
-}
-
-impl FsWatcher {
-    fn poll_stat_change(&mut self) -> NodeResult<Option<(Stats, Stats)>> {
-        let mut state = self.state.borrow_mut();
-        if state.closed {
-            return Err(NodeError::new("ERR_WATCHER_CLOSED", "watcher is closed"));
-        }
-        let interval = state.stat_interval.ok_or_else(|| {
-            NodeError::new(
-                "ERR_INVALID_ARG_TYPE",
-                "filesystem event watchers do not expose stat polling",
-            )
-        })?;
-        if state.last_stat_check.elapsed() < interval {
-            return Ok(None);
-        }
-        state.last_stat_check = std::time::Instant::now();
-        let current = stats_for_watch_path(&state.path);
-        let previous = state.previous.clone().unwrap_or_else(empty_watch_stats);
-        state.previous = Some(current.clone());
-        Ok((current != previous).then_some((current, previous)))
-    }
+    watchers::unwatch_file(path);
 }
 
 fn stats_for_watch_path(path: &str) -> Stats {
     fs::metadata(path)
         .map(|metadata| stats_from_metadata(&metadata))
         .unwrap_or_else(|_| empty_watch_stats())
-}
-
-pub(crate) fn next_runtime_watcher_delay() -> Option<std::time::Duration> {
-    RUNTIME_WATCHERS.with(|watchers| {
-        watchers
-            .borrow()
-            .values()
-            .filter_map(|watcher| {
-                let state = watcher.state.borrow();
-                if state.closed {
-                    None
-                } else {
-                    state
-                        .stat_interval
-                        .map(|interval| interval.saturating_sub(state.last_stat_check.elapsed()))
-                }
-            })
-            .min()
-    })
 }
 
 fn empty_watch_stats() -> Stats {

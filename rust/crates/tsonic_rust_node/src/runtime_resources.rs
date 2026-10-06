@@ -1,9 +1,39 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::time::Duration;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
-use tsonic_rust_runtime::dispatch_queue::TaskTicket;
+use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
+
+pub(crate) struct NativeResourceBudget {
+    maximum: usize,
+    budget: OnceCell<TaskBudget>,
+}
+
+impl NativeResourceBudget {
+    pub(crate) const fn new(maximum: usize) -> Self {
+        assert!(maximum > 0);
+        Self {
+            maximum,
+            budget: OnceCell::new(),
+        }
+    }
+
+    fn budget(&self) -> &TaskBudget {
+        self.budget.get_or_init(|| {
+            TaskBudget::new(NonZeroUsize::new(self.maximum).expect("finite native resource limit"))
+        })
+    }
+
+    pub(crate) fn reserve(&self) -> crate::NodeResult<TaskReservation> {
+        self.budget().reserve().map_err(crate::NodeError::from)
+    }
+
+    pub(crate) fn admit(&self) -> crate::NodeResult<TaskTicket> {
+        self.budget().admit().map_err(crate::NodeError::from)
+    }
+}
 
 #[cfg(test)]
 mod tests;

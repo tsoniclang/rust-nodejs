@@ -659,6 +659,7 @@ fn fs_extended_sync_directory_lifecycle() {
 
 #[test]
 fn fs_glob_and_watchers_are_closed_polling_apis() {
+    let watchers = fs::Watchers::<tsonic_rust_runtime::TsonicError>::new();
     let root = temp_root("glob-watch");
     let root_text = root.to_string_lossy().to_string();
     fs::mkdir_sync_with_options(
@@ -679,6 +680,7 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     assert!(matches[0].ends_with("alpha.txt"));
 
     let mut watcher = fs::watch_with_options(
+        &watchers,
         &alpha.to_string_lossy(),
         fs::WatchOptions {
             persistent: false,
@@ -705,10 +707,11 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     assert!(watcher.closed());
     assert!(watcher.poll().is_err());
 
-    let mut callable_watcher = fs::watch_callable(
+    let callable_watcher = fs::watch_callable(
+        &watchers,
         &alpha.to_string_lossy(),
         tsonic_rust_runtime::Callable::new(|(_event_type, _filename): (String, String)| {
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
     )
     .unwrap();
@@ -717,7 +720,8 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
 
     let new_file = root.join("new.txt");
     let new_file_text = new_file.to_string_lossy().to_string();
-    let mut file_watcher = fs::watch_file_with_options(
+    let file_watcher = fs::watch_file_with_options(
+        &watchers,
         &new_file_text,
         fs::WatchFileOptions {
             bigint: false,
@@ -730,9 +734,10 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     assert!(file_watcher.poll().is_err());
 
     fs::watch_file_callable(
+        &watchers,
         &new_file_text,
         tsonic_rust_runtime::Callable::new(|(_current, _previous): (fs::Stats, fs::Stats)| {
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
     )
     .unwrap();
@@ -742,6 +747,7 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
     let callback_state = std::rc::Rc::clone(&callback_observed);
     let callback_path = new_file_text.clone();
     fs::watch_file_options_callable(
+        &watchers,
         &new_file_text,
         fs::WatchFileOptions {
             bigint: false,
@@ -753,12 +759,12 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
             assert!(!previous.is_file);
             callback_state.set(true);
             fs::unwatch_file(&callback_path);
-            Ok::<(), String>(())
+            Ok::<(), tsonic_rust_runtime::TsonicError>(())
         }),
     )
     .unwrap();
     fs::write_file_sync_string(&new_file_text, "new", "utf8").unwrap();
-    tsonic_rust_node::run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(&watchers).unwrap();
     assert!(callback_observed.get());
 
     fs::rm_sync_with_options(
