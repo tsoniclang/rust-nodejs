@@ -62,3 +62,25 @@ test("readline callbacks select exact independent background and source-thread t
     }
   }
 });
+
+test("native HTTPS calls declare every actual background and receiver task input", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds: ["js"] });
+  const operations = contribution.definition.operations;
+  for (const name of ["request", "get"]) {
+    const operation = operations.find(row => row.exportId === `node:https::${name}`);
+    assert.equal(operation !== undefined, true, name);
+    assert.deepEqual(operation.dispatchInputs, [
+      { contextId: "tsonic.rust.node.background", view: "root", targetArgumentIndex: 0, mode: "ref" },
+    ]);
+  }
+  const listen = operations.filter(row => row.memberId === "node:https::Server.listen");
+  assert.equal(listen.length, 2);
+  for (const operation of listen) {
+    assert.equal(operation.target.form, "receiver-method");
+    assert.deepEqual(operation.dispatchInputs, [
+      { contextId: "tsonic.rust.node.runtime-tasks", view: "root", targetArgumentIndex: 0, mode: "ref" },
+    ]);
+    assert.equal(Object.isFrozen(operation.dispatchInputs), true);
+    assert.equal(Object.isFrozen(operation.dispatchInputs[0]), true);
+  }
+});
