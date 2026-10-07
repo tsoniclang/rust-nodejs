@@ -1,3 +1,4 @@
+import { assertNoTargetDiagnostics } from "../../../../tsonic/test/scripts/diagnostic-assertions.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -16,7 +17,7 @@ test("Node callbacks retain native errors and exact optional error storage", { t
     target: { id: "rust", options: { outputType: "bin" } },
     files: { "index.ts": `${nativeNodeErrorSource}\nexport function main(): void { run(); }` },
   });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const execution = validateGeneratedProject("native-node-errors", result.artifacts, { run: true });
   assert.match(execution.stdout, /native error/u);
   assert.match(execution.stdout, /native success/u);
@@ -83,7 +84,7 @@ test("last-use native errors move without allocation and retain later control-fl
     target: { id: "rust", options: { outputType: "lib", crateName: "native_node_error_cost" } },
     files: { "index.ts": nativeNodeErrorSource },
   });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-node-error-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
   writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport}
@@ -162,7 +163,7 @@ test("native error union dispatch preserves owned payloads without allocation", 
     target: { id: "rust", options: { outputType: "lib", crateName: "native_node_error_union_cost" } },
     files: { "index.ts": nativeNodeErrorUnionSource },
   });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-node-error-union-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
   writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport}

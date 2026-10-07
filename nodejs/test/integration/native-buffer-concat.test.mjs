@@ -1,3 +1,4 @@
+import { assertNoTargetDiagnostics } from "../../../../tsonic/test/scripts/diagnostic-assertions.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ test("native Buffer concat consumes dense input and preserves bounded output", {
         if (!run()) throw new Error("concat behavior");
       }`,
     } });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   validateGeneratedProject("native-buffer-concat", result.artifacts, { run: true });
 });
 
@@ -23,7 +24,7 @@ test("native Buffer concat does not allocate an input copy", { timeout: 300_000 
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "lib", crateName: "native_buffer_concat_cost" } },
     files: { "index.ts": nativeBufferConcatSource } });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-buffer-concat-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
   writeFileSync(join(root, "tests/cost.rs"), `${nativeOwnershipCostSupport}

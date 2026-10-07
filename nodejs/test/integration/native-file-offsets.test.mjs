@@ -1,3 +1,4 @@
+import { assertNoTargetDiagnostics } from "../../../../tsonic/test/scripts/diagnostic-assertions.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -12,7 +13,7 @@ test("selected native file offsets retain width through nullish utilities and al
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "lib", crateName: "native_file_offsets" } },
     files: { "index.ts": nativeFileOffsetsSource } });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const output = artifactText(result, "src/index.rs");
   assert.match(output, /fn exact\(value: u64\) -> u64/u);
   assert.match(output, /fn alias\(value: u64\) -> u64/u);

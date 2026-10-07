@@ -1,3 +1,4 @@
+import { assertNoTargetDiagnostics } from "../../../../tsonic/test/scripts/diagnostic-assertions.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { acmeTestingPackage, compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
@@ -28,7 +29,7 @@ test("native pipe preserves writable, transform and HTTP destination types and i
     }
     export function main(): void { check(run()); }
   ` } });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   validateGeneratedProject("native-stream-destinations", result.artifacts, { run: true });
 });
 

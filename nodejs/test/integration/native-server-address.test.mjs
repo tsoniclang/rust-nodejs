@@ -1,3 +1,4 @@
+import { assertNoTargetDiagnostics } from "../../../../tsonic/test/scripts/diagnostic-assertions.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { artifactText, compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
@@ -12,7 +13,7 @@ test("HTTP address properties retain optional native getters and integer ports",
     export function path(value: ServerAddress): string | undefined { return value.path; }
     export function address(value: ServerAddress): AddressInfo | undefined { return value.address; }
   ` } });
-  assert.deepEqual(result.diagnostics, []);
+  assertNoTargetDiagnostics(result.diagnostics);
   const output = artifactText(result, "src/index.rs");
   assert.match(output, /Option<i32>/u);
   for (const getter of ["port", "path", "address"]) assert.match(output, new RegExp(`\\.${getter}\\(\\)`));
