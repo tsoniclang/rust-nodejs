@@ -317,7 +317,15 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::OutgoingHttpHeaders", "rust.node.OutgoingHttpHeaders"],
     ["node:http::AddressInfo", "rust.node.HttpAddressInfo"],
     ["node:http::ServerAddress", "rust.node.HttpServerAddress"],
-    ["node:timers::Timeout", "rust.node.Timeout"],
+    ["node:timers::Timeout", {
+      kind: "target-named", id: "rust.node.Timeout",
+      genericArguments: [{ kind: "type", type: {
+        kind: "target-named", id: "rust.runtime.Callable", genericArguments: [
+          { kind: "type", type: { kind: "tuple", elements: [] } },
+          { kind: "type", type: { kind: "tuple", elements: [] } },
+        ],
+      } }],
+    }],
     ["node:util::TextDecoder", "rust.node.TextDecoder"],
     ["node:events::EventEmitter", "rust.node.EventEmitter"],
     ["node:stream::Stream", "rust.node.Stream"],
@@ -1058,7 +1066,7 @@ test("distinct incoming headers select one native indexer without rebuilding sto
       id: "node:http::IncomingHttpHeaderValues.indexer(name)",
       parameters: [{ name: "name", type: { kind: "string" } }],
       returnType: { kind: "union", types: [
-        { kind: "array", elementType: { kind: "string" } },
+        { kind: "source-global", name: "ReadonlyArray", typeArguments: [{ kind: "string" }] },
         { kind: "undefined" },
       ] },
     }],
