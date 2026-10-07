@@ -187,6 +187,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
       { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
       { exportId: "node:http::IncomingHttpHeaders", targetCarrier: incomingHttpHeadersCarrier },
+      { exportId: "node:http::IncomingHttpHeaderValues", targetCarrier: incomingHttpHeadersCarrier },
       { exportId: "node:http::OutgoingHttpHeaders", targetCarrier: outgoingHttpHeadersCarrier },
       { exportId: "node:http::AddressInfo", targetCarrier: httpAddressInfoCarrier },
       { exportId: "node:http::ServerAddress", targetCarrier: httpServerAddressCarrier },

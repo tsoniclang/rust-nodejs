@@ -5,7 +5,7 @@ import { createTsonicPlugin } from "../../../dist/index.js";
 
 test("HTTP header indexer exposes an exact native readonly slice borrowed from its owner", () => {
   const [contribution] = createTsonicPlugin().createTargetContributions({});
-  const { modules, operations } = contribution.definition;
+  const { modules, operations, types } = contribution.definition;
   const declaration = modules.find(module => module.moduleSpecifier === "node:http")
     .exports.find(entry => entry.name === "IncomingHttpHeaderValues");
   assert.deepEqual(declaration.members[0].signatures[0].returnType, {
@@ -20,6 +20,9 @@ test("HTTP header indexer exposes an exact native readonly slice borrowed from i
       },
     } }],
   });
+  const owners = types.filter(type => type.exportId === declaration.id);
+  assert.equal(owners.length, 1);
+  assert.deepEqual(owners[0].targetCarrier, row.receiverCarrier);
   const snapshot = operations.find(operation => operation.target.name === "get_all" && operation.exportId === "node:http::IncomingHttpHeaders");
   assert.equal(snapshot.resultCarrier.id, "rust.js.JsArray");
 });
