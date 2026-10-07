@@ -39,9 +39,9 @@ test("original timer error stops dispatch without consuming another selected roo
   assert.equal(roots.length, 1, "one exact component root module");
   const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 2, "only demanded Node and JS timer roots");
-  const group = names.reduceRight((tail, name) => `tsonic_rust_runtime::dispatch::prepend(root_${name}, ${tail})`,
+  const group = names.reduceRight((tail, _name, index) => `tsonic_rust_runtime::dispatch::prepend(root_${index}, ${tail})`,
     "tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()");
-  const run = names.reduceRight((tail, name) => `super::${name}.with(|root_${name}| ${tail})`,
+  const run = names.reduceRight((tail, name, index) => `super::${name}.with(|root_${index}| ${tail})`,
     `tsonic_rust_node::run_with_contexts(${group})`);
   const directory = writeGeneratedProject("native-timer-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `
@@ -50,6 +50,7 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_stops_and_preserves_pending_source_work() {
+        crate::initialize();
         let expected = crate::schedule().expect("source registration");
         let returned = ${run}.expect_err("original source timer must fail");
         assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());

@@ -39,6 +39,7 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_stops_and_preserves_native_tls_listeners() {
+        crate::initialize();
         let expected = crate::schedule().expect("source registration");
         let run = || ${run};
         let returned = run().expect_err("original source callback must fail");

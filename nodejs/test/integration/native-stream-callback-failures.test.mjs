@@ -101,6 +101,7 @@ mod source_callback_failures {
 
     #[test]
     fn deferred_finish_retains_original_source_error() {
+        crate::initialize();
         let expected = crate::schedule().expect("file stream callback registration");
         let failure = ${run}.expect_err("deferred callback must fail");
         let output = std::fs::read("native-stream-callback-output.txt").unwrap();

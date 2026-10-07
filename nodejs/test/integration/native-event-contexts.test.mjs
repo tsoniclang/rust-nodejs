@@ -45,6 +45,7 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_stops_and_preserves_pending_source_messages() {
+        crate::initialize();
         let expected = crate::schedule().expect("source registration");
         let run = || super::${names[0]}.with(|root| tsonic_rust_node::run_with_contexts(
             tsonic_rust_runtime::dispatch::prepend(root,

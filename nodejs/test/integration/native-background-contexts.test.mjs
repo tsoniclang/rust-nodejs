@@ -45,6 +45,7 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_survives_native_worker_completion() {
+        crate::initialize();
         let expected = crate::schedule().expect("callback registration");
         let result = super::${name}.with(|root| {
             tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(

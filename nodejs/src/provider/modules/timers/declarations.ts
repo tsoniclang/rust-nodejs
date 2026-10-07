@@ -1,4 +1,4 @@
-import { emptyCallbackCarrier, int32Carrier } from "../../model/carriers.js";
+import { emptyCallbackCarrier, int32Carrier, unitCarrier } from "../../model/carriers.js";
 import { fnExport, providerRef } from "../../declarations/builders.js";
 import { int32Type, voidType } from "../../model/source-types.js";
 import { timeoutCarrier } from "./carriers.js";
@@ -42,6 +42,8 @@ export function timersModule(): RustProviderModuleDefinition {
         },
         { name: "delay", type: int32Type },
       ], providerRef(m, "Timeout")),
+      ...["clearTimeout", "clearInterval"].map(name =>
+        fnExport(m, name, [{ name: "timeout", type: providerRef(m, "Timeout") }], voidType)),
     ],
   };
 }
@@ -66,5 +68,12 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: timeoutCarrier,
       parameterCarriers: [emptyCallbackCarrier, int32Carrier],
     },
+    ...(["clearTimeout", "clearInterval"] as const).map((name): RustProviderOperationDefinition => ({
+      exportId: `node:timers::${name}`,
+      operationKind: "method",
+      target: { form: "call", path: `node_timers::${name === "clearTimeout" ? "clear_timeout" : "clear_interval"}`, argModes: ["mut-ref"] },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [timeoutCarrier],
+    })),
   ];
 }
