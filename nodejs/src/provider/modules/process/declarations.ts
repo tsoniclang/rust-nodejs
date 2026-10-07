@@ -1,6 +1,6 @@
 import { processSignalMembers, processSignalRows, processCarrier } from "./signals.js";
 import { processArchitectureType, processPlatformType, processMetricExports, processMetricMembers, processMetricRows } from "./metrics.js";
-import { uint32Carrier, uint64Carrier, boolCarrier, float64Carrier, int32Carrier, int64Carrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { nodeProgramErrorArguments, uint32Carrier, uint64Carrier, boolCarrier, float64Carrier, int32Carrier, int64Carrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, nullType, numberArrayType, numberType, stringArrayType, stringType, undefinedType, voidType } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
 import { fnExport, methodMember, propertyMember, providerRef, valueExport } from "../../declarations/builders.js";
@@ -212,9 +212,9 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: uint32Carrier },
     { exportId: `${m}::ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: uint32Carrier },
     { exportId: `${m}::env`, operationKind: "property", target: { form: "call", path: "node_process::environment" }, resultCarrier: processEnvCarrier },
-    { exportId: `${m}::stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: writableCarrier },
-    { exportId: `${m}::stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: writableCarrier },
-    { exportId: `${m}::stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, resultCarrier: readableCarrier },
+    { exportId: `${m}::stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
+    { exportId: `${m}::stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
+    { exportId: `${m}::stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: `${m}::exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: `${m}::exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
@@ -226,8 +226,8 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapUsed`, operationKind: "property", target: { form: "field", name: "heap_used" }, resultCarrier: uint64Carrier },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.external`, operationKind: "property", target: { form: "field", name: "external" }, resultCarrier: uint64Carrier },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.arrayBuffers`, operationKind: "property", target: { form: "field", name: "array_buffers" }, resultCarrier: uint64Carrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"], mutatesReceiver: true }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.isTTY`, operationKind: "property", target: { form: "receiver-method", name: "is_tty" }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.fd`, operationKind: "property", target: { form: "receiver-method", name: "fd" }, resultCarrier: int32Carrier, receiverCarrier: writableCarrier },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: rustNeverTargetType(), parameterCarriers: [int32Carrier] },
@@ -246,9 +246,9 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: defaultId, memberId: `${defaultId}.pid`, operationKind: "property", target: { form: "call", path: "node_process::pid" }, resultCarrier: uint32Carrier },
     { exportId: defaultId, memberId: `${defaultId}.ppid`, operationKind: "property", target: { form: "call", path: "node_process::ppid" }, resultCarrier: uint32Carrier },
     { exportId: defaultId, memberId: `${defaultId}.env`, operationKind: "property", target: { form: "call", path: "node_process::environment" }, resultCarrier: processEnvCarrier },
-    { exportId: defaultId, memberId: `${defaultId}.stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, resultCarrier: writableCarrier },
-    { exportId: defaultId, memberId: `${defaultId}.stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, resultCarrier: writableCarrier },
-    { exportId: defaultId, memberId: `${defaultId}.stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, resultCarrier: readableCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier },
     { exportId: defaultId, memberId: `${defaultId}.execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },

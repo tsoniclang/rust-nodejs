@@ -314,6 +314,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:http::ServerResponse", "rust.node.HttpServerResponse"],
     ["node:http::Server", "rust.node.HttpServer"],
     ["node:http::IncomingHttpHeaders", "rust.node.IncomingHttpHeaders"],
+    ["node:http::IncomingHttpHeaderValues", "rust.node.IncomingHttpHeaders"],
     ["node:http::OutgoingHttpHeaders", "rust.node.OutgoingHttpHeaders"],
     ["node:http::AddressInfo", "rust.node.HttpAddressInfo"],
     ["node:http::ServerAddress", "rust.node.HttpServerAddress"],
@@ -838,6 +839,15 @@ test("provider package closes process stdout and stderr output contracts", () =>
     assert.deepEqual(defaultRow?.target, namedRow?.target);
     assert.deepEqual(defaultRow?.resultCarrier, namedRow?.resultCarrier);
   }
+  for (const name of ["stdin", "stdout", "stderr"]) {
+    const namedRow = contribution.definition.operations.find(row =>
+      row.exportId === `node:process::${name}` && row.memberId === undefined);
+    const defaultRow = contribution.definition.operations.find(row =>
+      row.memberId === `node:process::Process.${name}`);
+    assert.deepEqual(namedRow?.targetGenericArguments,
+      [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }]);
+    assert.deepEqual(defaultRow?.targetGenericArguments, namedRow.targetGenericArguments);
+  }
   const writeRows = contribution.definition.operations.filter((row) =>
     row.memberId === "node:process::ProcessWriteStream.write");
   assert.deepEqual(writeRows.map((row) => [row.signatureId, row.target.name]), [
@@ -845,6 +855,13 @@ test("provider package closes process stdout and stderr output contracts", () =>
     ["node:process::ProcessWriteStream.write(buffer)", "write_buffer"],
   ]);
   assert.equal(writeRows.every((row) => row.isFallible === true), true);
+  for (const row of writeRows) {
+    assert.deepEqual(row.target.argModes, ["ref"]);
+    assert.equal(row.target.mutatesReceiver, undefined);
+    const nativeRow = contribution.definition.operations.find(candidate =>
+      candidate.memberId === "node:stream::Writable.write" && candidate.target.name === row.target.name);
+    assert.deepEqual(row.target, nativeRow?.target);
+  }
   assert.equal(
     contribution.definition.carrierPaths["rust.node.Writable"],
     "tsonic_rust_node::stream::Writable",
