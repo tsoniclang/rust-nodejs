@@ -65,6 +65,15 @@ export function fsModule(typedArrays: boolean): RustProviderModuleDefinition {
         kind: "function" as const,
         signatures: [
           {
+            id: `${m}::writeFileSync(path,data)`,
+            name: "writeFileSync",
+            parameters: [
+              { name: "path", type: stringType },
+              { name: "data", type: stringType },
+            ],
+            returnType: voidType,
+          },
+          {
             id: `${m}::writeFileSync(path,data,encoding)`,
             name: "writeFileSync",
             parameters: [
@@ -333,6 +342,10 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     {
       ...fallible("readFileSync", "node_fs::read_file_sync_string", stringCarrier, [stringCarrier, stringCarrier]),
       signatureId: "node:fs::readFileSync(path,encoding)",
+    },
+    {
+      ...fallible("writeFileSync", "node_fs::write_file_sync_string", unitCarrier, [stringCarrier, stringCarrier], [{ kind: "string", value: "utf8" }]),
+      signatureId: "node:fs::writeFileSync(path,data)",
     },
     {
       ...fallible("writeFileSync", "node_fs::write_file_sync_string", { kind: "tuple", elements: [] }, [stringCarrier, stringCarrier, stringCarrier]),
