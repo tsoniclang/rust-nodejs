@@ -157,7 +157,7 @@ test("filesystem strings explicitly borrow str while byte buffers retain their n
     "statSync(path)", "statSync(path,options)", "lstatSync(path)",
     "readdirSync(path)", "mkdirSync(path)", "mkdirSync(path,options)",
     "rmSync(path)", "rmSync(path,options)", "readFileSync(path)",
-    "writeFileSync(path,buffer)",
+    "writeFileSync(path,data)", "writeFileSync(path,data,encoding)", "writeFileSync(path,buffer)",
   ]) {
     const row = operations.find(entry => entry.signatureId === `node:fs::${signature}`);
     assert.ok(row, signature);
@@ -173,6 +173,13 @@ test("filesystem strings explicitly borrow str while byte buffers retain their n
   const writeBuffer = operations.find(entry => entry.signatureId === "node:fs::writeFileSync(path,buffer)");
   assert.equal(writeBuffer.target.argModes[1], "ref");
   assert.equal(writeBuffer.target.argConversions[1], undefined);
+  const writeString = operations.find(entry => entry.signatureId === "node:fs::writeFileSync(path,data)");
+  const writeEncoding = operations.find(entry => entry.signatureId === "node:fs::writeFileSync(path,data,encoding)");
+  assert.equal(writeString.target.path, writeEncoding.target.path);
+  assert.deepEqual(writeString.target.argModes, ["value", "value"]);
+  assert.deepEqual(writeString.target.argConversions, [conversion, conversion]);
+  assert.deepEqual(writeString.target.trailingArguments, [{ kind: "string", value: "utf8" }]);
+  assert.equal(writeEncoding.target.trailingArguments, undefined);
 });
 
 test("native V8 heap observations retain their exact result and fallible boundary", () => {
@@ -864,7 +871,7 @@ test("provider package exposes exact filesystem and path contracts required by p
   );
   assert.deepEqual(
     operations.filter((row) => row.exportId === "node:fs::writeFileSync").map((row) => row.signatureId),
-    ["node:fs::writeFileSync(path,data,encoding)", "node:fs::writeFileSync(path,buffer)"],
+    ["node:fs::writeFileSync(path,data)", "node:fs::writeFileSync(path,data,encoding)", "node:fs::writeFileSync(path,buffer)"],
   );
   const symlink = operations.find((row) => row.exportId === "node:fs::symlinkSync");
   assert.deepEqual(symlink?.target, {
