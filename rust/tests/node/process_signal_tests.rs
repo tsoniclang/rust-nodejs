@@ -151,6 +151,21 @@ fn verify_typed_signal_owners(scenario: &str) {
         &first,
         prepend(&second, DispatchEnd::<SignalFailure>::new()),
     );
+    let started = std::time::Instant::now();
+    loop {
+        let frontier = match first.prepare(DispatchPhase::Signals) {
+            Ok(frontier) => frontier,
+            Err(_) => panic!("native signal preparation failed"),
+        };
+        if first.next_ready(&frontier).is_some() {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "native signal was not delivered"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     let returned = poll_phase(&group, DispatchPhase::Signals)
         .err()
         .expect("original typed signal failure");
