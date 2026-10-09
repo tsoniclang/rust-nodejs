@@ -4,6 +4,7 @@ import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
 import { runCargo, writeGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
+import { nativeOwnershipCostSupport } from "../../../../tsonic-rust/test/helpers/native-ownership-cost.mjs";
 import { createTsonicPlugin } from "../../../dist/index.js";
 
 test("opaque response completion releases Error guards with handwritten snapshot allocation cost", { timeout: 300_000 }, () => {
@@ -25,22 +26,9 @@ export function send(response: ServerResponse): string {
 #[cfg(test)]
 mod native_borrow_effects {
     use super::program::TsonicError;
-    use std::alloc::{GlobalAlloc, Layout, System};
-    use std::cell::Cell;
     use tsonic_rust_node::http::ServerResponse;
     use tsonic_rust_runtime::{Callable, ErrorObject, MutableJsError, WritableErrorObject};
-
-    struct Allocator;
-    thread_local! { static COUNT: Cell<Option<usize>> = const { Cell::new(None) }; }
-    unsafe impl GlobalAlloc for Allocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            COUNT.with(|count| { if let Some(value) = count.get() { count.set(Some(value + 1)); } });
-            unsafe { System.alloc(layout) }
-        }
-        unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) { unsafe { System.dealloc(pointer, layout) } }
-    }
-    #[global_allocator]
-    static ALLOCATOR: Allocator = Allocator;
+    ${nativeOwnershipCostSupport}
 
     fn handwritten(response: ServerResponse<TsonicError>) -> Result<String, TsonicError> {
         let failure = MutableJsError::error("before");
@@ -59,15 +47,11 @@ mod native_borrow_effects {
         for _ in 0..100 {
             let generated_response = ServerResponse::<TsonicError>::new();
             let generated_input = generated_response.clone();
-            COUNT.with(|count| count.set(Some(0)));
-            let actual = crate::send(generated_input).unwrap();
-            let generated_count = COUNT.with(|count| count.replace(None).unwrap());
+            let (actual, generated_cost) = measure(|| crate::send(generated_input).unwrap());
             let native_response = ServerResponse::<TsonicError>::new();
             let native_input = native_response.clone();
-            COUNT.with(|count| count.set(Some(0)));
-            let expected = handwritten(native_input).unwrap();
-            let native_count = COUNT.with(|count| count.replace(None).unwrap());
-            assert_eq!(generated_count, native_count);
+            let (expected, native_cost) = measure(|| handwritten(native_input).unwrap());
+            assert_eq!(generated_cost, native_cost);
             assert_eq!(actual, "after");
             assert_eq!(actual, expected);
             assert_eq!(generated_response.to_response().body, b"before");
