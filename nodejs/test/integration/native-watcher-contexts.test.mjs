@@ -24,16 +24,16 @@ test("generated native Node driver consumes the exact native watcher root", { ti
 
 test("native filesystem queries require no watcher roots", { timeout: 300_000 }, () => {
   const result = compile(nativeWatcherNoDemandSource);
-  assert.equal(result.artifacts.some(row => /pub static __tsonic_dispatch_/u.test(row.text)), false,
+  assert.equal(result.artifacts.some(row => /pub static dispatch_root_/u.test(row.text)), false,
     "filesystem queries must not manufacture retained callback roots");
   validateGeneratedProject("native-watcher-no-demand", result.artifacts, { run: true });
 });
 
 test("original source watcher failure preserves reentrant native stat work", { timeout: 300_000 }, () => {
   const result = compile(nativeWatcherFailureSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component root module");
-  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 1, "only the demanded native watcher root");
   const directory = writeGeneratedProject("native-watcher-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `

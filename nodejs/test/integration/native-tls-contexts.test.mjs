@@ -24,9 +24,9 @@ test("generated native Node driver consumes exact TLS and background roots", { t
 
 test("original source TLS failure preserves later native listening callbacks", { timeout: 300_000 }, () => {
   const result = compile(nativeTlsFailureSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component root module");
-  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 2, "only the demanded TLS and background roots");
   const tail = "tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()";
   const contexts = names.reduceRight((rest, _name, index) => `tsonic_rust_runtime::dispatch::prepend(root_${index}, ${rest})`, tail);

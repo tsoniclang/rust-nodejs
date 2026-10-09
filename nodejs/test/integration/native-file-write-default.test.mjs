@@ -30,9 +30,9 @@ test("default UTF-8 file writes retain borrowed strings and handwritten native c
   assertNoTargetDiagnostics(result.diagnostics);
   const output = artifactText(result, "src/index.rs");
   assert.match(output, /fn writeDefault\(path: &str, contents: &str\)/u);
-  assert.match(output, /write_file_sync_string\(path, contents, "utf8"\)/u);
-  assert.match(output, /write_file_sync_string\(path, contents, encoding\)/u);
-  assert.match(output, /write_file_sync_buffer\(path, &contents\)/u);
+  assert.match(output, /write_file_sync_string\(\s*core::convert::AsRef::<str>::as_ref\(path\),\s*core::convert::AsRef::<str>::as_ref\(contents\),\s*"utf8",\s*\)/u);
+  assert.match(output, /write_file_sync_string\(\s*core::convert::AsRef::<str>::as_ref\(path\),\s*core::convert::AsRef::<str>::as_ref\(contents\),\s*core::convert::AsRef::<str>::as_ref\(encoding\),\s*\)/u);
+  assert.match(output, /write_file_sync_buffer\(\s*core::convert::AsRef::<str>::as_ref\(path\),\s*&contents,\s*\)/u);
   assert.doesNotMatch(output, /\.clone\(|\.to_owned\(|\.to_string\(|String::|Vec::|Box::/u);
   const root = writeGeneratedProject("native-file-write-default", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });

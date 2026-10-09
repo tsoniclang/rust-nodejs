@@ -33,10 +33,10 @@ test("generated asynchronous Node driver consumes the same component context", {
 
 test("generated source compression callback retains its original Error identity", { timeout: 300_000 }, () => {
   const result = compile(nativeBackgroundOriginalErrorSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one component-owned native root module");
   const root = roots[0];
-  const name = /pub static (__tsonic_dispatch_\d+)/u.exec(root.text)?.[1];
+  const name = /pub static (dispatch_root_\d+)/u.exec(root.text)?.[1];
   assert.equal(typeof name, "string", "exact generated native root declaration");
   const directory = writeGeneratedProject("native-background-original-error", result.artifacts);
   appendFileSync(join(directory, root.path), `
@@ -45,7 +45,6 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_survives_native_worker_completion() {
-        crate::initialize();
         let expected = crate::schedule().expect("callback registration");
         let result = super::${name}.with(|root| {
             tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
@@ -69,7 +68,7 @@ mod retained_source_failure {
 test("unused background APIs emit no native context storage", { timeout: 300_000 }, () => {
   const result = compile(nativeBackgroundNoDemandSource);
   assert.equal(result.artifacts.filter(row => row.path.endsWith(".rs"))
-    .some(row => /pub static __tsonic_dispatch_/u.test(row.text)), false, "no undemanded physical roots");
+    .some(row => /pub static dispatch_root_/u.test(row.text)), false, "no undemanded physical roots");
   validateGeneratedProject("native-background-no-demand", result.artifacts, { run: true });
 });
 
@@ -82,7 +81,7 @@ test("component background roots dispatch through exact two-hop package error do
   });
   assert.equal(result.diagnostics.length, 0,
     result.diagnostics.slice(0, 6).map(row => row.message.slice(0, 256)).join("\n"));
-  assert.equal(result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text)).length,
+  assert.equal(result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text)).length,
     3, "one native background owner per demanding source component");
   const output = validateGeneratedProject("native-background-package-domains", result.artifacts, { run: true });
   for (const name of ["Root", "Middle", "Leaf"]) assert.match(output.stdout, new RegExp(`${name} completion`, "u"));

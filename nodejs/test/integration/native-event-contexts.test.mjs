@@ -26,7 +26,7 @@ for (const [name, source, expected] of [
     const output = validateGeneratedProject(name, result.artifacts, { run: true });
     assert.equal(output.stdout.includes(expected), true);
     if (name.startsWith("native-event-")) {
-      assert.equal(result.artifacts.some(row => /pub static __tsonic_dispatch_/u.test(row.text)), false,
+      assert.equal(result.artifacts.some(row => /pub static dispatch_root_/u.test(row.text)), false,
         "synchronous events must not manufacture native task roots");
     }
   });
@@ -34,9 +34,9 @@ for (const [name, source, expected] of [
 
 test("original port error stops dispatch without consuming pending source messages", { timeout: 300_000 }, () => {
   const result = compile(nativePortFailureSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component root module");
-  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 1, "only demanded native worker/port root");
   const directory = writeGeneratedProject("native-port-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `

@@ -35,9 +35,9 @@ test("generated JS-only driver selects the same native typed timer owner", { tim
 
 test("original timer error stops dispatch without consuming another selected root", { timeout: 300_000 }, () => {
   const result = compile(nativeTimerOriginalErrorSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component root module");
-  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 2, "only demanded Node and JS timer roots");
   const group = names.reduceRight((tail, _name, index) => `tsonic_rust_runtime::dispatch::prepend(root_${index}, ${tail})`,
     "tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()");

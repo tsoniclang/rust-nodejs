@@ -88,7 +88,7 @@ test("last-use native errors move without allocation and retain later control-fl
   const root = writeGeneratedProject("native-node-error-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
   writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport}
-use native_node_error_cost::index;
+use native_node_error_cost::{index, program};
 use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime as rt;
 
@@ -108,7 +108,7 @@ fn preserves_owned_payload_and_matches_native_cost() {
         let source = error.source_error().clone();
         let (result, generated_cost) = measure(|| index::consume(Some(error)));
         match result {
-            Err(rt::TsonicError::Node { code, source: original }) => {
+            Err(program::ErrorTransport::Runtime(rt::TsonicError::Node { code, source: original })) => {
                 assert_eq!(code.as_ptr(), code_pointer);
                 assert_eq!(code, "ERR_NATIVE_ORIGINAL");
                 assert_eq!(original, source);

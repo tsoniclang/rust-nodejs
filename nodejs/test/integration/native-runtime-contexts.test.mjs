@@ -24,9 +24,9 @@ test("generated Node driver selects source-thread readline tasks without worker 
 
 test("generated readline callback retains its original Error identity through native context grouping", { timeout: 300_000 }, () => {
   const result = compile(nativeRuntimeOriginalErrorSource, "lib");
-  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static __tsonic_dispatch_/u.test(row.text));
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component-owned root module");
-  const names = [...roots[0].text.matchAll(/pub static (__tsonic_dispatch_\d+):/gu)].map(match => match[1]);
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
   assert.equal(names.length, 2, "independent background and buffered-task roots");
   const directory = writeGeneratedProject("native-runtime-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `
@@ -35,7 +35,6 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_survives_source_thread_dispatch() {
-        crate::initialize();
         let expected = crate::schedule().expect("callback registration");
         let result = super::${names[0]}.with(|background| super::${names[1]}.with(|tasks| {
             tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(background,
