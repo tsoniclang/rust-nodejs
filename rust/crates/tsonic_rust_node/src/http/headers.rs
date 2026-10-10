@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -96,6 +97,14 @@ pub(crate) struct HeaderStore {
     values: BTreeMap<String, Vec<String>>,
 }
 
+fn header_lookup_name(name: &str) -> Cow<'_, str> {
+    if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(name.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(name)
+    }
+}
+
 impl HeaderStore {
     fn append(&mut self, name: &str, values: impl IntoIterator<Item = String>) -> NodeResult<()> {
         validate_header_name(name)?;
@@ -135,7 +144,7 @@ impl HeaderStore {
         validate_header_name(name)?;
         Ok(self
             .values
-            .get(&name.to_ascii_lowercase())
+            .get(header_lookup_name(name).as_ref())
             .and_then(|values| values.first())
             .cloned())
     }
@@ -144,21 +153,21 @@ impl HeaderStore {
         validate_header_name(name)?;
         Ok(self
             .values
-            .get(&name.to_ascii_lowercase())
+            .get(header_lookup_name(name).as_ref())
             .cloned()
             .unwrap_or_default())
     }
 
     fn contains(&self, name: &str) -> NodeResult<bool> {
         validate_header_name(name)?;
-        Ok(self.values.contains_key(&name.to_ascii_lowercase()))
+        Ok(self.values.contains_key(header_lookup_name(name).as_ref()))
     }
 
     fn remove(&mut self, name: &str) -> NodeResult<()> {
         validate_header_name(name)?;
-        let key = name.to_ascii_lowercase();
-        self.values.remove(&key);
-        self.names.retain(|current| current != &key);
+        let key = header_lookup_name(name);
+        self.values.remove(key.as_ref());
+        self.names.retain(|current| current != key.as_ref());
         Ok(())
     }
 
@@ -204,7 +213,10 @@ impl IncomingHttpHeaders {
 
     pub fn get_values(&self, name: &str) -> NodeResult<Option<&[String]>> {
         validate_header_name(name)?;
-        Ok(self.store.values.get(&name.to_ascii_lowercase())
+        Ok(self
+            .store
+            .values
+            .get(header_lookup_name(name).as_ref())
             .filter(|values| !values.is_empty())
             .map(Vec::as_slice))
     }
@@ -220,14 +232,51 @@ impl IncomingHttpHeaders {
 
 #[cfg(test)]
 mod borrowed_header_tests {
-    use super::IncomingHttpHeaders;
+    use super::{header_lookup_name, HeaderStore, IncomingHttpHeaders};
+    use std::borrow::Cow;
+
+    #[test]
+    fn normalized_lookup_borrows_exact_input_and_only_changed_case_owns_a_key() {
+        let name = String::from("content-type");
+        let key = header_lookup_name(&name);
+        assert!(matches!(key, Cow::Borrowed(_)));
+        assert_eq!(key.as_ptr(), name.as_ptr());
+        let mixed = header_lookup_name("Content-Type");
+        assert!(matches!(mixed, Cow::Owned(_)));
+        assert_eq!(mixed, "content-type");
+    }
+
+    #[test]
+    fn native_lookup_and_removal_preserve_case_validation_and_owned_snapshot_order() {
+        let mut store = HeaderStore::default();
+        store
+            .append("X-Item", ["one".to_owned(), "two".to_owned()])
+            .unwrap();
+        store.append("Other", ["three".to_owned()]).unwrap();
+        assert!(store.contains("x-item").unwrap());
+        assert!(store.contains("X-ITEM").unwrap());
+        assert_eq!(store.get("x-item").unwrap().as_deref(), Some("one"));
+        assert_eq!(store.get_all("X-ITEM").unwrap(), ["one", "two"]);
+        let snapshot = store.get_all("x-item").unwrap();
+        store.remove("X-ITEM").unwrap();
+        assert!(!store.contains("x-item").unwrap());
+        assert_eq!(store.names, ["other"]);
+        assert_eq!(snapshot, ["one", "two"]);
+        assert!(store.get("bad header").is_err());
+        assert!(store.get_all("bad header").is_err());
+        assert!(store.contains("bad header").is_err());
+        assert!(store.remove("bad header").is_err());
+        assert!(store.get("missing").unwrap().is_none());
+        assert!(store.get_all("missing").unwrap().is_empty());
+    }
 
     #[test]
     fn indexer_borrows_exact_backing_and_snapshot_is_independent() {
         let headers = IncomingHttpHeaders::from_pairs([
             ("x-item".to_owned(), "one".to_owned()),
             ("x-item".to_owned(), "two".to_owned()),
-        ]).unwrap();
+        ])
+        .unwrap();
         let view = headers.get_values("X-ITEM").unwrap().unwrap();
         let backing = headers.store.values.get("x-item").unwrap();
         assert_eq!(view.as_ptr(), backing.as_ptr());
@@ -237,7 +286,10 @@ mod borrowed_header_tests {
         assert!(headers.get_values("missing").unwrap().is_none());
         assert!(headers.get_values("bad header").is_err());
         let cloned_owner = headers.clone();
-        assert_eq!(cloned_owner.get_values("x-item").unwrap().unwrap().as_ptr(), view.as_ptr());
+        assert_eq!(
+            cloned_owner.get_values("x-item").unwrap().unwrap().as_ptr(),
+            view.as_ptr()
+        );
     }
 }
 
