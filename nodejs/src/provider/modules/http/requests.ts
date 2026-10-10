@@ -1,6 +1,7 @@
-import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
+import { rustBorrowedStrTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
+import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { providerRef } from "../../declarations/builders.js";
-import { boolCarrier, stringCarrier } from "../../model/carriers.js";
+import { boolCarrier } from "../../model/carriers.js";
 import { booleanType, errorType as retainedErrorType, stringType } from "../../model/source-types.js";
 import { httpIncomingMessageCarrier, incomingHttpHeadersCarrier } from "./carriers.js";
 import {
@@ -13,7 +14,6 @@ import {
   retainedErrorListenerCarrier,
   dataListenerCarrier,
   optionalErrorCarrier,
-  optionalStringCarrier,
   optionalInt32Carrier,
   socketReferenceCarrier,
 } from "./types.js";
@@ -58,17 +58,20 @@ export function incomingMessageDeclaration(): RustProviderModuleDefinition["expo
 }
 
 export function incomingRows(): readonly RustProviderOperationDefinition[] {
+  const borrowedString = rustBorrowedStrTargetType();
+  const optionalBorrowedString = rustOptionTargetType(borrowedString);
+  const borrowedHeaders: RustTargetTypeRef = { kind: "reference", mutable: false, referent: incomingHttpHeadersCarrier };
   const rows: RustProviderOperationDefinition[] = [
-    receiver(incomingId, "method", "method", httpIncomingMessageCarrier, optionalStringCarrier, [], "property"),
-    receiver(incomingId, "url", "url", httpIncomingMessageCarrier, optionalStringCarrier, [], "property"),
-    receiver(incomingId, "httpVersion", "http_version", httpIncomingMessageCarrier, stringCarrier, [], "property"),
-    receiver(incomingId, "headers", "headers", httpIncomingMessageCarrier, incomingHttpHeadersCarrier, [], "property"),
-    receiver(incomingId, "headersDistinct", "headers_distinct", httpIncomingMessageCarrier, incomingHttpHeadersCarrier, [], "property"),
+    receiver(incomingId, "method", "method", httpIncomingMessageCarrier, optionalBorrowedString, [], "property"),
+    receiver(incomingId, "url", "url", httpIncomingMessageCarrier, optionalBorrowedString, [], "property"),
+    receiver(incomingId, "httpVersion", "http_version", httpIncomingMessageCarrier, borrowedString, [], "property"),
+    receiver(incomingId, "headers", "headers", httpIncomingMessageCarrier, borrowedHeaders, [], "property"),
+    receiver(incomingId, "headersDistinct", "headers_distinct", httpIncomingMessageCarrier, borrowedHeaders, [], "property"),
     receiver(incomingId, "complete", "complete", httpIncomingMessageCarrier, boolCarrier, [], "property"),
     receiver(incomingId, "aborted", "aborted", httpIncomingMessageCarrier, boolCarrier, [], "property"),
     receiver(incomingId, "destroyed", "destroyed", httpIncomingMessageCarrier, boolCarrier, [], "property"),
     receiver(incomingId, "statusCode", "status_code", httpIncomingMessageCarrier, optionalInt32Carrier, [], "property"),
-    receiver(incomingId, "statusMessage", "status_message", httpIncomingMessageCarrier, optionalStringCarrier, [], "property"),
+    receiver(incomingId, "statusMessage", "status_message", httpIncomingMessageCarrier, optionalBorrowedString, [], "property"),
     receiver(incomingId, "socket", "socket", httpIncomingMessageCarrier, socketReferenceCarrier, [], "property"),
     fallibleReceiver(incomingId, "destroy", "destroy_chain", httpIncomingMessageCarrier, httpIncomingMessageCarrier, [optionalErrorCarrier]),
   ];

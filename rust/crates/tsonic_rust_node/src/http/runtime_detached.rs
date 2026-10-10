@@ -244,7 +244,7 @@ mod detached_response_tests {
                     IncomingMessage<TsonicError>,
                     ServerResponse<TsonicError>,
                 )| {
-                    assert_eq!(request.url(), Some("/later".to_string()));
+                    assert_eq!(request.url(), Some("/later"));
                     *retained_in_handler.borrow_mut() = Some(response);
                     Ok::<(), TsonicError>(())
                 },

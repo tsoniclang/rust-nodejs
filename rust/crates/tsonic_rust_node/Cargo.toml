@@ -57,6 +57,10 @@ name = "timer_ownership_tests"
 path = "../../tests/node/timer_ownership_tests.rs"
 
 [[test]]
+name = "http_metadata_ownership_tests"
+path = "../../tests/node/http_metadata_ownership_tests.rs"
+
+[[test]]
 name = "background_ownership_tests"
 path = "../../tests/node/background_ownership_tests.rs"
 

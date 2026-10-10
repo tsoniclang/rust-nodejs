@@ -6,6 +6,70 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 use super::IncomingMessage;
 
 #[test]
+fn immutable_metadata_borrows_keep_the_original_owner_during_lifecycle_mutation() {
+    let message = IncomingMessage::<super::NodeError>::new("POST", "/resource", Vec::new());
+    let alias = message.clone();
+    let method: &str = message.method().unwrap();
+    let url: &str = message.url().unwrap();
+    let version: &str = message.http_version();
+    let headers: &super::IncomingHttpHeaders = message.headers();
+    assert!(Rc::ptr_eq(&message.state, &alias.state));
+    assert!(std::ptr::eq(
+        method.as_ptr(),
+        alias.method().unwrap().as_ptr()
+    ));
+    assert!(std::ptr::eq(url.as_ptr(), alias.url().unwrap().as_ptr()));
+    assert!(std::ptr::eq(
+        version.as_ptr(),
+        alias.http_version().as_ptr()
+    ));
+    assert!(std::ptr::eq(headers, alias.headers_distinct()));
+    {
+        let mut lifecycle = alias.state.lifecycle.borrow_mut();
+        lifecycle.timeout = Some(17);
+        assert_eq!(message.method(), Some(method));
+        assert_eq!(message.url(), Some(url));
+        assert_eq!(message.http_version(), version);
+        assert!(std::ptr::eq(headers, message.headers()));
+    }
+    assert_eq!(message.timeout(), Some(17));
+    alias.destroy_chain(None).unwrap();
+    assert_eq!(method, "POST");
+    assert_eq!(url, "/resource");
+    assert_eq!(version, "1.1");
+    assert!(message.destroyed());
+    assert_eq!(message.status_code(), None);
+    assert_eq!(message.status_message(), None);
+}
+
+#[test]
+fn response_metadata_borrows_preserve_the_exact_optional_status_pair() {
+    let message = IncomingMessage::<super::NodeError>::from_client_response(
+        "https://example.test/".to_owned(),
+        u16::MAX,
+        "Exact response".to_owned(),
+        "2.0".to_owned(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let phrase: &str = message.status_message().unwrap();
+    let alias = message.clone();
+    assert!(std::ptr::eq(
+        phrase.as_ptr(),
+        alias.status_message().unwrap().as_ptr()
+    ));
+    assert_eq!(message.method(), None);
+    assert_eq!(message.url(), Some("https://example.test/"));
+    assert_eq!(message.status_code(), Some(i32::from(u16::MAX)));
+    assert_eq!(message.http_version(), "2.0");
+    alias.set_timeout(29);
+    assert_eq!(message.timeout(), Some(29));
+    assert_eq!(phrase, "Exact response");
+    assert!(message.complete());
+}
+
+#[test]
 fn aborted_listener_retention_removal_and_single_fire() {
     let message = IncomingMessage::streaming(
         "POST".to_string(),

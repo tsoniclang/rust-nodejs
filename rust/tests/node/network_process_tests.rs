@@ -426,8 +426,8 @@ fn http_request_shape_uses_exact_headers_and_one_body_stream() {
         "/submit",
         b"payload".to_vec(),
     );
-    assert_eq!(request.method(), Some("POST".to_string()));
-    assert_eq!(request.url(), Some("/submit".to_string()));
+    assert_eq!(request.method(), Some("POST"));
+    assert_eq!(request.url(), Some("/submit"));
     assert_eq!(request.http_version(), "1.1");
     assert!(request.complete());
     assert!(request

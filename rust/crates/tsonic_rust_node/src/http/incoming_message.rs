@@ -15,34 +15,41 @@ impl Response {
     }
 }
 
-struct IncomingMessageState<E: 'static> {
+struct IncomingMessageMetadata {
     method: Option<String>,
     url: Option<String>,
     headers: IncomingHttpHeaders,
     http_version: String,
+    status: Option<(u16, String)>,
+}
+
+struct IncomingMessageLifecycle<E: 'static> {
     aborted: bool,
     complete: bool,
-    status_code: Option<u16>,
-    status_message: Option<String>,
     destroyed: bool,
     timeout: Option<u64>,
     aborted_event: crate::stream::StreamEvent<(), E>,
 }
 
+struct IncomingMessageState<E: 'static> {
+    metadata: IncomingMessageMetadata,
+    lifecycle: RefCell<IncomingMessageLifecycle<E>>,
+}
+
 pub struct IncomingMessage<E: 'static = NodeError> {
-    state: Rc<RefCell<IncomingMessageState<E>>>,
+    state: Rc<IncomingMessageState<E>>,
     readable: Readable<E>,
     socket: Rc<net::Socket>,
 }
 
 impl<E: From<NodeError> + 'static> std::fmt::Debug for IncomingMessage<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let state = self.state.borrow();
+        let state = self.state.lifecycle.borrow();
         formatter
             .debug_struct("IncomingMessage")
-            .field("method", &state.method)
-            .field("url", &state.url)
-            .field("http_version", &state.http_version)
+            .field("method", &self.state.metadata.method)
+            .field("url", &self.state.metadata.url)
+            .field("http_version", &self.state.metadata.http_version)
             .field("aborted", &state.aborted)
             .field("complete", &state.complete)
             .finish()
@@ -57,10 +64,13 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
             Readable::<E>::from_chunks(vec![Buffer::from_bytes(body)])
         };
         Self::from_parts(
-            Some(method.into()),
-            Some(url.into()),
-            "1.1".to_string(),
-            IncomingHttpHeaders::default(),
+            IncomingMessageMetadata {
+                method: Some(method.into()),
+                url: Some(url.into()),
+                http_version: "1.1".to_string(),
+                headers: IncomingHttpHeaders::default(),
+                status: None,
+            },
             net::Socket::from_http_endpoints(None, None),
             readable,
             true,
@@ -82,10 +92,13 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
             ..Default::default()
         });
         Ok(Self::from_parts(
-            Some(method),
-            Some(url),
-            http_version,
-            headers,
+            IncomingMessageMetadata {
+                method: Some(method),
+                url: Some(url),
+                http_version,
+                headers,
+                status: None,
+            },
             net::Socket::from_http_endpoints(local_address, remote_address),
             readable,
             false,
@@ -106,89 +119,80 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
         } else {
             Readable::<E>::from_chunks(vec![Buffer::from_bytes(body)])
         };
-        let message = Self::from_parts(
-            None,
-            Some(url),
-            http_version,
-            headers,
+        Ok(Self::from_parts(
+            IncomingMessageMetadata {
+                method: None,
+                url: Some(url),
+                http_version,
+                headers,
+                status: Some((status_code, status_message)),
+            },
             net::Socket::from_http_endpoints(None, None),
             readable,
             true,
-        );
-        {
-            let mut state = message.state.borrow_mut();
-            state.status_code = Some(status_code);
-            state.status_message = Some(status_message);
-        }
-        Ok(message)
+        ))
     }
 
     fn from_parts(
-        method: Option<String>,
-        url: Option<String>,
-        http_version: String,
-        headers: IncomingHttpHeaders,
+        metadata: IncomingMessageMetadata,
         socket: net::Socket,
         readable: Readable<E>,
         complete: bool,
     ) -> Self {
         Self {
-            state: Rc::new(RefCell::new(IncomingMessageState::<E> {
-                method,
-                url,
-                headers,
-                http_version,
-                aborted: false,
-                complete,
-                status_code: None,
-                status_message: None,
-                destroyed: false,
-                timeout: None,
-                aborted_event: crate::stream::StreamEvent::default(),
-            })),
+            state: Rc::new(IncomingMessageState {
+                metadata,
+                lifecycle: RefCell::new(IncomingMessageLifecycle::<E> {
+                    aborted: false,
+                    complete,
+                    destroyed: false,
+                    timeout: None,
+                    aborted_event: crate::stream::StreamEvent::default(),
+                }),
+            }),
             readable,
             socket: Rc::new(socket),
         }
     }
 
-    pub fn method(&self) -> Option<String> {
-        self.state.borrow().method.clone()
+    pub fn method(&self) -> Option<&str> {
+        self.state.metadata.method.as_deref()
     }
 
-    pub fn url(&self) -> Option<String> {
-        self.state.borrow().url.clone()
+    pub fn url(&self) -> Option<&str> {
+        self.state.metadata.url.as_deref()
     }
 
-    pub fn http_version(&self) -> String {
-        self.state.borrow().http_version.clone()
+    pub fn http_version(&self) -> &str {
+        &self.state.metadata.http_version
     }
 
-    pub fn headers(&self) -> IncomingHttpHeaders {
-        self.state.borrow().headers.clone()
+    pub fn headers(&self) -> &IncomingHttpHeaders {
+        &self.state.metadata.headers
     }
 
-    pub fn headers_distinct(&self) -> IncomingHttpHeaders {
+    pub fn headers_distinct(&self) -> &IncomingHttpHeaders {
         self.headers()
     }
 
     pub fn complete(&self) -> bool {
-        self.state.borrow().complete
+        self.state.lifecycle.borrow().complete
     }
 
     pub fn aborted(&self) -> bool {
-        self.state.borrow().aborted
+        self.state.lifecycle.borrow().aborted
     }
 
     pub fn destroyed(&self) -> bool {
-        self.state.borrow().destroyed || self.readable.destroyed()
+        self.state.lifecycle.borrow().destroyed || self.readable.destroyed()
     }
 
     pub fn status_code(&self) -> Option<i32> {
-        self.state.borrow().status_code.map(i32::from)
+        self.state.metadata.status.as_ref().map(|(code, _)| i32::from(*code))
     }
 
-    pub fn status_message(&self) -> Option<String> {
-        self.state.borrow().status_message.clone()
+    pub fn status_message(&self) -> Option<&str> {
+        self.state.metadata.status.as_ref().map(|(_, message)| message.as_str())
     }
 
     pub fn socket(&self) -> &net::Socket {
@@ -347,12 +351,12 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     }
 
     pub fn set_timeout(&self, milliseconds: u64) -> Self {
-        self.state.borrow_mut().timeout = Some(milliseconds);
+        self.state.lifecycle.borrow_mut().timeout = Some(milliseconds);
         self.clone()
     }
 
     pub fn timeout(&self) -> Option<u64> {
-        self.state.borrow().timeout
+        self.state.lifecycle.borrow().timeout
     }
 
     pub fn on_aborted(
@@ -378,6 +382,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     ) -> Result<Self, E> {
         ensure_http_event(event, "aborted")?;
         self.state
+            .lifecycle
             .borrow_mut()
             .aborted_event
             .remove(listener.identity_key());
@@ -392,6 +397,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     ) -> Result<Self, E> {
         ensure_http_event(event, "aborted")?;
         self.state
+            .lifecycle
             .borrow_mut()
             .aborted_event
             .add(crate::stream::empty_listener(listener, once));
@@ -403,7 +409,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     }
 
     pub(crate) fn finish_body(&self) -> Result<(), E> {
-        self.state.borrow_mut().complete = true;
+        self.state.lifecycle.borrow_mut().complete = true;
         self.readable.finish_input()
     }
 
@@ -417,7 +423,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
 
     pub(crate) fn abort(&self, error: Option<tsonic_rust_runtime::RetainedError>) -> Result<(), E> {
         let callbacks = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.state.lifecycle.borrow_mut();
             let previously_destroyed = state.destroyed;
             state.destroyed = true;
             state.aborted = !state.complete;

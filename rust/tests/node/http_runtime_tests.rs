@@ -26,7 +26,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
                     http::ServerResponse<TsonicError>,
                 )| {
                     callback_thread.set(thread::current().id() == event_thread);
-                    assert_eq!(request.url(), Some("/asset.bin".to_string()));
+                    assert_eq!(request.url(), Some("/asset.bin"));
                     response.set_status_code(201).unwrap();
                     response
                         .set_header("content-type", "application/octet-stream")
@@ -171,7 +171,7 @@ fn chunked_request_streams_fragmented_binary_body_before_response() {
                     http::IncomingMessage<TsonicError>,
                     http::ServerResponse<TsonicError>,
                 )| {
-                    assert_eq!(request.url(), Some("/binary".to_string()));
+                    assert_eq!(request.url(), Some("/binary"));
                     let body = Rc::clone(&received_in_handler);
                     request.on_data(
                         "data",
@@ -322,11 +322,11 @@ fn pipelined_requests_keep_one_connection_until_the_final_response() {
                     let sequence = requests_in_handler.get() + 1;
                     requests_in_handler.set(sequence);
                     if sequence == 1 {
-                        assert_eq!(request.url(), Some("/first".to_string()));
+                        assert_eq!(request.url(), Some("/first"));
                         response.end_string("first")?;
                     } else {
                         assert_eq!(sequence, 2);
-                        assert_eq!(request.url(), Some("/second".to_string()));
+                        assert_eq!(request.url(), Some("/second"));
                         response.end_string("second")?;
                         server_in_handler.borrow().as_ref().unwrap().close()?;
                     }
