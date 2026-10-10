@@ -214,7 +214,7 @@ pub(super) fn parse_request_head(input: &[u8]) -> NodeResult<Option<(usize, Pars
     let mut connection_tokens = Vec::new();
     let mut host_count = 0;
     for header in request.headers {
-        let value = latin1(header.value).trim().to_string();
+        let value = trimmed_latin1(header.value);
         validate_header_value(header.name, &value)?;
         if header.name.eq_ignore_ascii_case("content-length") {
             content_lengths.push(parse_content_length(&value)?);
@@ -308,8 +308,20 @@ fn csv_tokens(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| char::from(*byte)).collect()
+fn trimmed_latin1(bytes: &[u8]) -> String {
+    let start = bytes
+        .iter()
+        .position(|byte| !char::from(*byte).is_whitespace())
+        .unwrap_or(bytes.len());
+    let remaining = &bytes[start..];
+    let length = remaining
+        .iter()
+        .rposition(|byte| !char::from(*byte).is_whitespace())
+        .map_or(0, |last| last + 1);
+    remaining[..length]
+        .iter()
+        .map(|byte| char::from(*byte))
+        .collect()
 }
 
 fn validate_trailers(bytes: &[u8]) -> NodeResult<()> {
@@ -333,7 +345,7 @@ fn validate_trailers(bytes: &[u8]) -> NodeResult<()> {
         };
         let name = std::str::from_utf8(&line[..separator])
             .map_err(|_| NodeError::new("HPE_INVALID_HEADER_TOKEN", "trailer name is not ASCII"))?;
-        let value = latin1(&line[separator + 1..]).trim().to_string();
+        let value = trimmed_latin1(&line[separator + 1..]);
         validate_header_value(name, &value)?;
         match next {
             Some(rest) => remaining = rest,
@@ -365,9 +377,57 @@ fn map_parse_error(error: httparse::Error) -> NodeError {
 #[cfg(test)]
 mod runtime_protocol_tests {
     use super::{
-        parse_request_head, ChunkDecoder, ChunkStep, RequestBody, MAX_CHUNK_LINE_SIZE,
-        MAX_HEADER_SIZE,
+        parse_request_head, trimmed_latin1, ChunkDecoder, ChunkStep, RequestBody,
+        MAX_CHUNK_LINE_SIZE, MAX_HEADER_SIZE,
     };
+
+    #[test]
+    fn borrowed_latin1_range_preserves_native_trim_for_every_byte() {
+        assert_eq!(trimmed_latin1(&[]), "");
+        assert_eq!(trimmed_latin1(b" \t\x85\xa0"), "");
+        for byte in 0..=u8::MAX {
+            for bytes in [
+                vec![byte],
+                vec![b' ', byte, b'\t'],
+                vec![byte, b'A', byte],
+                vec![b'A', byte, b'B'],
+            ] {
+                let original: String = bytes.iter().map(|byte| char::from(*byte)).collect();
+                assert_eq!(trimmed_latin1(&bytes), original.trim(), "byte {byte}");
+            }
+        }
+    }
+
+    #[test]
+    fn request_and_trailer_values_keep_native_latin1_whitespace_rules() {
+        let bytes =
+            b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Item: \t\x85\xa0caf\xe9\xa0\x85\t \r\n\r\n";
+        let (consumed, request) = parse_request_head(bytes).unwrap().unwrap();
+        assert_eq!(consumed, bytes.len());
+        assert_eq!(
+            request.headers[1],
+            ("X-Item".to_string(), "caf\u{e9}".to_string())
+        );
+        let mut decoder = ChunkDecoder::new();
+        assert!(matches!(
+            decoder.step(b"0\r\n").unwrap(),
+            ChunkStep::Consumed(3)
+        ));
+        let trailers = b"X-Item: \t\x85\xa0caf\xe9\xa0\x85\t \r\n\r\n";
+        assert!(
+            matches!(decoder.step(trailers).unwrap(), ChunkStep::Complete(consumed) if consumed == trailers.len())
+        );
+        assert!(parse_request_head(
+            b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Item: one\x01two\r\n\r\n"
+        )
+        .is_err());
+        let mut invalid = ChunkDecoder::new();
+        assert!(matches!(
+            invalid.step(b"0\r\n").unwrap(),
+            ChunkStep::Consumed(3)
+        ));
+        assert!(invalid.step(b"X-Item: one\x01two\r\n\r\n").is_err());
+    }
 
     #[test]
     fn fragmented_request_preserves_repeated_headers_and_body_framing() {
