@@ -1,5 +1,5 @@
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -28,6 +28,12 @@ struct NativeTimer {
     _interval: bool,
     _refed: bool,
     _reservation: TaskReservation,
+}
+
+struct NativeTimers {
+    entries: BTreeMap<u64, NativeTimer>,
+    deadlines: BTreeSet<(Instant, u64)>,
+    referenced: usize,
 }
 
 #[test]
@@ -65,20 +71,29 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
                         observed.set(current);
                         Ok(())
                     }));
-                native
-                    .get_or_init(|| Rc::new(RefCell::new(BTreeMap::new())))
-                    .borrow_mut()
-                    .insert(
-                        initial as u64,
-                        NativeTimer {
-                            _callback: callback,
-                            _delay: delay,
-                            _due: Instant::now() + delay,
-                            _interval: true,
-                            _refed: true,
-                            _reservation: reservation,
-                        },
-                    );
+                let due = Instant::now() + delay;
+                let mut state = native
+                    .get_or_init(|| {
+                        Rc::new(RefCell::new(NativeTimers {
+                            entries: BTreeMap::new(),
+                            deadlines: BTreeSet::new(),
+                            referenced: 0,
+                        }))
+                    })
+                    .borrow_mut();
+                state.deadlines.insert((due, initial as u64));
+                state.referenced += 1;
+                state.entries.insert(
+                    initial as u64,
+                    NativeTimer {
+                        _callback: callback,
+                        _delay: delay,
+                        _due: due,
+                        _interval: true,
+                        _refed: true,
+                        _reservation: reservation,
+                    },
+                );
             }
         });
         black_box(&native);
@@ -87,7 +102,16 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
             assert!(!handle.has_ref());
         }
         for index in 0..count {
-            native.get().unwrap().borrow_mut().remove(&(index as u64));
+            let mut state = native.get().unwrap().borrow_mut();
+            let entry = state.entries.remove(&(index as u64)).unwrap();
+            assert!(state.deadlines.remove(&(entry._due, index as u64)));
+            state.referenced -= 1;
+        }
+        if let Some(state) = native.get() {
+            let state = state.borrow();
+            assert!(state.entries.is_empty());
+            assert!(state.deadlines.is_empty());
+            assert_eq!(state.referenced, 0);
         }
         assert_eq!(observed.get(), 0);
         assert_eq!(actual, expected, "registrations={count}");
