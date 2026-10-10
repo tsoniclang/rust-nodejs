@@ -255,6 +255,8 @@ fn shared_capture_defers_reentrant_messages_and_rejects_foreign_projection_front
     let second = WorkerResources::<NodeError>::new();
     let left = first.bind_parent(Rc::clone(&state)).unwrap();
     let right = second.bind_parent(state).unwrap();
+    assert!(Rc::ptr_eq(&left.owner.state, &right.owner.state));
+    assert!(!Rc::ptr_eq(&left.owner, &right.owner));
     let calls = Rc::new(Cell::new(0));
     let observed = Rc::clone(&calls);
     let callback_sender = sender.clone();
