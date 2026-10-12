@@ -17,7 +17,7 @@ impl From<NodeError> for Failure {
     }
 }
 
-fn enqueue(server: &Server<Failure>, callback: Callable<(), Result<(), Failure>>) {
+fn enqueue(server: &Server<Failure>, callback: Callable<'static, (), Result<(), Failure>>) {
     server
         .state
         .borrow_mut()

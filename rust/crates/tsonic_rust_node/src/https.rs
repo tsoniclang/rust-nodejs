@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 type RuntimeRequestArguments<E> = (IncomingMessage<E>, ServerResponse<E>);
 type RuntimeResponseCallback<E> =
-    tsonic_rust_runtime::Callable<(IncomingMessage<E>,), Result<(), E>>;
+    tsonic_rust_runtime::Callable<'static, (IncomingMessage<E>,), Result<(), E>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestOptions {
@@ -123,7 +123,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         tasks: &crate::runtime_tasks::RuntimeTasks<E>,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.server.listen(port, host)?;
         tasks.enqueue(move || callback.call(()))?;
@@ -133,7 +133,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         &self,
         tasks: &crate::runtime_tasks::RuntimeTasks<E>,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.listen(tasks, port, "0.0.0.0", callback)
     }
@@ -157,7 +157,7 @@ pub fn create_server_callable<E: From<NodeError> + 'static>(
     roots: &crate::tls::TlsServers<E>,
     background: &crate::background::BackgroundTasks<E>,
     options: SourceServerOptions,
-    handler: tsonic_rust_runtime::Callable<RuntimeRequestArguments<E>, Result<(), E>>,
+    handler: tsonic_rust_runtime::Callable<'static, RuntimeRequestArguments<E>, Result<(), E>>,
 ) -> NodeResult<ServerHandle<E>> {
     let http = http.handle();
     let connection_callback = tsonic_rust_runtime::Callable::new(move |(socket,): (TlsSocket,)| {

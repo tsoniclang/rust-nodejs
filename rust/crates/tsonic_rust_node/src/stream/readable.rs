@@ -19,7 +19,7 @@ struct ReadableState<E: 'static> {
     source: Option<ReadableSource>,
     producer_ended: bool,
     end_emitted: bool,
-    capacity_handler: Option<Callable<(), Result<(), E>>>,
+    capacity_handler: Option<Callable<'static, (), Result<(), E>>>,
 }
 
 pub struct Readable<E: 'static = NodeError> {

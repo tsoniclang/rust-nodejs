@@ -217,7 +217,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn on_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.on_callable(event, listener)?;
         Ok(self)
@@ -226,7 +226,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn on_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.on_callable1(event, listener)?;
         Ok(self)
@@ -235,7 +235,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn once_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.once_callable(event, listener)?;
         Ok(self)
@@ -244,7 +244,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn once_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.once_callable1(event, listener)?;
         Ok(self)
@@ -253,7 +253,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn off_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'_, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.off_callable(event, listener)?;
         Ok(self)
@@ -262,7 +262,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     pub fn off_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'_, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.emitter.off_callable1(event, listener)?;
         Ok(self)

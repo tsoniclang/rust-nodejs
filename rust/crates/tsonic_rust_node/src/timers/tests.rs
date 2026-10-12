@@ -3,6 +3,37 @@ use std::cell::Cell;
 use tsonic_rust_runtime::{ErrorObject, TsonicError};
 
 #[test]
+fn local_timer_context_and_handle_retain_borrowed_callback_environment() {
+    let calls = Cell::new(0);
+    let timers = new::<std::convert::Infallible>();
+    let handle = set_timeout_callable(
+        &timers,
+        Callable::new(|()| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        }),
+        0,
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 0);
+    assert!(handle.has_ref());
+    assert!(timers.poll().unwrap());
+    assert_eq!(calls.get(), 1);
+    assert!(!timers.has_pending_work());
+    drop(handle);
+}
+
+#[test]
+fn local_timer_context_preserves_borrowed_failure_identity() {
+    let failure = String::from("scoped timer failure");
+    let timers = new::<&String>();
+    let handle = set_timeout_callable(&timers, Callable::new(|()| Err(&failure)), 0).unwrap();
+    assert!(std::ptr::eq(timers.poll().unwrap_err(), &failure));
+    assert!(!timers.has_pending_work());
+    drop(handle);
+}
+
+#[test]
 fn first_timer_failure_retains_original_identity_and_uninvoked_callbacks() {
     let original = tsonic_rust_runtime::JsError::error("original timer failure");
     let failure = original.clone();

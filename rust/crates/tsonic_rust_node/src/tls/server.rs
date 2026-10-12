@@ -11,11 +11,11 @@ use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
 pub(super) enum TlsSignal<E> {
-    Listening(Callable<(), Result<(), E>>),
+    Listening(Callable<'static, (), Result<(), E>>),
     Connection(
         TcpStream,
         Arc<rustls::ServerConfig>,
-        Callable<(TlsSocket,), Result<(), E>>,
+        Callable<'static, (TlsSocket,), Result<(), E>>,
     ),
 }
 
@@ -25,7 +25,7 @@ pub(super) struct TlsServerState<E> {
     pub(super) config: Arc<rustls::ServerConfig>,
     pub(super) background: BackgroundHandle<E>,
     pub(super) listener: Option<crate::readiness::Listener>,
-    pub(super) callback: Callable<(TlsSocket,), Result<(), E>>,
+    pub(super) callback: Callable<'static, (TlsSocket,), Result<(), E>>,
     pub(super) pending: VecDeque<(TaskTicket, TlsSignal<E>)>,
     pub(super) listening: bool,
     pub(super) refed: bool,
@@ -48,7 +48,7 @@ impl<E: From<NodeError> + 'static> TlsServer<E> {
         roots: &TlsServers<E>,
         background: &BackgroundTasks<E>,
         options: SourceServerOptions,
-        callback: Callable<(TlsSocket,), Result<(), E>>,
+        callback: Callable<'static, (TlsSocket,), Result<(), E>>,
     ) -> NodeResult<Self> {
         let reservation = resources::reserve_resource()?;
         let config = Arc::new(server_config(&options)?);
@@ -86,7 +86,7 @@ impl<E: From<NodeError> + 'static> TlsServer<E> {
         &self,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
-        callback: Callable<(), Result<(), E>>,
+        callback: Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         if self.state.borrow().pending.len() >= resources::MAXIMUM_PENDING_SIGNALS {
             return Err(resources::queue_limit());
@@ -103,7 +103,7 @@ impl<E: From<NodeError> + 'static> TlsServer<E> {
     pub fn listen_default_host_callable(
         &self,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
-        callback: Callable<(), Result<(), E>>,
+        callback: Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.listen_callable(port, "0.0.0.0", callback)
     }
@@ -135,7 +135,7 @@ pub fn create_server<E: From<NodeError> + 'static>(
     roots: &TlsServers<E>,
     background: &BackgroundTasks<E>,
     options: SourceServerOptions,
-    callback: Callable<(TlsSocket,), Result<(), E>>,
+    callback: Callable<'static, (TlsSocket,), Result<(), E>>,
 ) -> NodeResult<TlsServer<E>> {
     TlsServer::create(roots, background, options, callback)
 }

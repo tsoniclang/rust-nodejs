@@ -61,7 +61,7 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
     let contexts = timers::new();
     let count = Rc::new(Cell::new(0));
     let interval_slot = Rc::new(RefCell::new(
-        None::<timers::Timeout<Callable<(), Result<(), tsonic_rust_runtime::TsonicError>>>>,
+        None::<timers::Timeout<Callable<'_, (), Result<(), tsonic_rust_runtime::TsonicError>>>>,
     ));
     let callback_count = Rc::clone(&count);
     let callback_slot = Rc::clone(&interval_slot);

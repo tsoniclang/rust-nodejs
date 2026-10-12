@@ -71,7 +71,7 @@ impl TlsSocket {
     fn connect_with_callback<E: From<NodeError> + 'static>(
         tasks: &crate::background::BackgroundTasks<E>,
         options: SourceConnectOptions,
-        callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         let prepared = PreparedClientConnection::new(options)?;
         let state = Rc::new(RefCell::new(TlsSocketState {
@@ -397,7 +397,7 @@ pub fn connect<E: From<NodeError> + 'static>(
 pub fn connect_callable<E: From<NodeError> + 'static>(
     tasks: &crate::background::BackgroundTasks<E>,
     options: SourceConnectOptions,
-    callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
 ) -> NodeResult<TlsSocket> {
     TlsSocket::connect_with_callback(tasks, options, Some(callback))
 }

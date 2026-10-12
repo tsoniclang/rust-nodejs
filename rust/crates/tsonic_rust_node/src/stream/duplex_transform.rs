@@ -57,7 +57,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn on_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.on_data(event, listener)?;
         Ok(self.clone())
@@ -66,7 +66,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn once_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.once_data(event, listener)?;
         Ok(self.clone())
@@ -75,7 +75,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn off_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.off_data(event, listener)?;
         Ok(self.clone())
@@ -84,7 +84,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn on_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.on_end(event, listener)?;
         Ok(self.clone())
@@ -93,7 +93,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn once_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.once_end(event, listener)?;
         Ok(self.clone())
@@ -102,7 +102,7 @@ impl<E: From<NodeError> + 'static> Duplex<E> {
     pub fn off_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.off_end(event, listener)?;
         Ok(self.clone())

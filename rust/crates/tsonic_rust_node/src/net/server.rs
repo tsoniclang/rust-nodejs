@@ -5,14 +5,14 @@ use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::Callable;
 
 enum ServerSignal<E> {
-    Listening(Callable<(), Result<(), E>>),
-    Connection(Socket, Callable<(Socket,), Result<(), E>>),
+    Listening(Callable<'static, (), Result<(), E>>),
+    Connection(Socket, Callable<'static, (Socket,), Result<(), E>>),
 }
 
 struct ServerState<E> {
     reservation: TaskReservation,
     listener: Option<crate::readiness::Listener>,
-    connection_callback: Option<Callable<(Socket,), Result<(), E>>>,
+    connection_callback: Option<Callable<'static, (Socket,), Result<(), E>>>,
     pending: VecDeque<(TaskTicket, ServerSignal<E>)>,
     refed: bool,
     max_connections: Option<usize>,
@@ -77,7 +77,7 @@ impl<E: From<NodeError> + 'static> Server<E> {
         &self,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
-        callback: Option<Callable<(), Result<(), E>>>,
+        callback: Option<Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<&Self> {
         if callback.is_some()
             && self.state.borrow().pending.len() >= resources::MAXIMUM_PENDING_SIGNALS
@@ -113,7 +113,7 @@ impl<E: From<NodeError> + 'static> Server<E> {
     pub fn listen_port_callable(
         &self,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
-        callback: Callable<(), Result<(), E>>,
+        callback: Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.listen_source(port, "0.0.0.0", Some(callback))
     }
@@ -122,12 +122,12 @@ impl<E: From<NodeError> + 'static> Server<E> {
         &self,
         port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
         host: &str,
-        callback: Callable<(), Result<(), E>>,
+        callback: Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.listen_source(port, host, Some(callback))
     }
 
-    pub fn set_connection_callback(&self, callback: Callable<(Socket,), Result<(), E>>) {
+    pub fn set_connection_callback(&self, callback: Callable<'static, (Socket,), Result<(), E>>) {
         self.state.borrow_mut().connection_callback = Some(callback);
     }
 
@@ -298,7 +298,7 @@ pub fn create_connection_default_host(
 pub fn create_connection_default_host_callable<E>(
     tasks: &crate::runtime_tasks::RuntimeTasks<E>,
     port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
-    callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
 ) -> NodeResult<Socket>
 where
     E: 'static,
@@ -310,7 +310,7 @@ pub fn create_connection_callable<E>(
     tasks: &crate::runtime_tasks::RuntimeTasks<E>,
     port: impl tsonic_rust_runtime::conversions::IntegerInput<u16>,
     host: &str,
-    callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
 ) -> NodeResult<Socket>
 where
     E: 'static,
@@ -343,7 +343,7 @@ pub fn create_server<E: From<NodeError> + 'static>(
 
 pub fn create_server_callable<E: From<NodeError> + 'static>(
     resources: &NetServers<E>,
-    callback: tsonic_rust_runtime::Callable<(Socket,), Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<'static, (Socket,), Result<(), E>>,
 ) -> NodeResult<Server<E>> {
     let server = Server::new(resources)?;
     server.set_connection_callback(callback);

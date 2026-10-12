@@ -42,7 +42,7 @@ impl<E: 'static> SignalTasks<E> {
     pub(super) fn once(
         &self,
         name: &str,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<()> {
         #[cfg(unix)]
         {
@@ -68,7 +68,7 @@ impl<E: 'static> SignalTasks<E> {
     pub(super) fn remove_listener(
         &self,
         name: &str,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'_, (), Result<(), E>>,
     ) -> NodeResult<()> {
         #[cfg(unix)]
         {
@@ -254,7 +254,7 @@ mod native {
             &self,
             signal: i32,
             name: &str,
-            listener: &Callable<(), Result<(), E>>,
+            listener: &Callable<'static, (), Result<(), E>>,
         ) -> NodeResult<()> {
             let flags = signal_flags(signal)?;
             let mut subscriptions = self.subscriptions.borrow_mut();
@@ -281,7 +281,7 @@ mod native {
             &self,
             signal: i32,
             name: &str,
-            listener: &Callable<(), Result<(), E>>,
+            listener: &Callable<'_, (), Result<(), E>>,
         ) -> NodeResult<()> {
             let event = JsValue::String(name.to_owned());
             let emitter = &self.emitter;

@@ -17,6 +17,23 @@ impl From<NodeError> for Failure {
 }
 
 #[test]
+fn listener_removal_only_observes_identity_and_does_not_retain_a_borrow() {
+    let emitter = EventEmitter::<NodeError>::new();
+    let event = JsValue::from("data".to_owned());
+    {
+        let calls = Cell::new(0);
+        let listener = Callable::new(|()| {
+            calls.set(calls.get() + 1);
+            Ok::<(), NodeError>(())
+        });
+        emitter.off_callable(&event, &listener).unwrap();
+        assert_eq!(calls.get(), 0);
+    }
+    assert_eq!(emitter.callable_listener_count(&event).unwrap(), 0);
+    assert!(!emitter.emit_callable(&event).unwrap());
+}
+
+#[test]
 fn original_non_display_error_stops_without_consuming_later_once_listeners() {
     let emitter = EventEmitter::<Failure>::new();
     let event = JsValue::from("data".to_owned());

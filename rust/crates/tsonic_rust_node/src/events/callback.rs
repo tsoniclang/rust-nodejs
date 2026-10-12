@@ -2,10 +2,10 @@ use tsonic_rust_js::JsValue;
 use tsonic_rust_runtime::Callable;
 
 pub(crate) enum EventCallback<E: 'static> {
-    Empty(Callable<(), Result<(), E>>),
-    One(Callable<(JsValue,), Result<(), E>>),
-    Two(Callable<(JsValue, JsValue), Result<(), E>>),
-    Three(Callable<(JsValue, JsValue, JsValue), Result<(), E>>),
+    Empty(Callable<'static, (), Result<(), E>>),
+    One(Callable<'static, (JsValue,), Result<(), E>>),
+    Two(Callable<'static, (JsValue, JsValue), Result<(), E>>),
+    Three(Callable<'static, (JsValue, JsValue, JsValue), Result<(), E>>),
 }
 
 impl<E: 'static> Clone for EventCallback<E> {

@@ -12,7 +12,7 @@ impl From<NodeError> for Failure {
     }
 }
 
-fn failing_callback(original: &Rc<Cell<u64>>) -> Callable<(), Result<(), Failure>> {
+fn failing_callback(original: &Rc<Cell<u64>>) -> Callable<'static, (), Result<(), Failure>> {
     let original = Rc::clone(original);
     Callable::new(move |()| Err(Failure::Source(Rc::clone(&original))))
 }
@@ -24,7 +24,7 @@ fn assert_original(result: Result<(), Failure>, original: &Rc<Cell<u64>>) {
     }
 }
 
-fn close_counter(calls: &Rc<Cell<usize>>) -> Callable<(), Result<(), Failure>> {
+fn close_counter(calls: &Rc<Cell<usize>>) -> Callable<'static, (), Result<(), Failure>> {
     let calls = Rc::clone(calls);
     Callable::new(move |()| {
         calls.set(calls.get() + 1);

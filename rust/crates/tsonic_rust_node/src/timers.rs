@@ -10,7 +10,8 @@ use crate::error::{NodeError, NodeResult};
 
 type MutableCallback = Rc<RefCell<dyn FnMut() -> TsonicResult<()>>>;
 
-pub const fn new<TError>() -> TimerContext<Callable<(), Result<(), TError>>> {
+pub const fn new<'environment, TError>(
+) -> TimerContext<Callable<'environment, (), Result<(), TError>>> {
     TimerContext::new(DispatchPhase::Timers)
 }
 
@@ -169,11 +170,11 @@ pub fn set_interval_with_options(
     )
 }
 
-pub fn set_interval_callable<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+pub fn set_interval_callable<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: i32,
-) -> NodeResult<Timeout<Callable<(), Result<(), TError>>>> {
+) -> NodeResult<Timeout<Callable<'environment, (), Result<(), TError>>>> {
     schedule_callable(
         timers,
         callback,
@@ -182,11 +183,11 @@ pub fn set_interval_callable<TError>(
     )
 }
 
-pub fn set_timeout_callable<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+pub fn set_timeout_callable<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: i32,
-) -> NodeResult<Timeout<Callable<(), Result<(), TError>>>> {
+) -> NodeResult<Timeout<Callable<'environment, (), Result<(), TError>>>> {
     schedule_callable(
         timers,
         callback,
@@ -195,12 +196,12 @@ pub fn set_timeout_callable<TError>(
     )
 }
 
-fn schedule_callable<TError>(
-    timers: &TimerContext<Callable<(), Result<(), TError>>>,
-    callback: Callable<(), Result<(), TError>>,
+fn schedule_callable<'environment, TError>(
+    timers: &TimerContext<Callable<'environment, (), Result<(), TError>>>,
+    callback: Callable<'environment, (), Result<(), TError>>,
     delay_ms: u64,
     interval: bool,
-) -> NodeResult<Timeout<Callable<(), Result<(), TError>>>> {
+) -> NodeResult<Timeout<Callable<'environment, (), Result<(), TError>>>> {
     timers
         .schedule_with(
             Duration::from_millis(delay_ms),

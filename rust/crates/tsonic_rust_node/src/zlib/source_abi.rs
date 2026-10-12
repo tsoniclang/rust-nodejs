@@ -10,8 +10,11 @@ use crate::background::BackgroundTasks;
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
 
-type CompressionCallback<Failure> =
-    tsonic_rust_runtime::Callable<(Option<NodeError>, Option<Buffer>), Result<(), Failure>>;
+type CompressionCallback<'environment, Failure> = tsonic_rust_runtime::Callable<
+    'environment,
+    (Option<NodeError>, Option<Buffer>),
+    Result<(), Failure>,
+>;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceZlibOptions {
@@ -188,7 +191,7 @@ pub fn create_brotli_decompress_source<E: From<NodeError> + 'static>(
 pub fn gzip_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -199,7 +202,7 @@ where
 pub fn gunzip_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -210,7 +213,7 @@ where
 pub fn deflate_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -221,7 +224,7 @@ where
 pub fn inflate_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -233,7 +236,7 @@ pub fn gzip_options_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -245,7 +248,7 @@ pub fn gunzip_options_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -257,7 +260,7 @@ pub fn deflate_options_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -269,7 +272,7 @@ pub fn inflate_options_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -280,7 +283,7 @@ where
 fn compress_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
     compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
@@ -300,7 +303,7 @@ fn compress_options_callable<E>(
     root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: CompressionCallback<E>,
+    callback: CompressionCallback<'static, E>,
     compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
@@ -320,7 +323,7 @@ where
 
 fn complete_compression<Failure>(
     result: NodeResult<Vec<u8>>,
-    callback: CompressionCallback<Failure>,
+    callback: CompressionCallback<'_, Failure>,
 ) -> Result<(), Failure> {
     let arguments = match result {
         Ok(output) => (None, Some(Buffer::from_bytes(output))),
@@ -335,6 +338,21 @@ mod compression_completion {
     use std::cell::Cell;
     use std::rc::Rc;
     use tsonic_rust_runtime::Callable;
+
+    #[test]
+    fn immediate_completion_preserves_borrowed_callback_and_failure() {
+        let calls = Cell::new(0);
+        let failure = String::from("scoped completion failure");
+        let callback = Callable::new(|(error, output): (Option<NodeError>, Option<Buffer>)| {
+            assert!(error.is_none());
+            assert_eq!(output.unwrap().as_bytes(), vec![3, 4]);
+            calls.set(calls.get() + 1);
+            Err(&failure)
+        });
+        let observed = complete_compression(Ok(vec![3, 4]), callback).unwrap_err();
+        assert_eq!(calls.get(), 1);
+        assert!(std::ptr::eq(observed, &failure));
+    }
 
     #[test]
     fn failure_moves_the_original_error_without_a_placeholder_buffer() {

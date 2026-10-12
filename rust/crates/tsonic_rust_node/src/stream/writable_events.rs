@@ -9,7 +9,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn on_drain(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "drain", listener, false)
     }
@@ -17,7 +17,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn once_drain(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "drain", listener, true)
     }
@@ -25,7 +25,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn off_drain(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.remove_empty_listener(event, "drain", listener.identity_key())
     }
@@ -33,7 +33,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn on_finish(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "finish", listener, false)
     }
@@ -41,7 +41,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn once_finish(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "finish", listener, true)
     }
@@ -49,7 +49,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn off_finish(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.remove_empty_listener(event, "finish", listener.identity_key())
     }
@@ -57,7 +57,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn on_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "close", listener, false)
     }
@@ -65,7 +65,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn once_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_empty_listener(event, "close", listener, true)
     }
@@ -73,7 +73,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
     pub fn off_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.remove_empty_listener(event, "close", listener.identity_key())
     }
@@ -82,6 +82,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            'static,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -93,6 +94,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            'static,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -104,6 +106,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            '_,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -120,7 +123,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
         &self,
         event: &str,
         expected: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
         once: bool,
     ) -> Result<Self, E> {
         ensure_stream_event(event, expected)?;
@@ -156,6 +159,7 @@ impl<E: From<NodeError> + 'static> Writable<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            'static,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,

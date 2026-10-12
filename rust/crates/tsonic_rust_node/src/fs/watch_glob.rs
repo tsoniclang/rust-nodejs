@@ -31,8 +31,8 @@ struct WatchInput {
 }
 
 enum WatchCallback<E> {
-    Event(Callable<(String, String), Result<(), E>>),
-    Stat(Callable<(Stats, Stats), Result<(), E>>),
+    Event(Callable<'static, (String, String), Result<(), E>>),
+    Stat(Callable<'static, (Stats, Stats), Result<(), E>>),
 }
 
 struct FsWatcherState<E> {
@@ -289,7 +289,7 @@ pub fn watch_with_options<E: From<NodeError> + 'static>(
 pub fn watch_callable<E: From<NodeError> + 'static>(
     roots: &Watchers<E>,
     path: &str,
-    callback: Callable<(String, String), Result<(), E>>,
+    callback: Callable<'static, (String, String), Result<(), E>>,
 ) -> NodeResult<FsWatcher<E>> {
     let watcher = watch(roots, path)?;
     watcher.state.borrow_mut().callback = Some(WatchCallback::Event(callback));
@@ -367,7 +367,7 @@ pub type StatWatcher<E = tsonic_rust_runtime::TsonicError> = FsWatcher<E>;
 pub fn watch_file_callable<E: From<NodeError> + 'static>(
     roots: &Watchers<E>,
     path: &str,
-    callback: Callable<(Stats, Stats), Result<(), E>>,
+    callback: Callable<'static, (Stats, Stats), Result<(), E>>,
 ) -> NodeResult<()> {
     watch_file_options_callable(roots, path, WatchFileOptions::default(), callback)
 }
@@ -376,7 +376,7 @@ pub fn watch_file_options_callable<E: From<NodeError> + 'static>(
     roots: &Watchers<E>,
     path: &str,
     options: WatchFileOptions,
-    callback: Callable<(Stats, Stats), Result<(), E>>,
+    callback: Callable<'static, (Stats, Stats), Result<(), E>>,
 ) -> NodeResult<()> {
     let watcher = watch_file_with_options(roots, path, options)?;
     watcher.state.borrow_mut().callback = Some(WatchCallback::Stat(callback));

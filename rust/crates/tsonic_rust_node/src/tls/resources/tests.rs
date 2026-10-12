@@ -49,7 +49,7 @@ fn server(
     Ok(value)
 }
 
-fn enqueue(server: &TlsServer<Failure>, callback: Callable<(), Result<(), Failure>>) {
+fn enqueue(server: &TlsServer<Failure>, callback: Callable<'static, (), Result<(), Failure>>) {
     server
         .state
         .borrow_mut()

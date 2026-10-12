@@ -238,11 +238,11 @@ impl<E: From<NodeError>> RuntimeResource for WatchOwnership<E> {
 
 enum WatchEmission<E> {
     Event(
-        tsonic_rust_runtime::Callable<(String, String), Result<(), E>>,
+        tsonic_rust_runtime::Callable<'static, (String, String), Result<(), E>>,
         super::FsWatchEvent,
     ),
     Stat(
-        tsonic_rust_runtime::Callable<(super::Stats, super::Stats), Result<(), E>>,
+        tsonic_rust_runtime::Callable<'static, (super::Stats, super::Stats), Result<(), E>>,
         super::Stats,
         super::Stats,
     ),

@@ -188,11 +188,19 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     }
 
     pub fn status_code(&self) -> Option<i32> {
-        self.state.metadata.status.as_ref().map(|(code, _)| i32::from(*code))
+        self.state
+            .metadata
+            .status
+            .as_ref()
+            .map(|(code, _)| i32::from(*code))
     }
 
     pub fn status_message(&self) -> Option<&str> {
-        self.state.metadata.status.as_ref().map(|(_, message)| message.as_str())
+        self.state
+            .metadata
+            .status
+            .as_ref()
+            .map(|(_, message)| message.as_str())
     }
 
     pub fn socket(&self) -> &net::Socket {
@@ -236,7 +244,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn on_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.on_data(event, listener)?;
         Ok(self.clone())
@@ -245,7 +253,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn once_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.once_data(event, listener)?;
         Ok(self.clone())
@@ -254,7 +262,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn off_data(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(Buffer,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (Buffer,), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.off_data(event, listener)?;
         Ok(self.clone())
@@ -263,7 +271,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn on_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.on_end(event, listener)?;
         Ok(self.clone())
@@ -272,7 +280,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn once_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.once_end(event, listener)?;
         Ok(self.clone())
@@ -281,7 +289,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn off_end(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.off_end(event, listener)?;
         Ok(self.clone())
@@ -291,6 +299,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            'static,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -303,6 +312,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            'static,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -315,6 +325,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
         &self,
         event: &str,
         listener: &tsonic_rust_runtime::Callable<
+            '_,
             (tsonic_rust_runtime::RetainedError,),
             Result<(), E>,
         >,
@@ -326,7 +337,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn on_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.on_close(event, listener)?;
         Ok(self.clone())
@@ -335,7 +346,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn once_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.once_close(event, listener)?;
         Ok(self.clone())
@@ -344,7 +355,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn off_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.readable.off_close(event, listener)?;
         Ok(self.clone())
@@ -362,7 +373,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn on_aborted(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_aborted_listener(event, listener, false)
     }
@@ -370,7 +381,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn once_aborted(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> Result<Self, E> {
         self.add_aborted_listener(event, listener, true)
     }
@@ -378,7 +389,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     pub fn off_aborted(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> Result<Self, E> {
         ensure_http_event(event, "aborted")?;
         self.state
@@ -392,7 +403,7 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     fn add_aborted_listener(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
         once: bool,
     ) -> Result<Self, E> {
         ensure_http_event(event, "aborted")?;

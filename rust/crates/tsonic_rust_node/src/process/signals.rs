@@ -83,7 +83,7 @@ pub use tasks::{with_default as with_default_signals, SignalTasks};
 pub fn once<E: 'static>(
     tasks: &SignalTasks<E>,
     signal: &str,
-    listener: &Callable<(), Result<(), E>>,
+    listener: &Callable<'static, (), Result<(), E>>,
 ) -> NodeResult<Process> {
     tasks.once(signal, listener)?;
     Ok(Process)
@@ -92,7 +92,7 @@ pub fn once<E: 'static>(
 pub fn remove_listener<E: 'static>(
     tasks: &SignalTasks<E>,
     signal: &str,
-    listener: &Callable<(), Result<(), E>>,
+    listener: &Callable<'_, (), Result<(), E>>,
 ) -> NodeResult<Process> {
     tasks.remove_listener(signal, listener)?;
     Ok(Process)

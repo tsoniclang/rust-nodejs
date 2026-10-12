@@ -6,8 +6,8 @@ use crate::retained_listener::RetainedListener;
 use tsonic_rust_runtime::Callable;
 
 enum StreamCallback<T: 'static, E: 'static> {
-    Empty(Callable<(), Result<(), E>>),
-    Value(Callable<(T,), Result<(), E>>),
+    Empty(Callable<'static, (), Result<(), E>>),
+    Value(Callable<'static, (T,), Result<(), E>>),
 }
 
 impl<T: 'static, E: 'static> Clone for StreamCallback<T, E> {
@@ -102,7 +102,7 @@ impl<T: 'static, E: 'static> Default for StreamEmission<T, E> {
 }
 
 pub(crate) fn value_listener<T: 'static, E: 'static>(
-    listener: &Callable<(T,), Result<(), E>>,
+    listener: &Callable<'static, (T,), Result<(), E>>,
     once: bool,
 ) -> StreamListener<T, E> {
     StreamListener {
@@ -112,7 +112,7 @@ pub(crate) fn value_listener<T: 'static, E: 'static>(
 }
 
 pub(crate) fn empty_listener<E: 'static>(
-    listener: &Callable<(), Result<(), E>>,
+    listener: &Callable<'static, (), Result<(), E>>,
     once: bool,
 ) -> StreamListener<(), E> {
     StreamListener {

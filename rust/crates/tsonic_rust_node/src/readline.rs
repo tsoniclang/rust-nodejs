@@ -47,7 +47,7 @@ impl<E: From<NodeError> + 'static> Interface<E> {
         background: &crate::background::BackgroundTasks<E>,
         tasks: &crate::runtime_tasks::RuntimeTasks<E>,
         query: &str,
-        callback: tsonic_rust_runtime::Callable<(String,), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (String,), Result<(), E>>,
     ) -> Result<(), E> {
         self.write_output(query)?;
         if self.input.is_stdin_source() {

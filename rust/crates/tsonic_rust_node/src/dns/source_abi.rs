@@ -23,7 +23,11 @@ pub async fn reverse_async(address: &str) -> NodeResult<tsonic_rust_js::JsArray<
 pub fn lookup_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, String, u8), Result<(), E>>,
+    callback: tsonic_rust_runtime::Callable<
+        'static,
+        (Option<NodeError>, String, u8),
+        Result<(), E>,
+    >,
 ) -> NodeResult<()>
 where
     E: From<NodeError> + 'static,
@@ -45,6 +49,7 @@ pub fn resolve4_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
@@ -59,6 +64,7 @@ pub fn resolve6_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
@@ -73,6 +79,7 @@ pub fn reverse_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     address: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
@@ -87,6 +94,7 @@ fn resolve_addresses_callable<E>(
     root: &crate::background::BackgroundTasks<E>,
     input: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,

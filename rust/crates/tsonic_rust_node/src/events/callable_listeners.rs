@@ -10,7 +10,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn on_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -25,7 +25,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn on_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -40,7 +40,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn on_callable2(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -55,7 +55,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn on_callable3(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -70,7 +70,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn once_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -85,7 +85,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn once_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -100,7 +100,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn once_callable2(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -115,7 +115,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn once_callable3(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -130,7 +130,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -145,7 +145,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -160,7 +160,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_callable2(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -175,7 +175,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_callable3(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -190,7 +190,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_once_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -205,7 +205,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_once_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'static, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -220,7 +220,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_once_callable2(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -235,7 +235,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn prepend_once_callable3(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'static, (JsValue, JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.add_callable_listener(
             EventName::from_value(event)?,
@@ -250,7 +250,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn off_callable(
         &self,
         event: &JsValue,
-        listener: &Callable<(), Result<(), E>>,
+        listener: &Callable<'_, (), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.remove_callable_listener(EventName::from_value(event)?, listener.identity_key());
         Ok(self)
@@ -259,7 +259,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn off_callable1(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue,), Result<(), E>>,
+        listener: &Callable<'_, (JsValue,), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.remove_callable_listener(EventName::from_value(event)?, listener.identity_key());
         Ok(self)
@@ -268,7 +268,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn off_callable2(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'_, (JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.remove_callable_listener(EventName::from_value(event)?, listener.identity_key());
         Ok(self)
@@ -277,7 +277,7 @@ impl<E: 'static> EventEmitter<E> {
     pub fn off_callable3(
         &self,
         event: &JsValue,
-        listener: &Callable<(JsValue, JsValue, JsValue), Result<(), E>>,
+        listener: &Callable<'_, (JsValue, JsValue, JsValue), Result<(), E>>,
     ) -> NodeResult<&Self> {
         self.remove_callable_listener(EventName::from_value(event)?, listener.identity_key());
         Ok(self)

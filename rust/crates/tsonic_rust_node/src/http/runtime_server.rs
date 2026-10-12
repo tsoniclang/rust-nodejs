@@ -13,9 +13,10 @@ const HTTP_MAXIMUM_PENDING_SIGNALS: usize = 1 << 16;
 
 pub(crate) type RuntimeRequestArguments<E> = (IncomingMessage<E>, ServerResponse<E>);
 pub(crate) type RuntimeRequestHandler<E> =
-    tsonic_rust_runtime::Callable<RuntimeRequestArguments<E>, Result<(), E>>;
-type RuntimeListenCallback<E> = tsonic_rust_runtime::Callable<(), Result<(), E>>;
-type RuntimeCloseCallback<E> = tsonic_rust_runtime::Callable<(Option<NodeError>,), Result<(), E>>;
+    tsonic_rust_runtime::Callable<'static, RuntimeRequestArguments<E>, Result<(), E>>;
+type RuntimeListenCallback<E> = tsonic_rust_runtime::Callable<'static, (), Result<(), E>>;
+type RuntimeCloseCallback<E> =
+    tsonic_rust_runtime::Callable<'static, (Option<NodeError>,), Result<(), E>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddressInfo {
@@ -96,7 +97,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         &self,
         port: i32,
         host: &str,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.listen_with_backlog(port, host, 511, callback)
     }
@@ -106,7 +107,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         port: i32,
         host: &str,
         backlog: i32,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.listen_with_backlog_optional(port, host, backlog, Some(callback))
     }
@@ -115,7 +116,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         &self,
         port: i32,
         host: &str,
-        callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         self.listen_with_backlog_optional(port, host, 511, callback)
     }
@@ -123,7 +124,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn listen_default_host(
         &self,
         port: i32,
-        callback: tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        callback: tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         self.listen(port, "0.0.0.0", callback)
     }
@@ -131,7 +132,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn listen_default_host_optional(
         &self,
         port: i32,
-        callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         self.listen_optional(port, "0.0.0.0", callback)
     }
@@ -141,7 +142,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
         port: i32,
         host: &str,
         backlog: i32,
-        callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         let port = u16::try_from(port).map_err(|_| {
             NodeError::new("ERR_SOCKET_BAD_PORT", "port must be between 0 and 65535")
@@ -170,7 +171,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn listen_path_optional(
         &self,
         path: &str,
-        callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         if path.is_empty() {
             return Err(NodeError::new(
@@ -191,7 +192,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn listen_path_optional(
         &self,
         _path: &str,
-        _callback: Option<tsonic_rust_runtime::Callable<(), Result<(), E>>>,
+        _callback: Option<tsonic_rust_runtime::Callable<'static, (), Result<(), E>>>,
     ) -> NodeResult<Self> {
         Err(NodeError::new(
             "ERR_UNSUPPORTED_PLATFORM",
@@ -304,7 +305,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn on_listening(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         add_server_empty_listener(&self.state, event, "listening", listener, false)?;
         Ok(self.clone())
@@ -313,7 +314,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn once_listening(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         add_server_empty_listener(&self.state, event, "listening", listener, true)?;
         Ok(self.clone())
@@ -322,7 +323,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn off_listening(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         remove_server_empty_listener(&self.state, event, "listening", listener.identity_key())?;
         Ok(self.clone())
@@ -331,7 +332,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn on_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         add_server_empty_listener(&self.state, event, "close", listener, false)?;
         Ok(self.clone())
@@ -340,7 +341,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn once_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         add_server_empty_listener(&self.state, event, "close", listener, true)?;
         Ok(self.clone())
@@ -349,7 +350,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn off_close(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (), Result<(), E>>,
     ) -> NodeResult<Self> {
         remove_server_empty_listener(&self.state, event, "close", listener.identity_key())?;
         Ok(self.clone())
@@ -358,7 +359,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn on_error(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (NodeError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         ensure_http_event(event, "error")?;
         self.state
@@ -371,7 +372,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn once_error(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'static, (NodeError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         ensure_http_event(event, "error")?;
         self.state
@@ -384,7 +385,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
     pub fn off_error(
         &self,
         event: &str,
-        listener: &tsonic_rust_runtime::Callable<(NodeError,), Result<(), E>>,
+        listener: &tsonic_rust_runtime::Callable<'_, (NodeError,), Result<(), E>>,
     ) -> NodeResult<Self> {
         ensure_http_event(event, "error")?;
         self.state
@@ -442,7 +443,7 @@ fn add_server_empty_listener<E: From<NodeError> + 'static>(
     server: &Rc<RefCell<RuntimeServerState<E>>>,
     event: &str,
     expected: &str,
-    listener: &tsonic_rust_runtime::Callable<(), Result<(), E>>,
+    listener: &tsonic_rust_runtime::Callable<'static, (), Result<(), E>>,
     once: bool,
 ) -> NodeResult<()> {
     ensure_http_event(event, expected)?;
