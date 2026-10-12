@@ -10,9 +10,11 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn readline_interface_uses_explicit_input_and_output_buffers() {
-    let input = Readable::from_chunks(vec![
-        Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap()
-    ]);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let input = Readable::from_chunks(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap()],
+    );
     let output = Writable::new();
     let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
         input,
@@ -23,11 +25,10 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 
     let answer = Rc::new(RefCell::new(None::<String>));
     let callback_answer = Rc::clone(&answer);
-    let background = tsonic_rust_node::background::BackgroundTasks::new();
+    let background = tsonic_rust_node::background::BackgroundTasks::<TsonicError>::new();
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     assert!(interface
         .question_callable(
-            &background,
             &tasks,
             "name? ",
             Callable::new(move |(value,)| {
@@ -68,6 +69,7 @@ fn readline_interface_uses_explicit_input_and_output_buffers() {
 
 #[test]
 fn readline_question_retains_non_display_non_send_source_failure() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     struct Failure(Rc<Cell<i64>>);
     impl From<tsonic_rust_node::NodeError> for Failure {
         fn from(_value: tsonic_rust_node::NodeError) -> Self {
@@ -80,8 +82,13 @@ fn readline_question_retains_non_display_non_send_source_failure() {
         }
     }
     let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
-        input: Readable::from_chunks(vec![Buffer::from_string("answer\n", Some("utf8")).unwrap()]),
-        ..Default::default()
+        input: Readable::from_chunks(
+            readable_tasks.handle(),
+            vec![Buffer::from_string("answer\n", Some("utf8")).unwrap()],
+        ),
+        output: None,
+        terminal: None,
+        prompt: None,
     });
     let background = tsonic_rust_node::background::BackgroundTasks::<Failure>::new();
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::<Failure>::new();
@@ -89,7 +96,6 @@ fn readline_question_retains_non_display_non_send_source_failure() {
     let captured = Rc::clone(&expected);
     assert!(interface
         .question_callable(
-            &background,
             &tasks,
             "",
             Callable::new(move |(answer,)| {

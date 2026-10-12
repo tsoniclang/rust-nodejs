@@ -3,6 +3,8 @@ include!("events.rs");
 include!("backend.rs");
 include!("lifecycle.rs");
 include!("readable.rs");
+include!("readable_dispatch.rs");
+include!("readable_stdin.rs");
 include!("readable_events.rs");
 include!("readable_operations.rs");
 include!("writable.rs");

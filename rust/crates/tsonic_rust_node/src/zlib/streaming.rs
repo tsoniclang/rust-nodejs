@@ -206,15 +206,22 @@ impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for ZlibBac
 }
 
 impl<E: From<NodeError> + 'static> Zlib<E> {
-    pub fn new(mode: ZlibMode, options: Option<ZlibOptions>) -> Self {
+    pub fn new(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        mode: ZlibMode,
+        options: Option<ZlibOptions>,
+    ) -> Self {
         let options = options.unwrap_or_default();
         let output = std::rc::Rc::new(std::cell::RefCell::new(ZlibOutput::new(
             options.max_output_length,
         )));
-        let readable = crate::stream::Readable::<E>::open(crate::stream::StreamOptions {
-            high_water_mark: options.chunk_size.max(1),
-            ..Default::default()
-        });
+        let readable = crate::stream::Readable::<E>::open(
+            tasks,
+            crate::stream::StreamOptions {
+                high_water_mark: options.chunk_size.max(1),
+                ..Default::default()
+            },
+        );
         let sink = ZlibSink::<E> {
             output: output.clone(),
             readable: readable.downgrade(),
@@ -292,7 +299,11 @@ impl<E: From<NodeError> + 'static> Zlib<E> {
         let mode = state.mode;
         let options = state.options.clone();
         drop(state);
-        *self = Self::new(mode, Some(options));
+        *self = Self::new(
+            self.transform.readable_handle().task_handle(),
+            mode,
+            Some(options),
+        );
     }
 
     pub fn flush(&self, callback: Option<impl FnOnce()>) -> Result<(), E> {

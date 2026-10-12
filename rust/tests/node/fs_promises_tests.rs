@@ -7,6 +7,7 @@ use tsonic_rust_node::{
 
 #[test]
 fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
@@ -276,7 +277,9 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap();
     assert_eq!(readable_web_with_options.chunks().len(), 1);
     assert!(!handle.writable_web_stream().closed());
-    let read_stream = handle.create_read_stream(&background).unwrap();
+    let read_stream = handle
+        .create_read_stream(&background, readable_tasks.handle())
+        .unwrap();
     tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,
         tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
@@ -286,6 +289,7 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
     let ranged_stream = handle
         .create_read_stream_with_options(
             &background,
+            readable_tasks.handle(),
             fs_promises::ReadStreamOptions {
                 start: Some(0),
                 end: Some(4),
@@ -334,15 +338,22 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         handle.read_lines("utf8").unwrap(),
         vec!["hello rust!!?#stream".to_string()]
     );
-    let pulled = handle.pull(4).unwrap().to_vec().unwrap();
+    let pulled = handle
+        .pull(readable_tasks.handle(), 4)
+        .unwrap()
+        .to_vec()
+        .unwrap();
     assert!(pulled.len() >= 3);
     let pulled_with_options = handle
-        .pull_with_options(fs_promises::PullOptions {
-            start: Some(6),
-            chunk_size: 2,
-            limit: Some(4),
-            ..fs_promises::PullOptions::default()
-        })
+        .pull_with_options(
+            readable_tasks.handle(),
+            fs_promises::PullOptions {
+                start: Some(6),
+                chunk_size: 2,
+                limit: Some(4),
+                ..fs_promises::PullOptions::default()
+            },
+        )
         .unwrap()
         .to_vec()
         .unwrap();

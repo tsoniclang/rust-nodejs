@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
-import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
@@ -252,7 +252,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       {
         exportId: "node:readline::ReadLineOptions",
         targetCarrier: readlineOptionsCarrier,
-        objectLiteralConstruction: { kind: "struct-default" },
+        objectLiteralConstruction: { kind: "struct" },
       },
       { exportId: "node:readline::Interface", targetCarrier: readlineInterfaceCarrier },
       { exportId: "node:worker_threads::Worker", targetCarrier: workerCarrier },
@@ -319,6 +319,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.BackgroundHandle": "tsonic_rust_node::background::BackgroundHandle",
       "rust.node.RuntimeTasks": "tsonic_rust_node::runtime_tasks::RuntimeTasks",
       "rust.node.RuntimeTaskHandle": "tsonic_rust_runtime::dispatch_queue::TaskHandle",
+      "rust.node.StdinResources": "tsonic_rust_node::process::StdinResources",
       "rust.node.Timers": "tsonic_rust_runtime::timer_queue::TimerContext",
       "rust.node.DispatchEnd": "tsonic_rust_runtime::dispatch::DispatchEnd",
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
@@ -452,14 +453,14 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.TlsServer": cloneOnlyCarrierTraits,
       "rust.node.HttpsServer": cloneOnlyCarrierTraits,
       "rust.node.HttpsClientRequest": cloneOnlyCarrierTraits,
-      "rust.node.ReadlineOptions": cloneDefaultCarrierTraits,
+      "rust.node.ReadlineOptions": cloneOnlyCarrierTraits,
       "rust.node.Worker": workerThreadCarrierTraits.worker,
       "rust.node.WorkerOptions": workerThreadCarrierTraits.options,
       "rust.node.MessagePort": workerThreadCarrierTraits.port,
       "rust.node.MessageChannel": cloneOnlyCarrierTraits,
       "rust.node.EventEmitter": cloneOnlyCarrierTraits,
     },
-    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext],
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",

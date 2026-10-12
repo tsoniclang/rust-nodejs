@@ -35,7 +35,7 @@ test("Readable pipe preserves its destination binding through parameters, result
   assert.deepEqual(row.resultCarrier, carrier);
   assert.deepEqual(row.typeRequirements, [{ identity, name: "TDestination", requirements: [
     "clone", { kind: "trait", path: "tsonic_rust_node::stream::WritableTarget",
-      genericArguments: [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }],
+      genericArguments: [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } } }],
       associatedConstraints: [] },
   ] }]);
 });
@@ -64,6 +64,6 @@ test("Readable native construction does not invent a callback failure", () => {
   assert.equal(row.errorBoundary === undefined, true);
   assert.equal(row.errorCarrier === undefined, true);
   assert.deepEqual(row.resultCarrier.value.genericArguments, [{
-    kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+    kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
   }]);
 });

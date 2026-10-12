@@ -6,14 +6,14 @@ test("native compression callbacks demand their exact component background owner
   for (const selectedSurfaceIds of [[], ["js"]]) {
     const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds });
     const definition = contribution.definition;
-    assert.equal(definition.dispatchContexts.length, 9);
+    assert.equal(definition.dispatchContexts.length, 10);
     const context = definition.dispatchContexts[0];
     assert.equal(context.id, "tsonic.rust.node.background");
     assert.equal(context.requiredCrate, "tsonic_rust_node");
     assert.deepEqual(context.construct, { form: "call", path: "tsonic_rust_node::background::BackgroundTasks::new", const: true });
     for (const [role, id] of [["rootCarrier", "rust.node.BackgroundTasks"], ["handleCarrier", "rust.node.BackgroundHandle"]]) {
       assert.deepEqual(context[role], { kind: "target-named", id, genericArguments: [{
-        kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+        kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
       }] });
       assert.equal(Object.isFrozen(context[role]), true);
     }
@@ -38,7 +38,7 @@ test("native compression callbacks demand their exact component background owner
   }
 });
 
-test("readline callbacks select exact independent background and source-thread task owners", () => {
+test("readline callbacks select their exact source-thread task owner without a competing input reader", () => {
   for (const selectedSurfaceIds of [[], ["js"]]) {
     const [contribution] = createTsonicPlugin().createTargetContributions({ selectedSurfaceIds });
     const definition = contribution.definition;
@@ -50,11 +50,10 @@ test("readline callbacks select exact independent background and source-thread t
     const operation = definition.operations.find(row => row.memberId === "node:readline::Interface.question");
     assert.equal(operation !== undefined, true, "exact checked source callback operation");
     assert.deepEqual(operation.dispatchInputs, [
-      { contextId: "tsonic.rust.node.background", view: "root", targetArgumentIndex: 0, mode: "ref" },
-      { contextId: context.id, view: "root", targetArgumentIndex: 1, mode: "ref" },
+      { contextId: context.id, view: "root", targetArgumentIndex: 0, mode: "ref" },
     ]);
     for (const hook of definition.binaryHooks.filter(row => row.dispatchGroups !== undefined)) {
-      assert.deepEqual(hook.dispatchGroups[0].contextIds, ["tsonic.rust.node.background", context.id, "tsonic.rust.node.timers",
+      assert.deepEqual(hook.dispatchGroups[0].contextIds, ["tsonic.rust.node.background", context.id, "tsonic.rust.node.stdin", "tsonic.rust.node.timers",
         "tsonic.rust.node.workers", "tsonic.rust.node.signals", "tsonic.rust.node.net",
         "tsonic.rust.node.watchers", "tsonic.rust.node.tls", "tsonic.rust.node.http",
         ...(selectedSurfaceIds.includes("js") ? ["tsonic.rust.js.timers"] : [])]);
@@ -71,6 +70,7 @@ test("native HTTPS calls declare every actual background and receiver task input
     assert.equal(operation !== undefined, true, name);
     assert.deepEqual(operation.dispatchInputs, [
       { contextId: "tsonic.rust.node.background", view: "root", targetArgumentIndex: 0, mode: "ref" },
+      { contextId: "tsonic.rust.node.runtime-tasks", view: "handle", targetArgumentIndex: 1, mode: "value" },
     ]);
   }
   const listen = operations.filter(row => row.memberId === "node:https::Server.listen");

@@ -15,8 +15,9 @@ impl From<NodeError> for Failure {
 
 #[test]
 fn native_codec_projections_retain_the_original_codec_without_a_reference_cycle() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     for keep_writable in [false, true] {
-        let codec = Zlib::<NodeError>::new(ZlibMode::Gzip, None);
+        let codec = Zlib::<NodeError>::new(readable_tasks.handle(), ZlibMode::Gzip, None);
         let owner = Rc::downgrade(&codec.state);
         let readable = zlib_as_readable(&codec);
         let writable = zlib_as_writable(&codec);
@@ -42,7 +43,8 @@ fn native_codec_projections_retain_the_original_codec_without_a_reference_cycle(
 
 #[test]
 fn native_codec_finalization_is_not_repeated_after_the_original_end_failure() {
-    let codec = Zlib::<Failure>::new(ZlibMode::Gzip, None);
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let codec = Zlib::<Failure>::new(readable_tasks.handle(), ZlibMode::Gzip, None);
     let readable = zlib_as_readable(&codec);
     let writable = zlib_as_writable(&codec);
     let received = Rc::new(RefCell::new(Vec::new()));
@@ -57,13 +59,16 @@ fn native_codec_finalization_is_not_repeated_after_the_original_end_failure() {
     let end = Callable::new(move |()| Err(Failure::Original(Rc::clone(&captured))));
     assert!(readable.once_end("end", &end).is_ok());
     assert!(writable.write_string("exact native output").is_ok());
-    match writable.end() {
+    assert!(writable.end().is_ok());
+    match readable_tasks.poll() {
         Err(Failure::Original(returned)) => assert!(Rc::ptr_eq(&returned, &original)),
         _ => panic!("end failure was not preserved"),
     }
     assert!(codec.closed());
     assert!(writable.writable_finished());
     assert!(writable.end().is_ok());
+    assert!(readable.read().is_ok());
+    assert!(readable_tasks.poll().is_ok());
     assert!(writable.closed());
     let compressed = Buffer::from_bytes(received.borrow().clone());
     assert_eq!(
@@ -77,7 +82,8 @@ fn native_codec_finalization_is_not_repeated_after_the_original_end_failure() {
 
 #[test]
 fn native_codec_guards_still_enter_the_producing_failure_domain() {
-    let codec = Zlib::<Failure>::new(ZlibMode::Gunzip, None);
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let codec = Zlib::<Failure>::new(readable_tasks.handle(), ZlibMode::Gunzip, None);
     let error = codec
         .write(Buffer::from_bytes(vec![255; 32]))
         .err()
@@ -87,7 +93,9 @@ fn native_codec_guards_still_enter_the_producing_failure_domain() {
 
 #[test]
 fn native_codec_capacity_retains_pending_output_and_publishes_eof_after_the_last_chunk() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let codec = Zlib::<NodeError>::new(
+        readable_tasks.handle(),
         ZlibMode::Gzip,
         Some(ZlibOptions {
             chunk_size: 1,
@@ -108,6 +116,8 @@ fn native_codec_capacity_retains_pending_output_and_publishes_eof_after_the_last
     while let Some(chunk) = readable.read().unwrap() {
         chunk.with_bytes(|chunk| bytes.extend_from_slice(chunk));
     }
+    assert!(!readable.readable_ended());
+    readable_tasks.poll().unwrap();
     assert!(readable.readable_ended());
     assert!(readable.closed());
     assert_eq!(codec.state.borrow().output.borrow().pending_bytes, 0);

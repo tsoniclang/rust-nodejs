@@ -45,6 +45,7 @@ struct ClientRequestState<E: 'static> {
     body: Vec<u8>,
     response_callback: Option<RuntimeResponseCallback<E>>,
     background: crate::background::BackgroundHandle<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     ended: bool,
 }
 pub struct ClientRequest<E: 'static = NodeError> {
@@ -60,6 +61,7 @@ impl<E: 'static> Clone for ClientRequest<E> {
 impl<E: From<NodeError> + 'static> ClientRequest<E> {
     fn new(
         background: &crate::background::BackgroundTasks<E>,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         options: RequestOptions,
         response_callback: Option<RuntimeResponseCallback<E>>,
     ) -> Self {
@@ -69,6 +71,7 @@ impl<E: From<NodeError> + 'static> ClientRequest<E> {
                 body: Vec::new(),
                 response_callback,
                 background: background.handle(),
+                tasks,
                 ended: false,
             })),
         }
@@ -90,7 +93,7 @@ impl<E: From<NodeError> + 'static> ClientRequest<E> {
         Ok(true)
     }
     pub fn end(&self) -> NodeResult<()> {
-        let (options, body, callback, background) = {
+        let (options, body, callback, background, tasks) = {
             let mut state = self.state.borrow_mut();
             if state.ended {
                 return Ok(());
@@ -101,6 +104,7 @@ impl<E: From<NodeError> + 'static> ClientRequest<E> {
                 std::mem::take(&mut state.body),
                 state.response_callback.take(),
                 state.background.clone(),
+                state.tasks.clone(),
             )
         };
         let response_url = options.url.clone();
@@ -109,8 +113,9 @@ impl<E: From<NodeError> + 'static> ClientRequest<E> {
             move |response| {
                 let response = response.map_err(E::from)?;
                 if let Some(callback) = callback {
-                    callback
-                        .call((incoming_response(&response_url, response).map_err(E::from)?,))?;
+                    callback.call((
+                        incoming_response(tasks, &response_url, response).map_err(E::from)?,
+                    ))?;
                 }
                 Ok(())
             },
@@ -156,12 +161,18 @@ pub fn create_server_callable<E: From<NodeError> + 'static>(
     http: &crate::http::HttpServers<E>,
     roots: &crate::tls::TlsServers<E>,
     background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceServerOptions,
     handler: tsonic_rust_runtime::Callable<'static, RuntimeRequestArguments<E>, Result<(), E>>,
 ) -> NodeResult<ServerHandle<E>> {
     let http = http.handle();
     let connection_callback = tsonic_rust_runtime::Callable::new(move |(socket,): (TlsSocket,)| {
-        crate::http::accept_runtime_transport(&http, Box::new(socket), handler.clone())
+        crate::http::accept_runtime_transport(
+            &http,
+            tasks.clone(),
+            Box::new(socket),
+            handler.clone(),
+        )
     });
     Ok(ServerHandle {
         server: crate::tls::create_server(roots, background, options, connection_callback)?,
@@ -172,21 +183,24 @@ pub fn get(url: &str) -> NodeResult<Response> {
 }
 pub fn request_callable<E: From<NodeError> + 'static>(
     background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     url: &str,
     callback: RuntimeResponseCallback<E>,
 ) -> NodeResult<ClientRequest<E>> {
     Ok(ClientRequest::new(
         background,
+        tasks,
         RequestOptions::get(url),
         Some(callback),
     ))
 }
 pub fn get_callable<E: From<NodeError> + 'static>(
     background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     url: &str,
     callback: RuntimeResponseCallback<E>,
 ) -> NodeResult<ClientRequest<E>> {
-    let request = request_callable(background, url, callback)?;
+    let request = request_callable(background, tasks, url, callback)?;
     request.end()?;
     Ok(request)
 }
@@ -251,10 +265,12 @@ fn map_reqwest_error(error: reqwest::Error) -> NodeError {
     NodeError::new("ERR_NETWORK", error.to_string())
 }
 fn incoming_response<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     url: &str,
     response: Response,
 ) -> NodeResult<IncomingMessage<E>> {
     IncomingMessage::from_client_response(
+        tasks,
         url.to_string(),
         response.status_code,
         response.status_message,

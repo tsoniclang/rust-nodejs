@@ -15,10 +15,11 @@ pub struct CursorPos {
     pub cols: usize,
 }
 
-pub struct Interface<E: 'static = NodeError> {
+pub struct Interface<E: From<NodeError> + 'static = NodeError> {
     input: Readable<E>,
     output: Option<Writable<E>>,
     pending_input: Vec<u8>,
+    question: Option<std::rc::Rc<question::Question<E>>>,
     closed: bool,
     paused: bool,
     prompt: String,
@@ -33,6 +34,7 @@ impl<E: From<NodeError> + 'static> Interface<E> {
             input: options.input,
             output: options.output,
             pending_input: Vec::new(),
+            question: None,
             closed: false,
             paused: false,
             prompt: options.prompt.unwrap_or_else(|| "> ".to_string()),
@@ -44,41 +46,46 @@ impl<E: From<NodeError> + 'static> Interface<E> {
 
     pub fn question_callable(
         &mut self,
-        background: &crate::background::BackgroundTasks<E>,
         tasks: &crate::runtime_tasks::RuntimeTasks<E>,
         query: &str,
         callback: tsonic_rust_runtime::Callable<'static, (String,), Result<(), E>>,
     ) -> Result<(), E> {
+        if self.closed {
+            return Err(
+                NodeError::new("ERR_READLINE_CLOSED", "readline interface is closed").into(),
+            );
+        }
+        if self
+            .question
+            .as_ref()
+            .is_some_and(|question| question.pending())
+        {
+            return Err(NodeError::new(
+                "ERR_READLINE_QUESTION_PENDING",
+                "a readline question is already pending",
+            )
+            .into());
+        }
+        self.question.take();
         self.write_output(query)?;
-        if self.input.is_stdin_source() {
-            return background
-                .spawn(
-                    || {
-                        let mut answer = String::new();
-                        std::io::stdin()
-                            .read_line(&mut answer)
-                            .map_err(|error| NodeError::new("EIO", error.to_string()))?;
-                        if answer.ends_with('\n') {
-                            answer.pop();
-                            if answer.ends_with('\r') {
-                                answer.pop();
-                            }
-                        }
-                        Ok(answer)
-                    },
-                    move |answer| callback.call((answer.map_err(E::from)?,)),
-                )
+        if let Some(answer) = self.next_line()? {
+            return tasks
+                .enqueue(move || callback.call((answer,)))
                 .map_err(E::from);
         }
-        let answer = self.next_line()?.ok_or_else(|| {
-            NodeError::new(
+        if self.input.is_ended() {
+            return Err(NodeError::new(
                 "ERR_READLINE_EOF",
                 "readline input ended before an answer was available",
             )
-        })?;
-        tasks
-            .enqueue(move || callback.call((answer,)))
-            .map_err(E::from)
+            .into());
+        }
+        self.question = Some(question::Question::start(
+            self.input.clone(),
+            std::mem::take(&mut self.pending_input),
+            callback,
+        )?);
+        Ok(())
     }
 
     pub fn write(&mut self, text: &str) -> Result<(), E> {
@@ -107,6 +114,9 @@ impl<E: From<NodeError> + 'static> Interface<E> {
 
     pub fn close(&mut self) {
         self.closed = true;
+        if let Some(question) = self.question.take() {
+            question.cancel();
+        }
     }
 
     pub fn set_prompt(&mut self, prompt: &str) {
@@ -145,6 +155,17 @@ impl<E: From<NodeError> + 'static> Interface<E> {
     }
 
     pub fn next_line(&mut self) -> Result<Option<String>, E> {
+        if self
+            .question
+            .as_ref()
+            .is_some_and(|question| question.pending())
+        {
+            return Err(NodeError::new(
+                "ERR_READLINE_QUESTION_PENDING",
+                "a readline question is already pending",
+            )
+            .into());
+        }
         if self.closed || self.paused {
             return Ok(None);
         }
@@ -160,7 +181,7 @@ impl<E: From<NodeError> + 'static> Interface<E> {
                 });
             }
             let Some(chunk) = self.input.read()? else {
-                if self.pending_input.is_empty() {
+                if self.pending_input.is_empty() || !self.input.is_ended() {
                     return Ok(None);
                 }
                 let bytes = std::mem::take(&mut self.pending_input);
@@ -168,7 +189,7 @@ impl<E: From<NodeError> + 'static> Interface<E> {
                     E::from(NodeError::new("ERR_INVALID_UTF8", error.to_string()))
                 });
             };
-            self.pending_input.extend_from_slice(&chunk.as_bytes());
+            chunk.with_bytes(|bytes| self.pending_input.extend_from_slice(bytes));
         }
     }
 
@@ -200,16 +221,6 @@ impl<E: 'static> Clone for SourceInterfaceOptions<E> {
         }
     }
 }
-impl<E: From<NodeError> + 'static> Default for SourceInterfaceOptions<E> {
-    fn default() -> Self {
-        Self {
-            input: Readable::default(),
-            output: None,
-            terminal: None,
-            prompt: None,
-        }
-    }
-}
 impl<E: 'static> std::fmt::Debug for SourceInterfaceOptions<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -221,7 +232,7 @@ impl<E: 'static> std::fmt::Debug for SourceInterfaceOptions<E> {
             .finish()
     }
 }
-impl<E: 'static> std::fmt::Debug for Interface<E> {
+impl<E: From<NodeError> + 'static> std::fmt::Debug for Interface<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Interface")
@@ -233,3 +244,5 @@ impl<E: 'static> std::fmt::Debug for Interface<E> {
             .finish()
     }
 }
+
+mod question;

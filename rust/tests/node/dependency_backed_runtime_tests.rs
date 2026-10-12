@@ -58,6 +58,7 @@ fn crypto_rsa_sha256_sign_and_verify() {
 
 #[test]
 fn https_and_http2_validate_closed_request_shapes() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let https_options = tsonic_rust_node::https::RequestOptions::get("https://example.com/");
     assert_eq!(https_options.method, "GET");
     assert!(tsonic_rust_node::https::get("http://example.com/").is_err());
@@ -71,6 +72,7 @@ fn https_and_http2_validate_closed_request_shapes() {
         &tsonic_rust_node::http::HttpServers::new(),
         &tsonic_rust_node::tls::TlsServers::new(),
         &tsonic_rust_node::background::BackgroundTasks::new(),
+        readable_tasks.handle(),
         server_options,
         tsonic_rust_runtime::Callable::new(
             |(_request, _response): (

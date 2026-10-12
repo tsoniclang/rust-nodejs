@@ -20,6 +20,24 @@ Authored source then imports standard modules such as `node:fs`. Selecting the
 JavaScript source surface is a separate choice and is not required for Node
 module imports.
 
+## Readable lifecycle and stdin
+
+Readable data and terminal events run on the owning native task queue. The last
+`read()` returns its bytes before `end` is delivered; late `end` listeners are
+not replayed. `resume()` consumes data even without data listeners. Byte-mode
+`readableLength` counts buffered bytes; object mode counts buffered elements.
+
+Native Rust stream factories require the existing typed `TaskHandle<E>`. The
+provider supplies it automatically; authored TypeScript requires no scheduler
+argument. Native callers retain and poll their `RuntimeTasks<E>` owner.
+
+`process.stdin` has a single typed resource owner per generated runtime context.
+Linux pipes and terminals use cancellable nonblocking descriptor readiness;
+regular files use the existing bounded background file reader. Other platforms
+report `ERR_NODE_STDIN_UNSUPPORTED` instead of blocking the loop or fabricating
+flowing support. Readline questions consume their selected Readable; they do not
+start a separate standard-input reader.
+
 ## Native callback errors
 
 Error callbacks use `NodeError` from `node:util`, a type-only contract with a

@@ -2,7 +2,7 @@ import { nativeUintCarrier, boolCarrier, stringCarrier, unitCarrier } from "../.
 import { booleanType, stringType, voidType } from "../../model/source-types.js";
 import { propertyMember, providerRef } from "../../declarations/builders.js";
 import { sourceCallbackFallibility } from "../../model/operations.js";
-import { nodeBackgroundInput, nodeRuntimeTaskInput } from "../../model/dispatch.js";
+import { nodeRuntimeTaskInput } from "../../model/dispatch.js";
 import { readableCarrier, writableCarrier } from "../stream/carriers.js";
 import { readlineInterfaceCarrier, readlineOptionsCarrier, readlineQuestionCallbackCarrier } from "./carriers.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
@@ -101,7 +101,7 @@ export function readlineRows(): readonly RustProviderOperationDefinition[] {
       parameterCarriers: [readlineOptionsCarrier],
     },
     { ...interfaceMethod("question", "question_callable", [stringCarrier, readlineQuestionCallbackCarrier], ["ref", "value"], unitCarrier, true),
-      dispatchInputs: [nodeBackgroundInput, { ...nodeRuntimeTaskInput, targetArgumentIndex: 1 }] },
+      dispatchInputs: [nodeRuntimeTaskInput] },
     interfaceMethod("write", "write", [stringCarrier], ["ref"], unitCarrier, true),
     interfaceMethod("pause", "pause_chain", [], [], mutableInterface, false),
     interfaceMethod("resume", "resume_chain", [], [], mutableInterface, false),

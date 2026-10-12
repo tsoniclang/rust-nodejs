@@ -60,6 +60,7 @@ impl RuntimeTransport for std::net::TcpStream {
 
 pub(crate) fn accept_runtime_transport<E: From<NodeError> + 'static>(
     resources: &HttpHandle<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     mut stream: Box<dyn RuntimeTransport>,
     handler: RuntimeRequestHandler<E>,
 ) -> Result<(), E> {
@@ -86,12 +87,12 @@ pub(crate) fn accept_runtime_transport<E: From<NodeError> + 'static>(
     let body = read_blocking_body(&mut stream, &input[consumed..], head.body).map_err(E::from)?;
     let remote = stream.peer_addr().ok();
     let request = IncomingMessage::<E>::streaming(
+        tasks,
         head.method.clone(),
         head.target,
         head.version,
         head.headers,
-        None,
-        remote,
+        net::Socket::from_http_endpoints(None, remote),
         RUNTIME_READ_HIGH_WATER_MARK,
     )
     .map_err(E::from)?;

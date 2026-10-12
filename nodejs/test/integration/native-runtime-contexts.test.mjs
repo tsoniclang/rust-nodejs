@@ -27,7 +27,7 @@ test("generated readline callback retains its original Error identity through na
   const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
   assert.equal(roots.length, 1, "one exact component-owned root module");
   const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
-  assert.equal(names.length, 2, "independent background and buffered-task roots");
+  assert.equal(names.length, 1, "the exact buffered-task owner without an unused background reader");
   const directory = writeGeneratedProject("native-runtime-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `
 #[cfg(test)]
@@ -36,10 +36,10 @@ mod retained_source_failure {
     #[test]
     fn original_error_survives_source_thread_dispatch() {
         let expected = crate::schedule().expect("callback registration");
-        let result = super::${names[0]}.with(|background| super::${names[1]}.with(|tasks| {
-            tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(background,
-                tsonic_rust_runtime::dispatch::prepend(tasks, tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())))
-        }));
+        let result = super::${names[0]}.with(|tasks| {
+            tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(tasks,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))
+        });
         let returned = result.expect_err("source callback must fail");
         assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());
         assert_eq!(returned.source_error().error_message(), expected.error_message());

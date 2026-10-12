@@ -4,7 +4,7 @@ import { httpsClientRequestCarrier, httpsServerCarrier } from "./carriers.js";
 import { httpResponseCallbackCarrier, httpRequestCallbackCarrier } from "../http/carriers.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
-import { nodeBackgroundInput, nodeTlsInput, nodeHttpInput, nodeRuntimeTaskInput } from "../../model/dispatch.js";
+import { nodeBackgroundInput, nodeTlsInput, nodeHttpInput, nodeRuntimeTaskInput, nodeRuntimeTaskHandleInput } from "../../model/dispatch.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { tlsServerOptionsCarrier } from "../tls/carriers.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
@@ -149,7 +149,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::create_server_callable", argModes: ["value", "value"] },
       resultCarrier: httpsServerCarrier,
       parameterCarriers: [tlsServerOptionsCarrier, httpRequestCallbackCarrier],
-      dispatchInputs: [nodeHttpInput, { ...nodeTlsInput, targetArgumentIndex: 1 }, { ...nodeBackgroundInput, targetArgumentIndex: 2 }],
+      dispatchInputs: [nodeHttpInput, { ...nodeTlsInput, targetArgumentIndex: 1 }, { ...nodeBackgroundInput, targetArgumentIndex: 2 }, nodeRuntimeTaskHandleInput(3)],
       ...providerNativeFallibility,
     },
     {
@@ -158,7 +158,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::request_callable", argModes: ["ref", "value"] },
       resultCarrier: httpsClientRequestCarrier,
       parameterCarriers: [stringCarrier, httpResponseCallbackCarrier],
-      dispatchInputs: [nodeBackgroundInput],
+      dispatchInputs: [nodeBackgroundInput, nodeRuntimeTaskHandleInput(1)],
       ...providerNativeFallibility,
     },
     {
@@ -167,7 +167,7 @@ export function httpsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_https::get_callable", argModes: ["ref", "value"] },
       resultCarrier: httpsClientRequestCarrier,
       parameterCarriers: [stringCarrier, httpResponseCallbackCarrier],
-      dispatchInputs: [nodeBackgroundInput],
+      dispatchInputs: [nodeBackgroundInput, nodeRuntimeTaskHandleInput(1)],
       ...providerNativeFallibility,
     },
     {

@@ -1,16 +1,18 @@
 pub fn create_read_stream<E: From<NodeError> + 'static>(
     background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     path: &str,
 ) -> NodeResult<ReadStream<E>> {
-    ReadStream::open(background, path, &ReadStreamOptions::default())
+    ReadStream::open(background, tasks, path, &ReadStreamOptions::default())
 }
 
 pub fn create_read_stream_with_options<E: From<NodeError> + 'static>(
     background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     path: &str,
     options: ReadStreamOptions,
 ) -> NodeResult<ReadStream<E>> {
-    ReadStream::open(background, path, &options)
+    ReadStream::open(background, tasks, path, &options)
 }
 
 pub fn create_write_stream<E: From<NodeError> + 'static>(

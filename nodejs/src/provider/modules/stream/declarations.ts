@@ -17,6 +17,7 @@ import {
   stringCarrier,
   unitCarrier,
 } from "../../model/carriers.js";
+import { nodeRuntimeTaskHandleInput } from "../../model/dispatch.js";
 import { sourceCallbackFallibility } from "../../model/operations.js";
 import {
   booleanType,
@@ -262,6 +263,7 @@ export function streamRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_stream::Readable::from_source", argModes: ["ref"] },
       resultCarrier: readableCarrier,
       parameterCarriers: [rustJsArrayTargetType(bufferCarrier)],
+      dispatchInputs: [nodeRuntimeTaskHandleInput()],
     },
     {
       exportId: readableId,

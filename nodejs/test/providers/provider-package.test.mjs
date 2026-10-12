@@ -59,7 +59,7 @@ const expectedModules = [
 
 function expectedDispatchGroup(targetArgumentIndex) {
   return {
-    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks", "tsonic.rust.node.timers",
+    contextIds: ["tsonic.rust.node.background", "tsonic.rust.node.runtime-tasks", "tsonic.rust.node.stdin", "tsonic.rust.node.timers",
       "tsonic.rust.node.workers", "tsonic.rust.node.signals", "tsonic.rust.node.net", "tsonic.rust.node.watchers",
       "tsonic.rust.node.tls", "tsonic.rust.node.http"], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
@@ -354,7 +354,7 @@ test("provider type relations carry exact closed target carriers", () => {
     ["node:https::ServerOptions", "rust.node.TlsServerOptions", "struct-default"],
     ["node:https::Server", "rust.node.HttpsServer"],
     ["node:https::ClientRequest", "rust.node.HttpsClientRequest"],
-    ["node:readline::ReadLineOptions", "rust.node.ReadlineOptions", "struct-default"],
+    ["node:readline::ReadLineOptions", "rust.node.ReadlineOptions", "struct"],
     ["node:readline::Interface", "rust.node.ReadlineInterface"],
     ["node:worker_threads::Worker", "rust.node.Worker"],
     ["node:worker_threads::WorkerOptions", "rust.node.WorkerOptions", "struct-default"],

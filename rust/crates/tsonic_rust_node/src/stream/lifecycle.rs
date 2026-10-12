@@ -154,31 +154,34 @@ impl<E: From<NodeError> + 'static> StreamLifecycle<E> {
             } else {
                 state.errored.clone()
             };
-            let error_callbacks = if error.is_some() {
-                state.error_emitted = true;
-                state.error_event.emission()
-            } else {
-                StreamEmission::default()
-            };
+            let error_callbacks =
+                if error.is_some() || state.readable_closed && state.writable_closed {
+                    state.error_emitted |= error.is_some();
+                    state.error_event.take_emission()
+                } else {
+                    StreamEmission::default()
+                };
             (error, error_callbacks)
         };
-        if let Some(error) = error {
-            invoke_event(error_callbacks, error)?;
+        match error {
+            Some(error) => invoke_event(error_callbacks, error)?,
+            None => drop(error_callbacks),
         }
-        let close_callbacks = {
+        let (close_callbacks, emit_close) = {
             let mut state = self.state.borrow_mut();
-            if state.emit_close
-                && state.readable_closed
-                && state.writable_closed
-                && !state.close_emitted
-            {
+            if state.readable_closed && state.writable_closed && !state.close_emitted {
                 state.close_emitted = true;
-                state.close_event.emission()
+                (state.close_event.take_emission(), state.emit_close)
             } else {
-                StreamEmission::default()
+                (StreamEmission::default(), false)
             }
         };
-        invoke_event(close_callbacks, ())
+        if emit_close {
+            invoke_event(close_callbacks, ())
+        } else {
+            drop(close_callbacks);
+            Ok(())
+        }
     }
 
     fn errored(&self) -> Option<String> {
@@ -194,8 +197,16 @@ impl<E: From<NodeError> + 'static> StreamLifecycle<E> {
         state.readable_closed && state.writable_closed
     }
 
+    fn has_pending_close(&self) -> bool {
+        let state = self.state.borrow();
+        state.emit_close && state.readable_closed && state.writable_closed && !state.close_emitted
+    }
+
     fn add_error_listener(&self, listener: StreamListener<tsonic_rust_runtime::RetainedError, E>) {
-        self.state.borrow_mut().error_event.add(listener);
+        let mut state = self.state.borrow_mut();
+        if !state.error_emitted && !(state.readable_closed && state.writable_closed) {
+            state.error_event.add(listener);
+        }
     }
 
     fn remove_error_listener(&self, identity: usize) {
@@ -203,7 +214,10 @@ impl<E: From<NodeError> + 'static> StreamLifecycle<E> {
     }
 
     fn add_close_listener(&self, listener: StreamListener<(), E>) {
-        self.state.borrow_mut().close_event.add(listener);
+        let mut state = self.state.borrow_mut();
+        if !state.close_emitted {
+            state.close_event.add(listener);
+        }
     }
 
     fn remove_close_listener(&self, identity: usize) {
@@ -227,15 +241,19 @@ mod lifecycle_tests {
 
     #[test]
     fn native_compound_constructors_share_one_lifecycle_owner() {
-        assert_shared_lifecycle(&Duplex::default());
-        assert_shared_lifecycle(&Transform::new(|chunk| chunk).duplex_handle());
-        let codec = crate::zlib::create_gzip(None);
+        let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+        assert_shared_lifecycle(&Duplex::empty(readable_tasks.handle()));
+        assert_shared_lifecycle(
+            &Transform::new(readable_tasks.handle(), |chunk| chunk).duplex_handle(),
+        );
+        let codec = crate::zlib::create_gzip(readable_tasks.handle(), None);
         assert_shared_lifecycle(&crate::zlib::zlib_as_duplex(&codec));
     }
 
     #[test]
     fn joining_independent_native_sides_preserves_both_aliases() {
-        let readable = Readable::default();
+        let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+        let readable = Readable::new(readable_tasks.handle());
         let writable = Writable::new();
         let duplex = Duplex::new(readable.clone(), writable.clone());
         assert_shared_lifecycle(&duplex);

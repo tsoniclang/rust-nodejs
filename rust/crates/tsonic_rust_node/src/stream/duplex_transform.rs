@@ -4,9 +4,9 @@ pub struct Duplex<E: 'static = NodeError> {
     allow_half_open: bool,
 }
 
-impl<E: From<NodeError> + 'static> Default for Duplex<E> {
-    fn default() -> Self {
-        let readable = Readable::<E>::default();
+impl<E: From<NodeError> + 'static> Duplex<E> {
+    pub fn empty(tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>) -> Self {
+        let readable = Readable::<E>::new(tasks);
         let writable = Writable::<E>::with_backend(
             StreamOptions::default(),
             Rc::new(MemoryWritableBackend::default()),
@@ -246,8 +246,11 @@ pub struct Transform<E: 'static = NodeError> {
 }
 
 impl<E: From<NodeError> + 'static> Transform<E> {
-    pub fn new(transform: fn(Buffer) -> Buffer) -> Self {
-        let readable = Readable::<E>::default();
+    pub fn new(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        transform: fn(Buffer) -> Buffer,
+    ) -> Self {
+        let readable = Readable::<E>::new(tasks);
         let writable = Writable::<E>::with_backend(
             StreamOptions::default(),
             Rc::new(TransformBackend::<E> {
@@ -311,16 +314,10 @@ pub struct PassThrough<E: 'static = NodeError> {
     inner: Transform<E>,
 }
 
-impl<E: From<NodeError> + 'static> Default for PassThrough<E> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<E: From<NodeError> + 'static> PassThrough<E> {
-    pub fn new() -> Self {
+    pub fn new(tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>) -> Self {
         Self {
-            inner: Transform::<E>::new(|chunk| chunk),
+            inner: Transform::<E>::new(tasks, |chunk| chunk),
         }
     }
 

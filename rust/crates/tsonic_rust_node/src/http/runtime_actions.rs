@@ -51,12 +51,12 @@ fn next_connection_action<E: From<NodeError> + 'static>(
                 let local = state.io.local_addr();
                 let remote = state.io.peer_addr();
                 let request = IncomingMessage::streaming(
+                    state.tasks.clone(),
                     parsed.method.clone(),
                     parsed.target,
                     parsed.version,
                     parsed.headers,
-                    local,
-                    remote,
+                    net::Socket::from_http_endpoints(local, remote),
                     RUNTIME_READ_HIGH_WATER_MARK,
                 )?;
                 let resume = Rc::downgrade(connection);

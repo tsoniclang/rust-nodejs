@@ -141,51 +141,62 @@ pub fn inflate_raw_sync_source(
 }
 
 pub fn create_gzip_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<Gzip<E>> {
-    Ok(create_gzip(Some(options.into_runtime()?)))
+    Ok(create_gzip(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_deflate_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<Deflate<E>> {
-    Ok(create_deflate(Some(options.into_runtime()?)))
+    Ok(create_deflate(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_inflate_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<Inflate<E>> {
-    Ok(create_inflate(Some(options.into_runtime()?)))
+    Ok(create_inflate(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_gunzip_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<Gunzip<E>> {
-    Ok(create_gunzip(Some(options.into_runtime()?)))
+    Ok(create_gunzip(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_deflate_raw_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<DeflateRaw<E>> {
-    Ok(create_deflate_raw(Some(options.into_runtime()?)))
+    Ok(create_deflate_raw(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_inflate_raw_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceZlibOptions,
 ) -> NodeResult<InflateRaw<E>> {
-    Ok(create_inflate_raw(Some(options.into_runtime()?)))
+    Ok(create_inflate_raw(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_brotli_compress_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceBrotliOptions,
 ) -> NodeResult<BrotliCompress<E>> {
-    Ok(create_brotli_compress(Some(options.into_runtime()?)))
+    Ok(create_brotli_compress(tasks, Some(options.into_runtime()?)))
 }
 
 pub fn create_brotli_decompress_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: SourceBrotliOptions,
 ) -> NodeResult<BrotliDecompress<E>> {
-    Ok(create_brotli_decompress(Some(options.into_runtime()?)))
+    Ok(create_brotli_decompress(
+        tasks,
+        Some(options.into_runtime()?),
+    ))
 }
 
 pub fn gzip_callable<E>(

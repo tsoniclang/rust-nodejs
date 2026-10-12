@@ -413,6 +413,7 @@ fn accept_eventually(server: &mut net::Server) -> net::Socket {
 
 #[test]
 fn http_request_shape_uses_exact_headers_and_one_body_stream() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     assert!(http::methods().contains(&"GET"));
     assert_eq!(http::status_codes().get(&201), Some(&"Created"));
     assert_eq!(http::MAX_HEADER_SIZE, 16 * 1024);
@@ -422,6 +423,7 @@ fn http_request_shape_uses_exact_headers_and_one_body_stream() {
     assert!(http::validate_header_value("x-token", "bad\nvalue").is_err());
 
     let request = http::IncomingMessage::<tsonic_rust_node::NodeError>::new(
+        readable_tasks.handle(),
         "POST",
         "/submit",
         b"payload".to_vec(),
