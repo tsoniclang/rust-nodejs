@@ -8,6 +8,39 @@ use tsonic_rust_runtime::Callable;
 
 static NEXT_FILE: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn file_write_moves_owned_bytes_and_snapshots_only_live_aliases() {
+    let fixture = Fixture::new();
+    let background = BackgroundTasks::<NodeError>::new();
+    let stream =
+        WriteStream::open(&background, &fixture.text(), &WriteStreamOptions::default()).unwrap();
+    let bytes = vec![1, 2, 3];
+    let pointer = bytes.as_ptr();
+    assert!(stream.write(Buffer::from_bytes(bytes)).unwrap());
+    assert_eq!(
+        stream.state.borrow().queue.front().unwrap().as_ptr(),
+        pointer
+    );
+    let buffer = Buffer::from_bytes(vec![4, 5, 6]);
+    let alias = buffer.clone();
+    assert!(stream.write(buffer).unwrap());
+    alias.set_number(0_usize, 9_u8);
+    assert_eq!(&**stream.state.borrow().queue.back().unwrap(), &[4, 5, 6]);
+    stream.close().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while background.has_pending_work() {
+        assert!(
+            Instant::now() < deadline,
+            "owned write completion timed out"
+        );
+        background.poll().unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(stream.closed());
+    assert_eq!(std::fs::read(&fixture.0).unwrap(), vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(stream.bytes_written(), 6);
+}
+
 struct Fixture(std::path::PathBuf);
 
 impl Fixture {

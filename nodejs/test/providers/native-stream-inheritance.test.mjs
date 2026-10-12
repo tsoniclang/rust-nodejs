@@ -30,13 +30,13 @@ test("inherited stream operations retain the declared native receiver and exact 
     assert.equal(carrier.target, "rust", id);
     assert.equal(carrier.value.id, carrierId, id);
     assert.deepEqual(carrier.value.genericArguments, [{
-      kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+      kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
     }], id);
     for (const [target, path] of projections) {
       const selected = carrier.value.upcasts.filter(row => row.target.value.id === target && row.path === path);
       assert.equal(selected.length, 1, path);
       assert.deepEqual(selected[0].target.value.genericArguments, [{
-        kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" },
+        kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
       }], path);
     }
     assert.equal(declaration.members.some(member =>
@@ -51,13 +51,14 @@ test("inherited stream operations retain the declared native receiver and exact 
     ["node:stream::Writable.once.drain", "once_drain"],
     ["node:stream::Writable.off.finish", "off_finish"],
     ["node:stream::Writable.once.finish", "once_finish"],
-    ["node:stream::Writable.write(buffer)", "write_buffer"],
+    ["node:stream::Writable.write(buffer)", "write"],
     ["node:stream::Writable.end()", "end"],
   ]) {
     const selected = writableRows.filter(row => row.signatureId === signature);
     assert.equal(selected.length, 1, signature);
     assert.equal(selected[0].target.form, "receiver-method", signature);
     assert.equal(selected[0].target.name, name, signature);
+    if (signature === "node:stream::Writable.write(buffer)") assert.deepEqual(selected[0].target.argModes, ["value"]);
     assert.equal(selected[0].receiverCarrier.value.id, "rust.node.Writable", signature);
   }
   const destroy = definition.operations.filter(row =>

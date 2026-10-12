@@ -1,8 +1,8 @@
-import { emptyCallbackCarrier, int32Carrier, unitCarrier } from "../../model/carriers.js";
+import { int32Carrier, unitCarrier } from "../../model/carriers.js";
 import { fnExport, providerRef } from "../../declarations/builders.js";
 import { int32Type, voidType } from "../../model/source-types.js";
 import { timeoutCarrier } from "./carriers.js";
-import { nodeTimerInput } from "../../model/dispatch.js";
+import { nodeTimerCallbackCarrier, nodeTimerInput } from "../../model/dispatch.js";
 import { providerNativeFallibility } from "../../model/operations.js";
 
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
@@ -57,7 +57,7 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       dispatchInputs: [nodeTimerInput],
       ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
-      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+      parameterCarriers: [nodeTimerCallbackCarrier, int32Carrier],
     },
     {
       exportId: "node:timers::setInterval",
@@ -66,7 +66,7 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       dispatchInputs: [nodeTimerInput],
       ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
-      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+      parameterCarriers: [nodeTimerCallbackCarrier, int32Carrier],
     },
     ...(["clearTimeout", "clearInterval"] as const).map((name): RustProviderOperationDefinition => ({
       exportId: `node:timers::${name}`,

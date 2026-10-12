@@ -334,8 +334,8 @@ function writableRows(
   const classId = className === "Writable" ? writableId : duplexId;
   const rows: RustProviderOperationDefinition[] = [
     {
-      ...receiverMethod(classId, "write", "write_buffer", receiverCarrier, boolCarrier, [bufferCarrier], `${classId}.write(buffer)`),
-      target: { form: "receiver-method", name: "write_buffer", argModes: ["ref"] },
+      ...receiverMethod(classId, "write", "write", receiverCarrier, boolCarrier, [bufferCarrier], `${classId}.write(buffer)`),
+      target: { form: "receiver-method", name: "write", argModes: ["value"] },
       ...sourceCallbackFallibility,
     },
     {

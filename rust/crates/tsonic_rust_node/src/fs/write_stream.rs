@@ -6,7 +6,7 @@ struct WriteStreamState<E: 'static> {
     pending: bool,
     bytes_written: usize,
     file: Option<File>,
-    queue: VecDeque<Vec<u8>>,
+    queue: VecDeque<tsonic_rust_js::array_buffer::OwnedBufferBytes>,
     queued_bytes: usize,
     flush_on_finish: bool,
     opening: bool,
@@ -36,7 +36,6 @@ impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for FileWri
     }
 
     fn write(&self, chunk: Buffer) -> crate::stream::StreamBackendResult<(), E> {
-        let bytes = chunk.with_bytes(<[u8]>::to_vec);
         let state = &self.state;
         {
             let mut state = state.borrow_mut();
@@ -45,7 +44,7 @@ impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for FileWri
                     NodeError::new("ERR_STREAM_WRITE_AFTER_END", "write stream is closed").into(),
                 );
             }
-            let queued_bytes = state.queued_bytes.checked_add(bytes.len()).ok_or_else(|| {
+            let queued_bytes = state.queued_bytes.checked_add(chunk.length()).ok_or_else(|| {
                 NodeError::new(
                     "ERR_FS_STREAM_BUFFER_OVERFLOW",
                     "pending file bytes overflow",
@@ -59,7 +58,7 @@ impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for FileWri
                 .into());
             }
             state.queued_bytes = queued_bytes;
-            state.queue.push_back(bytes);
+            state.queue.push_back(chunk.into_owned_bytes());
         }
         if let Some(owner) = self.owner() {
             schedule_write(state, &owner)?;
@@ -255,7 +254,7 @@ impl<E: From<NodeError> + 'static> WriteStream<E> {
     }
 
     pub fn write(&self, chunk: Buffer) -> Result<bool, E> {
-        self.writable.write_buffer(&chunk)
+        self.writable.write(chunk)
     }
 
     pub fn close(&self) -> Result<(), E> {
@@ -319,7 +318,7 @@ fn schedule_write<E: From<NodeError> + 'static>(
     writable: &crate::stream::Writable<E>,
 ) -> NodeResult<()> {
     enum Work {
-        Write(File, Vec<u8>),
+        Write(File, tsonic_rust_js::array_buffer::OwnedBufferBytes),
         Finish(File, bool),
     }
     let work = {

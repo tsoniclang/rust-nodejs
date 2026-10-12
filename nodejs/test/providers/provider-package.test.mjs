@@ -64,7 +64,7 @@ function expectedDispatchGroup(targetArgumentIndex) {
       "tsonic.rust.node.tls", "tsonic.rust.node.http"], targetArgumentIndex,
     empty: { form: "associated-call", method: "new", owner: {
       kind: "target-named", id: "rust.node.DispatchEnd", genericArguments: [{ kind: "type", type: {
-        kind: "target-named", id: "rust.program.TsonicError",
+        kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" },
       } }],
     } },
     prepend: { form: "call", path: "tsonic_rust_runtime::dispatch::prepend" },
@@ -256,7 +256,8 @@ test("provider type relations carry exact closed target carriers", () => {
     "node:readline::ReadLineOptions", "node:readline::Interface", "node:worker_threads::Worker",
     "node:worker_threads::MessagePort", "node:worker_threads::MessageChannel",
   ]);
-  const errorArguments = [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }];
+  const errorArguments = [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError",
+    errorOwner: { kind: "logical" } } }];
   const namedRelations = types.map((relation) => {
     const carrier = relation.targetCarrier;
     if (carrier.kind !== "target-specific") {
@@ -322,6 +323,7 @@ test("provider type relations carry exact closed target carriers", () => {
       kind: "target-named", id: "rust.node.Timeout",
       genericArguments: [{ kind: "type", type: {
         kind: "target-named", id: "rust.runtime.Callable", genericArguments: [
+          { kind: "lifetime", lifetime: { kind: "static" } },
           { kind: "type", type: { kind: "tuple", elements: [] } },
           { kind: "type", type: { kind: "tuple", elements: [] } },
         ],
@@ -845,18 +847,19 @@ test("provider package closes process stdout and stderr output contracts", () =>
     const defaultRow = contribution.definition.operations.find(row =>
       row.memberId === `node:process::Process.${name}`);
     assert.deepEqual(namedRow?.targetGenericArguments,
-      [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError" } }]);
+      [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError",
+        errorOwner: { kind: "logical" } } }]);
     assert.deepEqual(defaultRow?.targetGenericArguments, namedRow.targetGenericArguments);
   }
   const writeRows = contribution.definition.operations.filter((row) =>
     row.memberId === "node:process::ProcessWriteStream.write");
   assert.deepEqual(writeRows.map((row) => [row.signatureId, row.target.name]), [
     ["node:process::ProcessWriteStream.write(string)", "write_string"],
-    ["node:process::ProcessWriteStream.write(buffer)", "write_buffer"],
+    ["node:process::ProcessWriteStream.write(buffer)", "write"],
   ]);
   assert.equal(writeRows.every((row) => row.isFallible === true), true);
   for (const row of writeRows) {
-    assert.deepEqual(row.target.argModes, ["ref"]);
+    assert.deepEqual(row.target.argModes, [row.target.name === "write" ? "value" : "ref"]);
     assert.equal(row.target.mutatesReceiver, undefined);
     const nativeRow = contribution.definition.operations.find(candidate =>
       candidate.memberId === "node:stream::Writable.write" && candidate.target.name === row.target.name);
@@ -1121,6 +1124,7 @@ test("provider package maps timers to the shared Node event loop", () => {
     JSON.stringify(row.resultCarrier) === JSON.stringify({ kind: "target-named", id: "rust.node.Timeout",
       genericArguments: [{ kind: "type", type: row.parameterCarriers[0] }] })), true);
   for (const row of rows) {
+    assert.deepEqual(row.parameterCarriers[0].genericArguments[0], { kind: "lifetime", lifetime: { kind: "static" } });
     assert.deepEqual(row.dispatchInputs, [{ contextId: "tsonic.rust.node.timers", view: "root", targetArgumentIndex: 0, mode: "ref" }]);
     assert.equal(row.isFallible, true);
     assert.equal(row.errorBoundary, "provider-native");

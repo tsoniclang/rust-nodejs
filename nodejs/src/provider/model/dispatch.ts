@@ -1,9 +1,9 @@
-import { rustJsTimerDispatchContextId } from "@tsonic/target-rust/provider";
+import { rustCallableTargetType, rustJsTimerDispatchContextId } from "@tsonic/target-rust/provider";
 import type { RustDispatchContextDefinition, RustDispatchContextGroupInput, RustDispatchContextInput } from "@tsonic/target-rust/provider";
-import { emptyCallbackCarrier, nodeProgramErrorArguments } from "./carriers.js";
+import { nodeProgramErrorArguments, unitCarrier } from "./carriers.js";
 
 const errorArguments = nodeProgramErrorArguments;
-export const nodeTimerCallbackCarrier = emptyCallbackCarrier;
+export const nodeTimerCallbackCarrier = rustCallableTargetType([], unitCarrier, { kind: "static" });
 
 export const nodeBackgroundContext: RustDispatchContextDefinition = {
   id: "tsonic.rust.node.background",

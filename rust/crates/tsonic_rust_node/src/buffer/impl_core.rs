@@ -107,6 +107,10 @@ impl Buffer {
         self.view.with_bytes(operation)
     }
 
+    pub(crate) fn into_owned_bytes(self) -> tsonic_rust_js::array_buffer::OwnedBufferBytes {
+        self.view.into_owned_bytes()
+    }
+
     pub fn get(&self, index: usize) -> Option<u8> {
         if index >= self.len() {
             return None;
