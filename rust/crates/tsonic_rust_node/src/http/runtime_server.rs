@@ -61,6 +61,7 @@ struct RuntimeServerState<E: 'static> {
     _reservation: TaskReservation,
     listener: Option<RuntimeListener>,
     handler: RuntimeRequestHandler<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     address: Option<ServerAddress>,
     pending_listen_callback: Option<RuntimeListenCallback<E>>,
     pending_close_callbacks: VecDeque<RuntimeCloseCallback<E>>,
@@ -398,6 +399,7 @@ impl<E: From<NodeError> + 'static> ServerHandle<E> {
 
 pub fn create_server_callable<E: From<NodeError> + 'static>(
     roots: &HttpServers<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     handler: RuntimeRequestHandler<E>,
 ) -> NodeResult<ServerHandle<E>> {
     let reservation = reserve_http_resource()?;
@@ -408,6 +410,7 @@ pub fn create_server_callable<E: From<NodeError> + 'static>(
             _reservation: reservation,
             listener: None,
             handler,
+            tasks,
             address: None,
             pending_listen_callback: None,
             pending_close_callbacks: VecDeque::new(),
@@ -428,10 +431,12 @@ pub fn create_server_callable<E: From<NodeError> + 'static>(
 }
 pub fn create_server_optional<E: From<NodeError> + 'static>(
     roots: &HttpServers<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     handler: Option<RuntimeRequestHandler<E>>,
 ) -> NodeResult<ServerHandle<E>> {
     create_server_callable(
         roots,
+        tasks,
         handler.unwrap_or_else(|| {
             tsonic_rust_runtime::Callable::new(
                 |(_request, response): RuntimeRequestArguments<E>| response.end_empty().map(|_| ()),

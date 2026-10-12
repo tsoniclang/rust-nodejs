@@ -1,8 +1,11 @@
 use std::collections::VecDeque;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReadableSource {
-    Stdin,
+    #[cfg(target_os = "linux")]
+    Stdin(Box<crate::readiness::Stdin>),
+    StdinFile {
+        _lease: tsonic_rust_runtime::dispatch_queue::TaskReservation,
+    },
 }
 
 struct ReadableState<E: 'static> {
@@ -10,6 +13,10 @@ struct ReadableState<E: 'static> {
     queued_bytes: usize,
     options: StreamOptions,
     paused: bool,
+    flowing: bool,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    dispatch_pending: bool,
+    end_requested: bool,
     destroyed: bool,
     lifecycle: StreamLifecycle<E>,
     encoding: Option<String>,
@@ -57,12 +64,6 @@ impl<E: 'static> std::fmt::Debug for Readable<E> {
     }
 }
 
-impl<E: From<NodeError> + 'static> Default for Readable<E> {
-    fn default() -> Self {
-        Self::open(StreamOptions::default())
-    }
-}
-
 impl<E: 'static> PartialEq for Readable<E> {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.state, &other.state)
@@ -72,7 +73,14 @@ impl<E: 'static> PartialEq for Readable<E> {
 impl<E: 'static> Eq for Readable<E> {}
 
 impl<E: From<NodeError> + 'static> Readable<E> {
-    pub(crate) fn open(options: StreamOptions) -> Self {
+    pub fn new(tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>) -> Self {
+        Self::open(tasks, StreamOptions::default())
+    }
+
+    pub(crate) fn open(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        options: StreamOptions,
+    ) -> Self {
         let lifecycle = StreamLifecycle::<E>::new(options.emit_close);
         let readable = Self {
             state: Rc::new(RefCell::new(ReadableState::<E> {
@@ -80,6 +88,10 @@ impl<E: From<NodeError> + 'static> Readable<E> {
                 queued_bytes: 0,
                 options,
                 paused: false,
+                flowing: false,
+                tasks,
+                dispatch_pending: false,
+                end_requested: false,
                 destroyed: false,
                 lifecycle: lifecycle.clone(),
                 encoding: None,
@@ -100,25 +112,26 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         self.state.borrow().lifecycle.clone()
     }
 
-    pub fn from_chunks(chunks: Vec<Buffer>) -> Self {
-        Self::from_chunks_with_options(chunks, StreamOptions::default())
+    pub(crate) fn task_handle(&self) -> tsonic_rust_runtime::dispatch_queue::TaskHandle<E> {
+        self.state.borrow().tasks.clone()
     }
 
-    pub fn stdin() -> Self {
-        let readable = Self::open(StreamOptions::default());
-        {
-            let mut state = readable.state.borrow_mut();
-            state.source = Some(ReadableSource::Stdin);
+    pub fn from_chunks(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        chunks: Vec<Buffer>,
+    ) -> Self {
+        Self::from_chunks_with_options(tasks, chunks, StreamOptions::default())
+    }
+
+    pub fn from_chunks_with_options(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        mut chunks: Vec<Buffer>,
+        options: StreamOptions,
+    ) -> Self {
+        if !options.object_mode {
+            chunks.retain(|chunk| !chunk.is_empty());
         }
-        readable
-    }
-
-    pub(crate) fn is_stdin_source(&self) -> bool {
-        matches!(self.state.borrow().source, Some(ReadableSource::Stdin))
-    }
-
-    pub fn from_chunks_with_options(chunks: Vec<Buffer>, options: StreamOptions) -> Self {
-        let readable = Self::open(options);
+        let readable = Self::open(tasks, options);
         {
             let mut state = readable.state.borrow_mut();
             state.queued_bytes = chunks.iter().map(Buffer::len).sum();
@@ -128,12 +141,18 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         readable
     }
 
-    pub fn from(chunks: Vec<Buffer>) -> Self {
-        Self::from_chunks(chunks)
+    pub fn from(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        chunks: Vec<Buffer>,
+    ) -> Self {
+        Self::from_chunks(tasks, chunks)
     }
 
-    pub fn from_source(chunks: &tsonic_rust_js::JsArray<Buffer>) -> Self {
-        Self::from_chunks(chunks.values())
+    pub fn from_source(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        chunks: &tsonic_rust_js::JsArray<Buffer>,
+    ) -> Self {
+        Self::from_chunks(tasks, chunks.values())
     }
 
     pub fn read(&self) -> Result<Option<Buffer>, E> {
@@ -163,11 +182,17 @@ impl<E: From<NodeError> + 'static> Readable<E> {
             if state.destroyed {
                 return Ok(None);
             }
+            state.end_requested = true;
             if state.chunks.is_empty() {
                 drop(state);
                 self.fill_stdin()?;
                 state = self.state.borrow_mut();
             }
+            let size = if state.options.object_mode {
+                None
+            } else {
+                size
+            };
             let Some(size) = size else {
                 let chunk = state.chunks.pop_front();
                 if let Some(chunk) = &chunk {
@@ -184,29 +209,6 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         Ok(chunk)
     }
 
-    fn fill_stdin(&self) -> Result<(), E> {
-        let should_read = {
-            let state = self.state.borrow();
-            matches!(state.source, Some(ReadableSource::Stdin)) && !state.producer_ended
-        };
-        if !should_read {
-            return Ok(());
-        }
-        use std::io::Read as _;
-        let size = self.state.borrow().options.high_water_mark.max(1);
-        let mut bytes = vec![0_u8; size];
-        let read = std::io::stdin()
-            .read(&mut bytes)
-            .map_err(|error| NodeError::new("EIO", error.to_string()))?;
-        if read == 0 {
-            self.finish_input()?;
-        } else {
-            bytes.truncate(read);
-            self.enqueue(Buffer::from_bytes(bytes))?;
-        }
-        Ok(())
-    }
-
     fn after_consumption(&self, before_pressure: bool) -> Result<(), E> {
         if before_pressure && !self.pressured() {
             let handler = self.state.borrow().capacity_handler.clone();
@@ -214,7 +216,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
                 handler.call(())?;
             }
         }
-        self.emit_terminal_if_ready()
+        self.schedule_dispatch()
     }
 
     pub fn is_ended(&self) -> bool {
@@ -228,11 +230,16 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     }
 
     pub fn readable_ended(&self) -> bool {
-        self.is_ended()
+        self.state.borrow().end_emitted
     }
 
     pub fn readable_length(&self) -> usize {
-        self.state.borrow().chunks.len()
+        let state = self.state.borrow();
+        if state.options.object_mode {
+            state.chunks.len()
+        } else {
+            state.queued_bytes
+        }
     }
 
     pub fn readable_high_water_mark(&self) -> usize {
@@ -245,7 +252,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
 
     pub fn readable_flowing(&self) -> Option<bool> {
         let state = self.state.borrow();
-        (!state.destroyed).then_some(!state.paused && !state.data_event.is_empty())
+        (!state.destroyed).then_some(state.flowing && !state.paused)
     }
 
     pub fn readable_did_read(&self) -> bool {
@@ -310,8 +317,14 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         state.chunks.clear();
         state.queued_bytes = 0;
         let capacity_handler = state.capacity_handler.take();
+        let source = state.source.take();
+        let data = state.data_event.take_emission();
+        let end = state.end_event.take_emission();
         drop(state);
         drop(capacity_handler);
+        drop(source);
+        drop(data);
+        drop(end);
     }
 
     pub fn destroyed(&self) -> bool {
@@ -336,8 +349,13 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     }
 
     pub fn resume(&self) -> Result<Self, E> {
-        self.state.borrow_mut().paused = false;
-        self.pump_flowing()?;
+        {
+            let mut state = self.state.borrow_mut();
+            state.paused = false;
+            state.flowing = true;
+            state.end_requested = true;
+        }
+        self.schedule_dispatch()?;
         Ok(self.clone())
     }
 
@@ -358,24 +376,37 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     }
 
     pub(crate) fn enqueue(&self, chunk: Buffer) -> Result<bool, E> {
-        if !self.buffer_input(Some(chunk), false) {
+        if !self.buffer_input(Some(chunk), false)? {
             return Ok(false);
         }
-        self.pump_flowing()?;
+        self.schedule_dispatch()?;
         Ok(!self.pressured())
     }
 
-    pub(crate) fn buffer_input(&self, chunk: Option<Buffer>, complete: bool) -> bool {
+    pub(crate) fn buffer_input(&self, chunk: Option<Buffer>, complete: bool) -> Result<bool, E> {
         let mut state = self.state.borrow_mut();
         if state.destroyed || (state.producer_ended && chunk.is_some()) {
-            return false;
+            return Ok(false);
         }
         if let Some(chunk) = chunk {
-            state.queued_bytes = state.queued_bytes.saturating_add(chunk.len());
-            state.chunks.push_back(chunk);
+            if !chunk.is_empty() || state.options.object_mode {
+                let Some(queued_bytes) = state.queued_bytes.checked_add(chunk.len()) else {
+                    drop(state);
+                    return Err(NodeError::new(
+                        "ERR_STREAM_BUFFER_LIMIT",
+                        "readable byte accounting overflow",
+                    )
+                    .into());
+                };
+                state.queued_bytes = queued_bytes;
+                state.chunks.push_back(chunk);
+            }
         }
         state.producer_ended |= complete;
-        true
+        let source = complete.then(|| state.source.take());
+        drop(state);
+        drop(source);
+        Ok(true)
     }
 
     pub(crate) fn downgrade(&self) -> WeakReadable<E> {
@@ -384,15 +415,36 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         }
     }
 
-    pub fn unshift(&self, chunk: Buffer) {
-        let mut state = self.state.borrow_mut();
-        state.queued_bytes = state.queued_bytes.saturating_add(chunk.len());
-        state.chunks.push_front(chunk);
+    pub fn unshift(&self, chunk: Buffer) -> Result<(), E> {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.destroyed || state.end_emitted {
+                drop(state);
+                return Err(NodeError::new(
+                    "ERR_STREAM_UNSHIFT_AFTER_END_EVENT",
+                    "cannot unshift after stream termination",
+                )
+                .into());
+            }
+            if !chunk.is_empty() || state.options.object_mode {
+                let Some(queued_bytes) = state.queued_bytes.checked_add(chunk.len()) else {
+                    drop(state);
+                    return Err(NodeError::new(
+                        "ERR_STREAM_BUFFER_LIMIT",
+                        "readable byte accounting overflow",
+                    )
+                    .into());
+                };
+                state.queued_bytes = queued_bytes;
+                state.chunks.push_front(chunk);
+            }
+        }
+        self.schedule_dispatch()
     }
 
     pub(crate) fn finish_input(&self) -> Result<(), E> {
-        self.buffer_input(None, true);
-        self.pump_flowing()
+        self.buffer_input(None, true)?;
+        self.schedule_dispatch()
     }
 
     pub(crate) fn fail_input(&self, error: NodeError) -> Result<(), E> {
@@ -410,51 +462,11 @@ impl<E: From<NodeError> + 'static> Readable<E> {
 
     pub(crate) fn pressured(&self) -> bool {
         let state = self.state.borrow();
-        state.queued_bytes >= state.options.high_water_mark.max(1)
+        readable_pressure(&state)
     }
 
     pub(crate) fn pump_flowing(&self) -> Result<(), E> {
-        loop {
-            let (chunk, callbacks, before_pressure) = {
-                let mut state = self.state.borrow_mut();
-                if state.paused
-                    || state.destroyed
-                    || state.data_event.is_empty()
-                    || state.chunks.is_empty()
-                {
-                    break;
-                }
-                let before_pressure = state.queued_bytes >= state.options.high_water_mark.max(1);
-                let chunk = state.chunks.pop_front().expect("checked nonempty queue");
-                state.queued_bytes = state.queued_bytes.saturating_sub(chunk.len());
-                state.did_read = true;
-                let callbacks = state.data_event.emission();
-                (chunk, callbacks, before_pressure)
-            };
-            invoke_event(callbacks, chunk)?;
-            self.after_consumption(before_pressure)?;
-        }
-        self.emit_terminal_if_ready()
-    }
-
-    fn emit_terminal_if_ready(&self) -> Result<(), E> {
-        let (end_callbacks, lifecycle) = {
-            let mut state = self.state.borrow_mut();
-            if state.destroyed || !state.producer_ended || !state.chunks.is_empty() {
-                return Ok(());
-            }
-            let end_callbacks = if state.end_emitted {
-                StreamEmission::default()
-            } else {
-                state.end_emitted = true;
-                state.end_event.emission()
-            };
-            (end_callbacks, state.lifecycle.clone())
-        };
-        let result = invoke_event(end_callbacks, ());
-        lifecycle.finish_readable();
-        result?;
-        lifecycle.emit_terminal()
+        self.schedule_dispatch()
     }
 
     fn drain_remaining(&self) -> Result<Vec<Buffer>, E> {
@@ -464,6 +476,15 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         }
         Ok(output)
     }
+}
+
+fn readable_pressure<E: 'static>(state: &ReadableState<E>) -> bool {
+    let length = if state.options.object_mode {
+        state.chunks.len()
+    } else {
+        state.queued_bytes
+    };
+    length >= state.options.high_water_mark.max(1)
 }
 
 fn take_sized_chunk<E: 'static>(state: &mut ReadableState<E>, size: usize) -> Option<Buffer> {

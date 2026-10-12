@@ -85,7 +85,8 @@ use tsonic_rust_runtime::TsonicError;
 
 #[test]
 fn generated_metadata_reads_and_borrowed_string_arguments_do_not_allocate() {
-    let message = IncomingMessage::<TsonicError>::new("POST", "/native-resource", Vec::new());
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let message = IncomingMessage::<TsonicError>::new(readable_tasks.handle(), "POST", "/native-resource", Vec::new());
     let cost = allocation_counts::measure(|| {
         for _ in 0..10_000 {
             assert!(std::hint::black_box(index::inspect(message.clone())));
@@ -105,7 +106,8 @@ fn generated_metadata_reads_and_borrowed_string_arguments_do_not_allocate() {
 
 #[test]
 fn generated_owned_results_and_retained_callbacks_outlive_their_message_argument() {
-    let message = IncomingMessage::<TsonicError>::new("POST", "/native-resource", Vec::new());
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let message = IncomingMessage::<TsonicError>::new(readable_tasks.handle(), "POST", "/native-resource", Vec::new());
     let mut version = String::new();
     let version_cost = allocation_counts::measure(|| version = index::version(message.clone()));
     assert_eq!(version_cost, (1, 3));
@@ -118,7 +120,7 @@ fn generated_owned_results_and_retained_callbacks_outlive_their_message_argument
     assert_eq!(method.as_deref(), Some("POST"));
     assert_eq!(callback.call(()).unwrap(), "1.1");
     assert_eq!(callback.call(()).unwrap(), "1.1");
-    let next = IncomingMessage::<TsonicError>::new("POST", "/native-resource", Vec::new());
+    let next = IncomingMessage::<TsonicError>::new(readable_tasks.handle(), "POST", "/native-resource", Vec::new());
     assert_eq!(index::text(next.clone()), "1.1");
     assert_eq!(index::optionaltext(next.clone()), "POST");
     assert_eq!(index::pad(next).unwrap(), "1.1.1");

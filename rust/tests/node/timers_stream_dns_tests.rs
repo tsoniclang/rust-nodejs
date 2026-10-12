@@ -179,16 +179,24 @@ fn interval_callable_propagates_fallible_callback_errors() {
 
 #[test]
 fn stream_pipeline_moves_closed_buffer_chunks() {
-    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(vec![
-        Buffer::from_string("hello", Some("utf8")).unwrap(),
-        Buffer::from_string(" world", Some("utf8")).unwrap(),
-    ]);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
+        readable_tasks.handle(),
+        vec![
+            Buffer::from_string("hello", Some("utf8")).unwrap(),
+            Buffer::from_string(" world", Some("utf8")).unwrap(),
+        ],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     stream::pipeline(&mut readable, &mut writable).unwrap();
+    assert!(!readable.is_ended());
+    assert!(writable.chunks().is_empty());
+    readable_tasks.poll().unwrap();
     assert!(readable.is_ended());
     assert_eq!(writable.chunks().len(), 2);
 
     let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
+        readable_tasks.handle(),
         writable.chunks().to_vec(),
     );
     assert_eq!(
@@ -199,11 +207,15 @@ fn stream_pipeline_moves_closed_buffer_chunks() {
 
 #[test]
 fn stream_consumers_cover_buffer_text_array_buffer_blob_and_json() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let chunks = || {
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(vec![
-            Buffer::from_string("{\"ok\":", Some("utf8")).unwrap(),
-            Buffer::from_string("true}", Some("utf8")).unwrap(),
-        ])
+        stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
+            readable_tasks.handle(),
+            vec![
+                Buffer::from_string("{\"ok\":", Some("utf8")).unwrap(),
+                Buffer::from_string("true}", Some("utf8")).unwrap(),
+            ],
+        )
     };
 
     let mut readable = chunks();
@@ -239,7 +251,9 @@ fn stream_consumers_cover_buffer_text_array_buffer_blob_and_json() {
 
 #[test]
 fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
-    let pass = stream::PassThrough::<tsonic_rust_runtime::TsonicError>::new();
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let pass =
+        stream::PassThrough::<tsonic_rust_runtime::TsonicError>::new(readable_tasks.handle());
     assert!(pass
         .write(Buffer::from_string("a", Some("utf8")).unwrap())
         .unwrap());
@@ -253,13 +267,16 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
     );
     pass.end().unwrap();
 
-    let transform = stream::Transform::<tsonic_rust_runtime::TsonicError>::new(|chunk| {
-        Buffer::from_string(
-            &chunk.to_string(Some("utf8")).unwrap().to_ascii_uppercase(),
-            Some("utf8"),
-        )
-        .unwrap()
-    });
+    let transform = stream::Transform::<tsonic_rust_runtime::TsonicError>::new(
+        readable_tasks.handle(),
+        |chunk| {
+            Buffer::from_string(
+                &chunk.to_string(Some("utf8")).unwrap().to_ascii_uppercase(),
+                Some("utf8"),
+            )
+            .unwrap()
+        },
+    );
     assert!(transform
         .write(Buffer::from_string("hello", Some("utf8")).unwrap())
         .unwrap());
@@ -274,7 +291,7 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
     );
 
     let duplex = stream::Duplex::<tsonic_rust_runtime::TsonicError>::new(
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![]),
+        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(readable_tasks.handle(), vec![]),
         stream::Writable::<tsonic_rust_runtime::TsonicError>::new(),
     );
     assert!(duplex
@@ -283,23 +300,28 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
     duplex.end().unwrap();
     assert_eq!(duplex.writable_chunks().len(), 1);
 
-    let readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![Buffer::from_string(
-            "web",
-            Some("utf8"),
-        )
-        .unwrap()]);
+    let readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("web", Some("utf8")).unwrap()],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     assert!(stream::is_readable(&readable));
     assert!(stream::is_writable(&writable));
     readable.pipe(&mut writable).unwrap();
+    assert!(writable.chunks().is_empty());
+    assert!(!readable.readable_ended());
+    readable_tasks.poll().unwrap();
     readable.unpipe(&mut writable).unwrap();
     assert_eq!(writable.chunks().len(), 1);
     assert!(readable.is_ended());
-    let mut readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(writable.chunks().to_vec());
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        writable.chunks().to_vec(),
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     stream::promises::pipeline(&mut readable, &mut writable).unwrap();
+    assert!(!stream::promises::finished(&readable, &writable));
+    readable_tasks.poll().unwrap();
     assert!(stream::promises::finished(&readable, &writable));
     assert!(stream::promises::finished_with_options(
         &readable,
@@ -307,13 +329,17 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
         &stream::FinishedOptions::default()
     ));
 
-    let web_readable = stream::web::readable_to_web(stream::Readable::<
-        tsonic_rust_runtime::TsonicError,
-    >::from(writable.chunks().to_vec()))
-    .unwrap();
+    let web_readable =
+        stream::web::readable_to_web(stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+            readable_tasks.handle(),
+            writable.chunks().to_vec(),
+        ))
+        .unwrap();
     assert_eq!(web_readable.chunks().len(), 1);
-    let native_readable =
-        stream::web::readable_from_web::<tsonic_rust_node::NodeError>(web_readable);
+    let native_readable = stream::web::readable_from_web::<tsonic_rust_runtime::TsonicError>(
+        readable_tasks.handle(),
+        web_readable,
+    );
     assert_eq!(native_readable.to_vec().unwrap().len(), 1);
     let web_writable = stream::web::writable_to_web(writable.clone());
     assert_eq!(web_writable.chunks().len(), 1);
@@ -324,6 +350,7 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
 
 #[test]
 fn stream_promises_options_and_transform_chains_are_explicit() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     fn uppercase(chunk: Buffer) -> Buffer {
         Buffer::from_string(
             &chunk.to_string(Some("utf8")).unwrap().to_ascii_uppercase(),
@@ -340,10 +367,13 @@ fn stream_promises_options_and_transform_chains_are_explicit() {
         .unwrap()
     }
 
-    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![
-        Buffer::from_string("a", Some("utf8")).unwrap(),
-        Buffer::from_string("b", Some("utf8")).unwrap(),
-    ]);
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![
+            Buffer::from_string("a", Some("utf8")).unwrap(),
+            Buffer::from_string("b", Some("utf8")).unwrap(),
+        ],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     let written = stream::promises::pipeline_with_options(
         &mut readable,
@@ -367,12 +397,10 @@ fn stream_promises_options_and_transform_chains_are_explicit() {
         }
     ));
 
-    let mut readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![Buffer::from_string(
-            "x",
-            Some("utf8"),
-        )
-        .unwrap()]);
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("x", Some("utf8")).unwrap()],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     stream::promises::pipeline_transform(
         &mut readable,
@@ -384,12 +412,10 @@ fn stream_promises_options_and_transform_chains_are_explicit() {
     assert_eq!(writable.chunks()[0].to_string(Some("utf8")).unwrap(), "X");
     assert!(writable.writable_ended());
 
-    let mut readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![Buffer::from_string(
-            "y",
-            Some("utf8"),
-        )
-        .unwrap()]);
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("y", Some("utf8")).unwrap()],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     stream::promises::pipeline_transforms(
         &mut readable,
@@ -400,12 +426,10 @@ fn stream_promises_options_and_transform_chains_are_explicit() {
     .unwrap();
     assert_eq!(writable.chunks()[0].to_string(Some("utf8")).unwrap(), "Y!");
 
-    let mut readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![Buffer::from_string(
-            "z",
-            Some("utf8"),
-        )
-        .unwrap()]);
+    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("z", Some("utf8")).unwrap()],
+    );
     let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     let error = stream::promises::pipeline_with_options(
         &mut readable,
@@ -425,7 +449,9 @@ fn stream_promises_options_and_transform_chains_are_explicit() {
 
 #[test]
 fn stream_state_options_and_backpressure_are_explicit_carriers() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks_with_options(
+        readable_tasks.handle(),
         vec![Buffer::from_string("b", Some("utf8")).unwrap()],
         stream::StreamOptions {
             high_water_mark: 2,
@@ -436,7 +462,9 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
             default_encoding: "utf8".to_string(),
         },
     );
-    readable.unshift(Buffer::from_string("a", Some("utf8")).unwrap());
+    readable
+        .unshift(Buffer::from_string("a", Some("utf8")).unwrap())
+        .unwrap();
     assert_eq!(readable.readable_length(), 2);
     assert_eq!(readable.readable_high_water_mark(), 2);
     assert!(!readable.readable_object_mode());
@@ -444,9 +472,10 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     assert!(!readable.readable_did_read());
     readable.set_encoding("UTF8");
     assert_eq!(readable.readable_encoding(), Some("utf8".to_string()));
-    let event_readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(vec![
-        Buffer::from_bytes(vec![7]),
-    ]);
+    let event_readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
+        readable_tasks.handle(),
+        vec![Buffer::from_bytes(vec![7])],
+    );
     event_readable.pause();
     let received = Rc::new(Cell::new(0));
     let event_received = Rc::clone(&received);
@@ -459,6 +488,8 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
     event_readable.resume().unwrap();
     assert_eq!(received.get(), 0);
     event_readable.on_data("data", &listener).unwrap();
+    assert_eq!(received.get(), 0);
+    readable_tasks.poll().unwrap();
     assert_eq!(received.get(), 7);
     readable.pause();
     assert!(readable.is_paused());
@@ -484,13 +515,13 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
         .push(Buffer::from_string("c", Some("utf8")).unwrap())
         .unwrap());
     assert!(readable.to_array().unwrap().is_empty());
+    assert!(!readable.readable_ended());
+    readable_tasks.poll().unwrap();
     assert!(readable.readable_ended());
-    let aborting_readable =
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![Buffer::from_string(
-            "left",
-            Some("utf8"),
-        )
-        .unwrap()]);
+    let aborting_readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+        readable_tasks.handle(),
+        vec![Buffer::from_string("left", Some("utf8")).unwrap()],
+    );
     aborting_readable.destroy_with_error("aborted").unwrap();
     assert!(!aborting_readable.readable_aborted());
     readable.destroy_with_error("boom").unwrap();
@@ -562,23 +593,33 @@ fn stream_state_options_and_backpressure_are_explicit_carriers() {
         Some("ERR_STREAM_DESTROYED: closed".to_string())
     );
     assert!(stream::is_destroyed(
-        &stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![]),
+        &stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+            readable_tasks.handle(),
+            vec![]
+        ),
         &writable
     ));
     assert!(stream::is_errored(
-        &stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![]),
+        &stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+            readable_tasks.handle(),
+            vec![]
+        ),
         &writable
     ));
 }
 
 #[test]
 fn stream_readable_functional_operators_are_closed_buffer_transforms() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let chunks = || {
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(vec![
-            Buffer::from_string("a", Some("utf8")).unwrap(),
-            Buffer::from_string("bb", Some("utf8")).unwrap(),
-            Buffer::from_string("ccc", Some("utf8")).unwrap(),
-        ])
+        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+            readable_tasks.handle(),
+            vec![
+                Buffer::from_string("a", Some("utf8")).unwrap(),
+                Buffer::from_string("bb", Some("utf8")).unwrap(),
+                Buffer::from_string("ccc", Some("utf8")).unwrap(),
+            ],
+        )
     };
 
     let readable = chunks();
@@ -680,7 +721,10 @@ fn stream_readable_functional_operators_are_closed_buffer_transforms() {
         vec![1, 2, 3]
     );
     let composed = stream::compose(chunks(), |readable| {
-        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(readable.take(2).unwrap())
+        stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
+            readable_tasks.handle(),
+            readable.take(2).unwrap(),
+        )
     });
     assert_eq!(composed.to_vec().unwrap().len(), 2);
     let iterable = chunks();

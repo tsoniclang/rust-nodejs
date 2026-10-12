@@ -27,6 +27,7 @@ impl From<NodeError> for Failure {
 
 #[test]
 fn idle_codec_destruction_through_readable_releases_the_original_resource() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     for mode in [
         zlib::ZlibMode::Gzip,
         zlib::ZlibMode::Gunzip,
@@ -38,7 +39,7 @@ fn idle_codec_destruction_through_readable_releases_the_original_resource() {
         zlib::ZlibMode::BrotliDecompress,
         zlib::ZlibMode::Unzip,
     ] {
-        let codec = zlib::Zlib::new(mode, None);
+        let codec = zlib::Zlib::new(readable_tasks.handle(), mode, None);
         let readable = zlib::zlib_as_readable(&codec);
         let writable = zlib::zlib_as_writable(&codec);
         let closes = Rc::new(Cell::new(0));
@@ -63,7 +64,8 @@ fn idle_codec_destruction_through_readable_releases_the_original_resource() {
 
 #[test]
 fn codec_destruction_shares_error_and_close_identity_across_all_base_projections() {
-    let codec = zlib::create_gzip(None);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let codec = zlib::create_gzip(readable_tasks.handle(), None);
     let duplex = zlib::zlib_as_duplex(&codec);
     let readable = zlib::zlib_as_readable(&codec);
     let writable = zlib::zlib_as_writable(&codec);
@@ -124,7 +126,8 @@ fn codec_destruction_shares_error_and_close_identity_across_all_base_projections
 
 #[test]
 fn duplex_drain_finish_and_close_use_their_owning_native_states_once() {
-    let transform = stream::Transform::new(|chunk| chunk);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let transform = stream::Transform::new(readable_tasks.handle(), |chunk| chunk);
     let duplex = stream::transform_as_duplex(&transform);
     let readable = stream::transform_as_readable(&transform);
     let trace = Rc::new(RefCell::new(Vec::new()));
@@ -164,6 +167,9 @@ fn duplex_drain_finish_and_close_use_their_owning_native_states_once() {
     assert!(!duplex.writable_need_drain());
     assert_eq!(duplex, duplex.end().unwrap());
     duplex.end().unwrap();
+    assert_eq!(*trace.borrow(), ["drain", "finish"]);
+    assert!(!readable.readable_ended());
+    readable_tasks.poll().unwrap();
     assert_eq!(*trace.borrow(), ["drain", "finish", "close"]);
     assert!(duplex.writable_finished());
     assert!(readable.readable_ended());
@@ -171,7 +177,8 @@ fn duplex_drain_finish_and_close_use_their_owning_native_states_once() {
 
 #[test]
 fn error_callbacks_can_change_the_subsequent_shared_close_subscription() {
-    let codec = zlib::create_gzip(None);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let codec = zlib::create_gzip(readable_tasks.handle(), None);
     let duplex = zlib::zlib_as_duplex(&codec);
     let readable = zlib::zlib_as_readable(&codec);
     let observed = Rc::new(Cell::new(0));
@@ -252,7 +259,8 @@ fn end_and_uncork_propagate_native_callback_failures_instead_of_discarding_them(
 
 #[test]
 fn destruction_callback_failure_does_not_prevent_codec_cleanup_or_close() {
-    let codec = zlib::create_gzip(None);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let codec = zlib::create_gzip(readable_tasks.handle(), None);
     let duplex = zlib::zlib_as_duplex(&codec);
     let closes = Rc::new(Cell::new(0));
     let observed = Rc::clone(&closes);
@@ -287,7 +295,8 @@ fn destruction_callback_failure_does_not_prevent_codec_cleanup_or_close() {
 
 #[test]
 fn uncork_codec_failure_destroys_both_sides_without_a_successful_finish() {
-    let codec = zlib::create_gunzip(None);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let codec = zlib::create_gunzip(readable_tasks.handle(), None);
     let duplex = zlib::zlib_as_duplex(&codec);
     let errors = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&errors);

@@ -1,20 +1,36 @@
 impl<E: From<NodeError> + 'static> Readable<E> {
+    pub(crate) fn remove_readable_listeners(&self, data: usize, end: usize) {
+        let mut state = self.state.borrow_mut();
+        state.data_event.remove(data);
+        state.end_event.remove(end);
+    }
+
     pub(crate) fn on_data_internal(
         &self,
         callback: impl Fn(Buffer) -> Result<(), E> + 'static,
     ) -> Result<(), E> {
-        self.state.borrow_mut().data_event.add(value_listener(
-            &Callable::new(move |(value,)| callback(value)),
-            false,
-        ));
+        {
+            let mut state = self.state.borrow_mut();
+            if state.destroyed || state.end_emitted {
+                return Ok(());
+            }
+            state.data_event.add(value_listener(
+                &Callable::new(move |(value,)| callback(value)),
+                false,
+            ));
+            state.flowing = true;
+            state.end_requested = true;
+        }
         self.pump_flowing()
     }
 
     pub(crate) fn on_end_internal(&self, callback: impl Fn() -> Result<(), E> + 'static) {
-        self.state
-            .borrow_mut()
-            .end_event
-            .add(empty_listener(&Callable::new(move |()| callback()), true));
+        let mut state = self.state.borrow_mut();
+        if !state.destroyed && !state.end_emitted {
+            state
+                .end_event
+                .add(empty_listener(&Callable::new(move |()| callback()), true));
+        }
     }
 
     pub fn on_data(
@@ -142,10 +158,15 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         once: bool,
     ) -> Result<Self, E> {
         ensure_stream_event(event, "data")?;
-        self.state
-            .borrow_mut()
-            .data_event
-            .add(value_listener(listener, once));
+        {
+            let mut state = self.state.borrow_mut();
+            if state.destroyed || state.end_emitted {
+                return Ok(self.clone());
+            }
+            state.data_event.add(value_listener(listener, once));
+            state.flowing = true;
+            state.end_requested = true;
+        }
         self.pump_flowing()?;
         Ok(self.clone())
     }
@@ -159,21 +180,15 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     ) -> Result<Self, E> {
         ensure_stream_event(event, expected)?;
         let entry = empty_listener(listener, once);
-        let already_emitted = {
+        {
             let mut state = self.state.borrow_mut();
             if expected == "end" {
-                let emitted = state.end_emitted;
-                if !emitted {
+                if !state.end_emitted {
                     state.end_event.add(entry);
                 }
-                emitted
             } else {
                 state.lifecycle.add_close_listener(entry);
-                false
             }
-        };
-        if already_emitted && once {
-            listener.call(())?;
         }
         Ok(self.clone())
     }

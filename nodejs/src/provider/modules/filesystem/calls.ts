@@ -4,7 +4,7 @@ import { bufferCarrier } from "../buffer/carriers.js";
 import { fileWatchCallbackCarrier, fileStatWatchCallbackCarrier, makeDirectoryOptionsCarrier, readStreamCarrier, readStreamOptionsCarrier, fsWatcherCarrier, rmOptionsCarrier, statsCarrier, writeStreamCarrier, writeStreamOptionsCarrier } from "./carriers.js";
 import { fnExport, methodMember, propertyMember, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility, sourceCallbackFallibility } from "../../model/operations.js";
-import { nodeWatcherInput, nodeBackgroundInput } from "../../model/dispatch.js";
+import { nodeWatcherInput, nodeBackgroundInput, nodeRuntimeTaskHandleInput } from "../../model/dispatch.js";
 import { rustOptionTargetType, rustStringToBorrowedStrValueConversion } from "@tsonic/target-rust/provider";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
@@ -444,13 +444,13 @@ export function fsRows(typedArrays: boolean): readonly RustProviderOperationDefi
     {
       ...fallible("createReadStream", "node_fs::create_read_stream", readStreamCarrier, [stringCarrier]),
       signatureId: "node:fs::createReadStream(path)",
-      dispatchInputs: [nodeBackgroundInput],
+      dispatchInputs: [nodeBackgroundInput, nodeRuntimeTaskHandleInput(1)],
     },
     {
       ...fallible("createReadStream", "node_fs::create_read_stream_with_options", readStreamCarrier, [stringCarrier, readStreamOptionsCarrier]),
       target: { form: "call", path: "node_fs::create_read_stream_with_options", argModes: ["value", "value"], argConversions: [rustStringToBorrowedStrValueConversion, undefined] },
       signatureId: "node:fs::createReadStream(path,options)",
-      dispatchInputs: [nodeBackgroundInput],
+      dispatchInputs: [nodeBackgroundInput, nodeRuntimeTaskHandleInput(1)],
     },
     {
       ...fallible("createWriteStream", "node_fs::create_write_stream", writeStreamCarrier, [stringCarrier]),

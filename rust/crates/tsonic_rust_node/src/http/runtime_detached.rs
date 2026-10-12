@@ -228,6 +228,7 @@ mod detached_response_tests {
 
     #[test]
     fn detached_response_can_finish_after_request_callback_returns() {
+        let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
         let output = Rc::new(RefCell::new(Vec::new()));
         let retained = Rc::new(RefCell::new(None::<ServerResponse<TsonicError>>));
         let retained_in_handler = Rc::clone(&retained);
@@ -238,6 +239,7 @@ mod detached_response_tests {
         let roots = HttpServers::<TsonicError>::new();
         accept_runtime_transport(
             &roots.handle(),
+            readable_tasks.handle(),
             Box::new(transport),
             Callable::new(
                 move |(request, response): (

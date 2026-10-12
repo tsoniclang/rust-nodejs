@@ -68,11 +68,12 @@ impl<T: 'static, E: 'static> StreamEvent<T, E> {
     }
 
     pub(crate) fn append(&mut self, other: &mut Self) {
-        if self.listeners.is_none() {
+        if let Some(listeners) = &mut self.listeners {
+            if let Some(mut other) = other.listeners.take() {
+                Rc::make_mut(listeners).append(Rc::make_mut(&mut other));
+            }
+        } else {
             self.listeners = other.listeners.take();
-        } else if let Some(mut other) = other.listeners.take() {
-            let listeners = self.listeners.as_mut().expect("existing listener owner");
-            Rc::make_mut(listeners).append(Rc::make_mut(&mut other));
         }
     }
 
@@ -82,12 +83,10 @@ impl<T: 'static, E: 'static> StreamEvent<T, E> {
         }
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.listeners.as_ref().is_none_or(|listeners| {
-            listeners
-                .iter()
-                .all(|listener| !listener.callback.is_pending())
-        })
+    pub(crate) fn take_emission(&mut self) -> StreamEmission<T, E> {
+        StreamEmission {
+            listeners: self.listeners.take(),
+        }
     }
 }
 

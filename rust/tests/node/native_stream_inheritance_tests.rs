@@ -97,13 +97,14 @@ fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
 
 #[test]
 fn transform_and_zlib_base_projections_destroy_the_original_stream() {
-    let transform = stream::Transform::<NodeError>::new(|chunk| chunk);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let transform = stream::Transform::<NodeError>::new(readable_tasks.handle(), |chunk| chunk);
     let duplex = stream::transform_as_duplex(&transform);
     assert_eq!(duplex, duplex.destroy_chain(None).unwrap());
     assert!(stream::transform_as_readable(&transform).destroyed());
     assert!(stream::transform_as_writable(&transform).destroyed());
 
-    let codec = zlib::create_gzip::<NodeError>(None);
+    let codec = zlib::create_gzip::<NodeError>(readable_tasks.handle(), None);
     let duplex = zlib::zlib_as_duplex(&codec);
     assert_eq!(duplex, duplex.destroy_chain(None).unwrap());
     assert!(codec.closed());
@@ -113,7 +114,8 @@ fn transform_and_zlib_base_projections_destroy_the_original_stream() {
 
 #[test]
 fn projected_codec_destruction_retains_error_identity_for_shared_lifecycle_listeners() {
-    let codec = zlib::create_gzip::<NodeError>(None);
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let codec = zlib::create_gzip::<NodeError>(readable_tasks.handle(), None);
     let readable = zlib::zlib_as_readable(&codec);
     let writable = zlib::zlib_as_writable(&codec);
     let observed = Rc::new(RefCell::new(Vec::new()));

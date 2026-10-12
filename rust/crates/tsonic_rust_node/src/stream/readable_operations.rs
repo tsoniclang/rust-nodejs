@@ -30,6 +30,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     pub fn map(&self, mapper: impl Fn(Buffer) -> Buffer) -> Result<Readable<E>, E> {
         let options = self.state.borrow().options.clone();
         Ok(Readable::<E>::from_chunks_with_options(
+            self.task_handle(),
             self.drain_remaining()?.into_iter().map(mapper).collect(),
             options,
         ))
@@ -38,6 +39,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     pub fn filter(&self, predicate: impl Fn(&Buffer) -> bool) -> Result<Readable<E>, E> {
         let options = self.state.borrow().options.clone();
         Ok(Readable::<E>::from_chunks_with_options(
+            self.task_handle(),
             self.drain_remaining()?
                 .into_iter()
                 .filter(predicate)
@@ -49,6 +51,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
     pub fn flat_map(&self, mapper: impl Fn(Buffer) -> Vec<Buffer>) -> Result<Readable<E>, E> {
         let options = self.state.borrow().options.clone();
         Ok(Readable::<E>::from_chunks_with_options(
+            self.task_handle(),
             self.drain_remaining()?
                 .into_iter()
                 .flat_map(mapper)

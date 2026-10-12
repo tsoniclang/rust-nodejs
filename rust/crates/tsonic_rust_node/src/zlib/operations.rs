@@ -8,43 +8,62 @@ pub type Unzip<E = NodeError> = Zlib<E>;
 pub type BrotliCompress<E = NodeError> = Zlib<E>;
 pub type BrotliDecompress<E = NodeError> = Zlib<E>;
 
-pub fn create_deflate<E: From<NodeError> + 'static>(options: Option<ZlibOptions>) -> Deflate<E> {
-    Zlib::<E>::new(ZlibMode::Deflate, options)
+pub fn create_deflate<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: Option<ZlibOptions>,
+) -> Deflate<E> {
+    Zlib::<E>::new(tasks, ZlibMode::Deflate, options)
 }
 
-pub fn create_inflate<E: From<NodeError> + 'static>(options: Option<ZlibOptions>) -> Inflate<E> {
-    Zlib::<E>::new(ZlibMode::Inflate, options)
+pub fn create_inflate<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: Option<ZlibOptions>,
+) -> Inflate<E> {
+    Zlib::<E>::new(tasks, ZlibMode::Inflate, options)
 }
 
-pub fn create_gzip<E: From<NodeError> + 'static>(options: Option<ZlibOptions>) -> Gzip<E> {
-    Zlib::<E>::new(ZlibMode::Gzip, options)
+pub fn create_gzip<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: Option<ZlibOptions>,
+) -> Gzip<E> {
+    Zlib::<E>::new(tasks, ZlibMode::Gzip, options)
 }
 
-pub fn create_gunzip<E: From<NodeError> + 'static>(options: Option<ZlibOptions>) -> Gunzip<E> {
-    Zlib::<E>::new(ZlibMode::Gunzip, options)
+pub fn create_gunzip<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: Option<ZlibOptions>,
+) -> Gunzip<E> {
+    Zlib::<E>::new(tasks, ZlibMode::Gunzip, options)
 }
 
 pub fn create_deflate_raw<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: Option<ZlibOptions>,
 ) -> DeflateRaw<E> {
-    Zlib::<E>::new(ZlibMode::DeflateRaw, options)
+    Zlib::<E>::new(tasks, ZlibMode::DeflateRaw, options)
 }
 
 pub fn create_inflate_raw<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: Option<ZlibOptions>,
 ) -> InflateRaw<E> {
-    Zlib::<E>::new(ZlibMode::InflateRaw, options)
+    Zlib::<E>::new(tasks, ZlibMode::InflateRaw, options)
 }
 
-pub fn create_unzip<E: From<NodeError> + 'static>(options: Option<ZlibOptions>) -> Unzip<E> {
-    Zlib::<E>::new(ZlibMode::Unzip, options)
+pub fn create_unzip<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: Option<ZlibOptions>,
+) -> Unzip<E> {
+    Zlib::<E>::new(tasks, ZlibMode::Unzip, options)
 }
 
 pub fn create_brotli_compress<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: Option<BrotliOptions>,
 ) -> BrotliCompress<E> {
     let options = options.unwrap_or_default();
     Zlib::<E>::new(
+        tasks,
         ZlibMode::BrotliCompress,
         Some(ZlibOptions {
             chunk_size: options.chunk_size,
@@ -55,10 +74,12 @@ pub fn create_brotli_compress<E: From<NodeError> + 'static>(
 }
 
 pub fn create_brotli_decompress<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     options: Option<BrotliOptions>,
 ) -> BrotliDecompress<E> {
     let options = options.unwrap_or_default();
     Zlib::<E>::new(
+        tasks,
         ZlibMode::BrotliDecompress,
         Some(ZlibOptions {
             chunk_size: options.chunk_size,

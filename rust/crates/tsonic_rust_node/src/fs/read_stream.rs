@@ -67,6 +67,7 @@ pub fn read_stream_as_stream<E: From<NodeError> + 'static>(
 impl<E: From<NodeError> + 'static> ReadStream<E> {
     pub fn open(
         background: &crate::background::BackgroundTasks<E>,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         path: &str,
         options: &ReadStreamOptions,
     ) -> NodeResult<Self> {
@@ -81,10 +82,13 @@ impl<E: From<NodeError> + 'static> ReadStream<E> {
             remaining: request.remaining,
             closed: false,
         }));
-        let readable = crate::stream::Readable::<E>::open(crate::stream::StreamOptions {
-            high_water_mark: request.chunk_size,
-            ..Default::default()
-        });
+        let readable = crate::stream::Readable::<E>::open(
+            tasks,
+            crate::stream::StreamOptions {
+                high_water_mark: request.chunk_size,
+                ..Default::default()
+            },
+        );
         let stream = Self { state, readable };
         stream.bind_capacity_resume();
         stream.spawn_open(request)?;
@@ -93,6 +97,7 @@ impl<E: From<NodeError> + 'static> ReadStream<E> {
 
     pub(crate) fn from_file(
         background: &crate::background::BackgroundTasks<E>,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         path: String,
         mut file: File,
         options: &ReadStreamOptions,
@@ -110,10 +115,13 @@ impl<E: From<NodeError> + 'static> ReadStream<E> {
             remaining: request.remaining,
             closed: false,
         }));
-        let readable = crate::stream::Readable::<E>::open(crate::stream::StreamOptions {
-            high_water_mark: request.chunk_size,
-            ..Default::default()
-        });
+        let readable = crate::stream::Readable::<E>::open(
+            tasks,
+            crate::stream::StreamOptions {
+                high_water_mark: request.chunk_size,
+                ..Default::default()
+            },
+        );
         let stream = Self { state, readable };
         stream.bind_capacity_resume();
         schedule_read(&stream.state, &stream.readable)?;
@@ -361,7 +369,7 @@ fn complete_read<E: From<NodeError> + 'static>(
     readable.buffer_input(
         (!bytes.is_empty()).then(|| Buffer::from_bytes(bytes)),
         complete,
-    );
+    )?;
     if !complete {
         if let Err(error) = schedule_read(state, readable) {
             readable.fail_input(error.clone())?;

@@ -7,7 +7,13 @@ use super::IncomingMessage;
 
 #[test]
 fn immutable_metadata_borrows_keep_the_original_owner_during_lifecycle_mutation() {
-    let message = IncomingMessage::<super::NodeError>::new("POST", "/resource", Vec::new());
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let message = IncomingMessage::<super::NodeError>::new(
+        readable_tasks.handle(),
+        "POST",
+        "/resource",
+        Vec::new(),
+    );
     let alias = message.clone();
     let method: &str = message.method().unwrap();
     let url: &str = message.url().unwrap();
@@ -44,7 +50,9 @@ fn immutable_metadata_borrows_keep_the_original_owner_during_lifecycle_mutation(
 
 #[test]
 fn response_metadata_borrows_preserve_the_exact_optional_status_pair() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let message = IncomingMessage::<super::NodeError>::from_client_response(
+        readable_tasks.handle(),
         "https://example.test/".to_owned(),
         u16::MAX,
         "Exact response".to_owned(),
@@ -71,13 +79,14 @@ fn response_metadata_borrows_preserve_the_exact_optional_status_pair() {
 
 #[test]
 fn aborted_listener_retention_removal_and_single_fire() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let message = IncomingMessage::streaming(
+        readable_tasks.handle(),
         "POST".to_string(),
         "/upload".to_string(),
         "1.1".to_string(),
         Vec::new(),
-        None,
-        None,
+        crate::net::Socket::from_http_endpoints(None, None),
         1024,
     )
     .unwrap();
@@ -115,13 +124,14 @@ impl From<super::NodeError> for Failure {
 
 #[test]
 fn abort_failure_leaves_physical_cleanup_and_native_terminal_error_intact() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let message = IncomingMessage::<Failure>::streaming(
+        readable_tasks.handle(),
         "POST".to_string(),
         "/upload".to_string(),
         "1.1".to_string(),
         Vec::new(),
-        None,
-        None,
+        crate::net::Socket::from_http_endpoints(None, None),
         1024,
     )
     .unwrap();

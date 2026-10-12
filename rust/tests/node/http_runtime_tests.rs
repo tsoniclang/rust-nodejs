@@ -4,11 +4,12 @@ use std::net::TcpStream;
 use std::rc::Rc;
 use std::thread;
 
-use tsonic_rust_node::{buffer::Buffer, http, run_event_loop};
+use tsonic_rust_node::{buffer::Buffer, http};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[test]
 fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let event_thread = thread::current().id();
     let request_on_event_thread = Rc::new(Cell::new(false));
     let listen_on_event_thread = Rc::new(Cell::new(false));
@@ -20,6 +21,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -81,7 +83,11 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
         response
     });
 
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     let response = client.join().unwrap();
     let header_end = response
         .windows(4)
@@ -101,6 +107,7 @@ fn translated_http_server_runs_callbacks_on_the_event_loop_thread() {
 
 #[test]
 fn translated_http_server_propagates_fallible_callback_errors() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let original = tsonic_rust_runtime::JsError::error("request callback failed");
     let retained = original.clone();
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
@@ -108,6 +115,7 @@ fn translated_http_server_propagates_fallible_callback_errors() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(_request, _response): (
                     http::IncomingMessage<TsonicError>,
@@ -135,11 +143,19 @@ fn translated_http_server_propagates_fallible_callback_errors() {
         response
     });
 
-    let error = run_event_loop().unwrap_err();
+    let error = tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap_err();
     assert!(error.source_error().has_same_identity(&original));
     assert!(error.to_string().contains("request callback failed"));
     assert!(client.join().unwrap().is_empty());
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
 }
 
 #[test]
@@ -159,6 +175,7 @@ fn translated_http_response_supports_text_and_empty_bodies() {
 
 #[test]
 fn chunked_request_streams_fragmented_binary_body_before_response() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let received = Rc::new(RefCell::new(Vec::new()));
     let received_in_handler = Rc::clone(&received);
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
@@ -166,6 +183,7 @@ fn chunked_request_streams_fragmented_binary_body_before_response() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -219,7 +237,11 @@ fn chunked_request_streams_fragmented_binary_body_before_response() {
         response
     });
 
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     let response = client.join().unwrap();
     assert!(response.starts_with(b"HTTP/1.1 200 OK\r\n"));
     assert_eq!(response_body(&response), &[0, 255, 1, 2]);
@@ -228,6 +250,7 @@ fn chunked_request_streams_fragmented_binary_body_before_response() {
 
 #[test]
 fn request_streams_beyond_the_previous_transport_size_limit() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     const BODY_LENGTH: usize = 64 * 1024 * 1024 + 1;
     let received = Rc::new(Cell::new(0usize));
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
@@ -236,6 +259,7 @@ fn request_streams_beyond_the_previous_transport_size_limit() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -299,7 +323,11 @@ fn request_streams_beyond_the_previous_transport_size_limit() {
         response
     });
 
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     let response = client.join().unwrap();
     assert_eq!(received.get(), BODY_LENGTH);
     assert_eq!(response_body(&response), BODY_LENGTH.to_string().as_bytes());
@@ -307,6 +335,7 @@ fn request_streams_beyond_the_previous_transport_size_limit() {
 
 #[test]
 fn pipelined_requests_keep_one_connection_until_the_final_response() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let requests = Rc::new(Cell::new(0));
     let requests_in_handler = Rc::clone(&requests);
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
@@ -314,6 +343,7 @@ fn pipelined_requests_keep_one_connection_until_the_final_response() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -355,7 +385,11 @@ fn pipelined_requests_keep_one_connection_until_the_final_response() {
         response
     });
 
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     let response = String::from_utf8(client.join().unwrap()).unwrap();
     assert_eq!(requests.get(), 2);
     assert_eq!(response.matches("HTTP/1.1 200 OK\r\n").count(), 2);
@@ -365,6 +399,7 @@ fn pipelined_requests_keep_one_connection_until_the_final_response() {
 
 #[test]
 fn response_pressure_tracks_native_queue_and_drains_once() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let drain_count = Rc::new(Cell::new(0));
     let drain_in_handler = Rc::clone(&drain_count);
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
@@ -372,6 +407,7 @@ fn response_pressure_tracks_native_queue_and_drains_once() {
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(_request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -417,7 +453,11 @@ fn response_pressure_tracks_native_queue_and_drains_once() {
         response
     });
 
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     let response = client.join().unwrap();
     assert_eq!(response_body(&response), vec![b'x'; 70_000]);
     assert_eq!(drain_count.get(), 1);
@@ -439,11 +479,13 @@ fn explicit_response_materialization_preserves_native_bytes() {
 fn round_trip_single_response(
     finish: impl Fn(http::ServerResponse<TsonicError>) + 'static,
 ) -> Vec<u8> {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let server_slot = Rc::new(RefCell::new(None::<http::ServerHandle<TsonicError>>));
     let callback_server = Rc::clone(&server_slot);
     let server = http::with_default_http(|roots| {
         http::create_server_callable(
             roots,
+            readable_tasks.handle(),
             Callable::new(
                 move |(_request, response): (
                     http::IncomingMessage<TsonicError>,
@@ -471,7 +513,11 @@ fn round_trip_single_response(
         stream.read_to_end(&mut response).unwrap();
         response
     });
-    run_event_loop().unwrap();
+    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+        &readable_tasks,
+        &tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    ))
+    .unwrap();
     client.join().unwrap()
 }
 

@@ -55,8 +55,9 @@ fn finish_failure_commits_physical_closure_and_preserves_later_close_delivery() 
 
 #[test]
 fn end_failure_commits_physical_closure_without_repeating_end_callbacks() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let original = Rc::new(Cell::new(9_007_199_254_740_993));
-    let readable = Readable::<Failure>::from_chunks(Vec::new());
+    let readable = Readable::<Failure>::from_chunks(readable_tasks.handle(), Vec::new());
     let closes = Rc::new(Cell::new(0));
     assert!(readable
         .once_end("end", &failing_callback(&original))
@@ -64,10 +65,13 @@ fn end_failure_commits_physical_closure_without_repeating_end_callbacks() {
     assert!(readable
         .once_close("close", &close_counter(&closes))
         .is_ok());
-    assert_original(readable.read().map(|_| ()), &original);
+    assert!(matches!(readable.read(), Ok(None)));
+    assert!(!readable.closed());
+    assert_original(readable_tasks.poll().map(|_| ()), &original);
     assert!(readable.closed());
     assert_eq!(closes.get(), 0);
     assert!(matches!(readable.read(), Ok(None)));
+    assert!(readable_tasks.poll().is_ok());
     assert_eq!(closes.get(), 1);
     assert!(matches!(readable.read(), Ok(None)));
     assert_eq!(closes.get(), 1);
@@ -75,7 +79,8 @@ fn end_failure_commits_physical_closure_without_repeating_end_callbacks() {
 
 #[test]
 fn first_data_failure_preserves_the_uninvoked_once_registration() {
-    let readable = Readable::<Failure>::default();
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let readable = Readable::<Failure>::new(readable_tasks.handle());
     let original = Rc::new(Cell::new(7));
     let captured = Rc::clone(&original);
     let first =
@@ -89,24 +94,25 @@ fn first_data_failure_preserves_the_uninvoked_once_registration() {
     });
     assert!(readable.once_data("data", &first).is_ok());
     assert!(readable.once_data("data", &second).is_ok());
-    assert_original(
-        readable.push(Buffer::from_bytes(vec![1])).map(|_| ()),
-        &original,
-    );
+    assert!(readable.push(Buffer::from_bytes(vec![1])).is_ok());
+    assert_original(readable_tasks.poll().map(|_| ()), &original);
     assert_eq!(calls.get(), 0);
     assert!(readable.push(Buffer::from_bytes(vec![2, 3])).is_ok());
+    assert!(readable_tasks.poll().is_ok());
     assert_eq!(calls.get(), 1);
     assert!(readable.push(Buffer::from_bytes(vec![4])).is_ok());
+    assert!(readable_tasks.poll().is_ok());
     assert_eq!(calls.get(), 1);
     assert_eq!(
         readable.read().ok().flatten().map(|chunk| chunk.len()),
-        Some(1)
+        None
     );
 }
 
 #[test]
 fn stream_snapshots_share_direct_callable_storage_without_an_emission_allocation() {
-    let readable = Readable::<Failure>::default();
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let readable = Readable::<Failure>::new(readable_tasks.handle());
     let callback = Callable::new(|(_chunk,): (Buffer,)| Ok::<(), Failure>(()));
     assert!(readable.on_data("data", &callback).is_ok());
     let state = readable.state.borrow();
@@ -126,7 +132,8 @@ fn stream_snapshots_share_direct_callable_storage_without_an_emission_allocation
 
 #[test]
 fn corked_writes_keep_later_native_chunks_after_the_first_source_failure() {
-    let transform = Transform::<Failure>::new(|chunk| chunk);
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let transform = Transform::<Failure>::new(readable_tasks.handle(), |chunk| chunk);
     let readable = transform.readable_handle();
     let writable = transform.writable_handle();
     let original = Rc::new(Cell::new(11));
@@ -137,14 +144,18 @@ fn corked_writes_keep_later_native_chunks_after_the_first_source_failure() {
     writable.cork();
     assert!(writable.write(Buffer::from_bytes(vec![1])).is_ok());
     assert!(writable.write(Buffer::from_bytes(vec![2])).is_ok());
-    assert_original(writable.uncork(), &original);
-    assert_eq!(writable.state.borrow().corked_chunks.len(), 1);
+    assert!(writable.uncork().is_ok());
+    assert_original(readable_tasks.poll().map(|_| ()), &original);
+    assert_eq!(readable.readable_length(), 1);
+    assert_eq!(writable.state.borrow().corked_chunks.len(), 0);
     assert!(writable.uncork().is_ok());
     assert_eq!(
         readable.read().ok().flatten().map(|chunk| chunk.len()),
         Some(1)
     );
     assert!(writable.end().is_ok());
+    assert!(!writable.closed());
+    assert!(readable_tasks.poll().is_ok());
     assert!(writable.closed());
 }
 
@@ -178,7 +189,8 @@ impl Drop for CapacityDrop {
 
 #[test]
 fn replacing_a_native_capacity_owner_releases_its_capture_outside_stream_borrows() {
-    let readable = Readable::<Failure>::default();
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+    let readable = Readable::<Failure>::new(readable_tasks.handle());
     let calls = Rc::new(Cell::new(0));
     let owner = CapacityDrop {
         readable: readable.downgrade(),

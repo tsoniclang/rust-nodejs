@@ -374,6 +374,102 @@ fn io_error(error: std::io::Error) -> NodeError {
     NodeError::new("ERR_NODE_READINESS", error.to_string())
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) struct Stdin {
+    file: std::fs::File,
+    registration: Option<Registration>,
+    scratch: Vec<u8>,
+    lease: Option<tsonic_rust_runtime::dispatch_queue::TaskReservation>,
+    pending: Option<NodeResult<Vec<u8>>>,
+}
+
+#[cfg(target_os = "linux")]
+impl Stdin {
+    pub(crate) fn open() -> NodeResult<Self> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC | libc::O_NOCTTY)
+            .open("/dev/stdin")
+            .map_err(io_error)?;
+        Ok(Self {
+            file,
+            registration: None,
+            scratch: Vec::new(),
+            lease: None,
+            pending: None,
+        })
+    }
+
+    pub(crate) fn retain_lease(
+        &mut self,
+        lease: tsonic_rust_runtime::dispatch_queue::TaskReservation,
+    ) {
+        self.lease = Some(lease);
+    }
+
+    pub(crate) fn prepare(&mut self, active: bool, capacity: usize) -> NodeResult<()> {
+        use std::os::fd::AsRawFd;
+        let descriptor = self.file.as_raw_fd();
+        let mut source = mio::unix::SourceFd(&descriptor);
+        match (active, &self.registration) {
+            (true, None) => {
+                if self.pending.is_some() {
+                    return Ok(());
+                }
+                match self.read(capacity) {
+                    Ok(Some(bytes)) => self.pending = Some(Ok(bytes)),
+                    Err(error) => self.pending = Some(Err(error)),
+                    Ok(None) => {
+                        self.registration = Some(register(&mut source, mio::Interest::READABLE)?)
+                    }
+                }
+            }
+            (false, Some(registration)) => {
+                registration
+                    .registry
+                    .deregister(&mut source)
+                    .map_err(io_error)?;
+                self.registration = None;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    pub(crate) fn read(&mut self, capacity: usize) -> NodeResult<Option<Vec<u8>>> {
+        use std::io::Read;
+        if let Some(result) = self.pending.take() {
+            return result.map(Some);
+        }
+        self.scratch.resize(capacity.max(1), 0);
+        loop {
+            match self.file.read(&mut self.scratch) {
+                Ok(length) => {
+                    self.scratch.truncate(length);
+                    return Ok(Some(std::mem::take(&mut self.scratch)));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(io_error(error)),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for Stdin {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        if let Some(registration) = &self.registration {
+            let descriptor = self.file.as_raw_fd();
+            let _ = registration
+                .registry
+                .deregister(&mut mio::unix::SourceFd(&descriptor));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};

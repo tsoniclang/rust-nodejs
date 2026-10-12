@@ -165,9 +165,10 @@ pub fn readable_to_web<E: From<crate::NodeError> + 'static>(
 }
 
 pub fn readable_from_web<E: From<crate::NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
     stream: ReadableStream,
 ) -> Readable<E> {
-    Readable::from_chunks(stream.chunks)
+    Readable::from_chunks(tasks, stream.chunks)
 }
 
 pub fn writable_to_web<E: From<crate::NodeError> + 'static>(

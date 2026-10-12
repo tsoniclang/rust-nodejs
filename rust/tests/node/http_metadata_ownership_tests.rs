@@ -8,7 +8,13 @@ mod allocation_counts;
 
 #[test]
 fn repeated_incoming_metadata_queries_allocate_nothing_and_borrow_the_same_data() {
-    let message = IncomingMessage::<NodeError>::new("POST", "/native-resource", Vec::new());
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let message = IncomingMessage::<NodeError>::new(
+        readable_tasks.handle(),
+        "POST",
+        "/native-resource",
+        Vec::new(),
+    );
     let alias = message.clone();
     let method = message.method().unwrap();
     let url = message.url().unwrap();

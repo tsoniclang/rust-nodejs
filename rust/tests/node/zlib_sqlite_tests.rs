@@ -8,6 +8,7 @@ use tsonic_rust_runtime::Callable;
 
 #[test]
 fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let input = Buffer::from_string("source ABI payload", Some("utf8")).unwrap();
     let options = tsonic_rust_node::zlib::SourceZlibOptions {
         level: Some(tsonic_rust_node::zlib::constants::Z_BEST_SPEED),
@@ -36,12 +37,15 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     );
 
     let mut gzip_stream =
-        tsonic_rust_node::zlib::create_gzip_source::<tsonic_rust_node::NodeError>(options.clone())
-            .unwrap();
+        tsonic_rust_node::zlib::create_gzip_source::<tsonic_rust_node::NodeError>(
+            readable_tasks.handle(),
+            options.clone(),
+        )
+        .unwrap();
     let stream_gzip = gzip_stream.process(&input).unwrap();
     let mut gunzip_stream = tsonic_rust_node::zlib::create_gunzip_source::<
         tsonic_rust_node::NodeError,
-    >(options.clone())
+    >(readable_tasks.handle(), options.clone())
     .unwrap();
     assert_eq!(
         gunzip_stream
@@ -53,12 +57,12 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     );
     let mut deflate_stream = tsonic_rust_node::zlib::create_deflate_source::<
         tsonic_rust_node::NodeError,
-    >(options.clone())
+    >(readable_tasks.handle(), options.clone())
     .unwrap();
     let stream_deflate = deflate_stream.process(&input).unwrap();
     let mut inflate_stream = tsonic_rust_node::zlib::create_inflate_source::<
         tsonic_rust_node::NodeError,
-    >(options.clone())
+    >(readable_tasks.handle(), options.clone())
     .unwrap();
     assert_eq!(
         inflate_stream
@@ -70,12 +74,12 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
     );
     let mut deflate_raw_stream = tsonic_rust_node::zlib::create_deflate_raw_source::<
         tsonic_rust_node::NodeError,
-    >(options.clone())
+    >(readable_tasks.handle(), options.clone())
     .unwrap();
     let stream_raw = deflate_raw_stream.process(&input).unwrap();
     let mut inflate_raw_stream = tsonic_rust_node::zlib::create_inflate_raw_source::<
         tsonic_rust_node::NodeError,
-    >(options.clone())
+    >(readable_tasks.handle(), options.clone())
     .unwrap();
     assert_eq!(
         inflate_raw_stream
@@ -304,6 +308,7 @@ fn zlib_brotli_round_trips_buffers() {
 
 #[test]
 fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let input = Buffer::from_string("class payload", Some("utf8")).unwrap();
     let options = tsonic_rust_node::zlib::ZlibOptions {
         level: tsonic_rust_node::zlib::constants::Z_BEST_SPEED,
@@ -347,8 +352,10 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         ..Default::default()
     };
     assert_eq!(brotli_options.chunk_size, 4096);
-    let mut gzip =
-        tsonic_rust_node::zlib::create_gzip::<tsonic_rust_node::NodeError>(Some(options));
+    let mut gzip = tsonic_rust_node::zlib::create_gzip::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        Some(options),
+    );
     let output = gzip.process(&input).unwrap();
     assert_eq!(gzip.bytes_written(), input.len());
     assert!(!gzip.closed());
@@ -367,9 +374,15 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
     assert!(closed.get());
     assert!(gzip.closed());
 
-    let mut deflate = tsonic_rust_node::zlib::create_deflate::<tsonic_rust_node::NodeError>(None);
+    let mut deflate = tsonic_rust_node::zlib::create_deflate::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     let deflated = deflate.process(&input).unwrap();
-    let mut inflate = tsonic_rust_node::zlib::create_inflate::<tsonic_rust_node::NodeError>(None);
+    let mut inflate = tsonic_rust_node::zlib::create_inflate::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     assert_eq!(
         inflate
             .process(&deflated)
@@ -379,11 +392,15 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    let mut deflate_raw =
-        tsonic_rust_node::zlib::create_deflate_raw::<tsonic_rust_node::NodeError>(None);
+    let mut deflate_raw = tsonic_rust_node::zlib::create_deflate_raw::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     let raw = deflate_raw.process(&input).unwrap();
-    let mut inflate_raw =
-        tsonic_rust_node::zlib::create_inflate_raw::<tsonic_rust_node::NodeError>(None);
+    let mut inflate_raw = tsonic_rust_node::zlib::create_inflate_raw::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     assert_eq!(
         inflate_raw
             .process(&raw)
@@ -393,7 +410,10 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
         "class payload"
     );
 
-    let mut gunzip = tsonic_rust_node::zlib::create_gunzip::<tsonic_rust_node::NodeError>(None);
+    let mut gunzip = tsonic_rust_node::zlib::create_gunzip::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     assert_eq!(
         gunzip
             .process(&output)
@@ -402,7 +422,10 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
             .unwrap(),
         "class payload"
     );
-    let mut unzip = tsonic_rust_node::zlib::create_unzip::<tsonic_rust_node::NodeError>(None);
+    let mut unzip = tsonic_rust_node::zlib::create_unzip::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
+        None,
+    );
     assert_eq!(
         unzip
             .process(&output)
@@ -413,12 +436,13 @@ fn zlib_options_constants_and_class_carriers_are_closed_shapes() {
     );
 
     let mut brotli = tsonic_rust_node::zlib::create_brotli_compress::<tsonic_rust_node::NodeError>(
+        readable_tasks.handle(),
         Some(Default::default()),
     );
     let brotli_output = brotli.process(&input).unwrap();
     let mut brotli_decode = tsonic_rust_node::zlib::create_brotli_decompress::<
         tsonic_rust_node::NodeError,
-    >(Some(Default::default()));
+    >(readable_tasks.handle(), Some(Default::default()));
     assert_eq!(
         brotli_decode
             .process(&brotli_output)

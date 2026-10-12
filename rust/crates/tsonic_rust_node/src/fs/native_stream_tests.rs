@@ -79,10 +79,12 @@ impl From<NodeError> for Failure {
 
 #[test]
 fn readable_alias_retains_the_native_file_without_a_capacity_reference_cycle() {
+    let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let fixture = Fixture::new();
     let background = BackgroundTasks::<NodeError>::new();
     let stream = ReadStream::from_file(
         &background,
+        readable_tasks.handle(),
         fixture.text(),
         File::open(&fixture.0).unwrap(),
         &ReadStreamOptions::default(),

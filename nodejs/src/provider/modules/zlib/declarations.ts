@@ -9,7 +9,7 @@ import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
 import { nodeErrorType } from "../util/node-error.js";
-import { nodeBackgroundInput } from "../../model/dispatch.js";
+import { nodeBackgroundInput, nodeRuntimeTaskHandleInput } from "../../model/dispatch.js";
 
 const moduleSpecifier = "node:zlib";
 const optionsId = `${moduleSpecifier}::ZlibOptions`;
@@ -257,6 +257,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${basePath}`, trailingArguments: [noneArgument] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [],
       },
       {
@@ -265,6 +266,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["value"] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [zlibOptionsCarrier],
         ...providerNativeFallibility,
       },
@@ -278,6 +280,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${basePath}`, trailingArguments: [noneArgument] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [],
       },
       {
@@ -286,6 +289,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["value"] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [brotliOptionsCarrier],
         ...providerNativeFallibility,
       },

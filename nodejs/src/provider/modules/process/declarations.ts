@@ -1,3 +1,4 @@
+import { nodeStdinInputs } from "../../model/dispatch.js";
 import { processSignalMembers, processSignalRows, processCarrier } from "./signals.js";
 import { processArchitectureType, processPlatformType, processMetricExports, processMetricMembers, processMetricRows } from "./metrics.js";
 import { nodeProgramErrorArguments, uint32Carrier, uint64Carrier, boolCarrier, float64Carrier, int32Carrier, int64Carrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
@@ -214,7 +215,7 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: `${m}::env`, operationKind: "property", target: { form: "call", path: "node_process::environment" }, resultCarrier: processEnvCarrier },
     { exportId: `${m}::stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
     { exportId: `${m}::stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
-    { exportId: `${m}::stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier },
+    { exportId: `${m}::stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, dispatchInputs: nodeStdinInputs, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier, ...providerNativeFallibility },
     { exportId: `${m}::execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: `${m}::exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: `${m}::exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },
@@ -248,7 +249,7 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: defaultId, memberId: `${defaultId}.env`, operationKind: "property", target: { form: "call", path: "node_process::environment" }, resultCarrier: processEnvCarrier },
     { exportId: defaultId, memberId: `${defaultId}.stdout`, operationKind: "property", target: { form: "call", path: "node_process::stdout" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
     { exportId: defaultId, memberId: `${defaultId}.stderr`, operationKind: "property", target: { form: "call", path: "node_process::stderr" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: writableCarrier },
-    { exportId: defaultId, memberId: `${defaultId}.stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier },
+    { exportId: defaultId, memberId: `${defaultId}.stdin`, operationKind: "property", target: { form: "call", path: "node_process::stdin" }, dispatchInputs: nodeStdinInputs, targetGenericArguments: nodeProgramErrorArguments, resultCarrier: readableCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.execPath`, operationKind: "property", target: { form: "call", path: "node_process::exec_path" }, resultCarrier: stringCarrier, ...providerNativeFallibility },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property", target: { form: "call", path: "node_process::exit_code" }, resultCarrier: rustOptionTargetType(int32Carrier) },
     { exportId: defaultId, memberId: `${defaultId}.exitCode`, operationKind: "property-set", target: { form: "call", path: "node_process::set_exit_code" }, resultCarrier: unitCarrier, parameterCarriers: [rustOptionTargetType(int32Carrier)] },

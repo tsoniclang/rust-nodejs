@@ -21,6 +21,7 @@ fn path_matches_glob_handles_common_star_and_question_patterns() {
 
 #[test]
 fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
@@ -90,7 +91,8 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     fs::unlink_callback(&renamed_text, |result| unlink_result = Some(result));
     unlink_result.unwrap().unwrap();
 
-    let readable = fs::create_read_stream(&background, &file_text).unwrap();
+    let readable =
+        fs::create_read_stream(&background, readable_tasks.handle(), &file_text).unwrap();
     tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
         &background,
         tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),

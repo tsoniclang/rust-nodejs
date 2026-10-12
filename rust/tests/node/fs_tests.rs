@@ -779,6 +779,7 @@ fn fs_glob_and_watchers_are_closed_polling_apis() {
 
 #[test]
 fn fs_stream_option_carriers_are_closed_shapes() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = temp_root("streams");
@@ -797,6 +798,7 @@ fn fs_stream_option_carriers_are_closed_shapes() {
 
     let readable = fs::create_read_stream_with_options(
         &background,
+        readable_tasks.handle(),
         &file_text,
         fs::ReadStreamOptions {
             start: Some(1),

@@ -21,6 +21,7 @@ mod native_stream_tests;
 mod numeric_bounds {
     #[test]
     fn stream_integer_bounds_do_not_saturate() {
+        let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
         let background = crate::background::BackgroundTasks::<crate::NodeError>::new();
         let source = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
         for options in [
@@ -41,6 +42,7 @@ mod numeric_bounds {
         ] {
             let result = super::ReadStream::from_file(
                 &background,
+                readable_tasks.handle(),
                 source.to_owned(),
                 std::fs::File::open(source).unwrap(),
                 &options,
@@ -57,6 +59,7 @@ mod numeric_bounds {
         };
         let result = super::ReadStream::from_file(
             &background,
+            readable_tasks.handle(),
             source.to_owned(),
             std::fs::File::open(source).unwrap(),
             &options,

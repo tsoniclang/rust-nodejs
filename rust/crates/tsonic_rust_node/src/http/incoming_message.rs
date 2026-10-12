@@ -57,11 +57,16 @@ impl<E: From<NodeError> + 'static> std::fmt::Debug for IncomingMessage<E> {
 }
 
 impl<E: From<NodeError> + 'static> IncomingMessage<E> {
-    pub fn new(method: impl Into<String>, url: impl Into<String>, body: Vec<u8>) -> Self {
+    pub fn new(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        method: impl Into<String>,
+        url: impl Into<String>,
+        body: Vec<u8>,
+    ) -> Self {
         let readable = if body.is_empty() {
-            Readable::<E>::from_chunks(Vec::new())
+            Readable::<E>::from_chunks(tasks, Vec::new())
         } else {
-            Readable::<E>::from_chunks(vec![Buffer::from_bytes(body)])
+            Readable::<E>::from_chunks(tasks, vec![Buffer::from_bytes(body)])
         };
         Self::from_parts(
             IncomingMessageMetadata {
@@ -78,19 +83,22 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     }
 
     pub(crate) fn streaming(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         method: String,
         url: String,
         http_version: String,
         header_pairs: Vec<(String, String)>,
-        local_address: Option<std::net::SocketAddr>,
-        remote_address: Option<std::net::SocketAddr>,
+        socket: net::Socket,
         high_water_mark: usize,
     ) -> NodeResult<Self> {
         let headers = IncomingHttpHeaders::from_pairs(header_pairs)?;
-        let readable = Readable::<E>::open(crate::stream::StreamOptions {
-            high_water_mark,
-            ..Default::default()
-        });
+        let readable = Readable::<E>::open(
+            tasks,
+            crate::stream::StreamOptions {
+                high_water_mark,
+                ..Default::default()
+            },
+        );
         Ok(Self::from_parts(
             IncomingMessageMetadata {
                 method: Some(method),
@@ -99,13 +107,14 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
                 headers,
                 status: None,
             },
-            net::Socket::from_http_endpoints(local_address, remote_address),
+            socket,
             readable,
             false,
         ))
     }
 
     pub(crate) fn from_client_response(
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         url: String,
         status_code: u16,
         status_message: String,
@@ -115,9 +124,9 @@ impl<E: From<NodeError> + 'static> IncomingMessage<E> {
     ) -> NodeResult<Self> {
         let headers = IncomingHttpHeaders::from_pairs(header_pairs)?;
         let readable = if body.is_empty() {
-            Readable::<E>::from_chunks(Vec::new())
+            Readable::<E>::from_chunks(tasks, Vec::new())
         } else {
-            Readable::<E>::from_chunks(vec![Buffer::from_bytes(body)])
+            Readable::<E>::from_chunks(tasks, vec![Buffer::from_bytes(body)])
         };
         Ok(Self::from_parts(
             IncomingMessageMetadata {
