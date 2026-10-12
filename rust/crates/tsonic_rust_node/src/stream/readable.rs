@@ -134,7 +134,10 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         let readable = Self::open(tasks, options);
         {
             let mut state = readable.state.borrow_mut();
-            state.queued_bytes = chunks.iter().map(Buffer::len).sum();
+            state.queued_bytes = chunks
+                .iter()
+                .try_fold(0usize, |total, chunk| total.checked_add(chunk.len()))
+                .expect("native readable byte accounting overflow");
             state.chunks = chunks.into();
             state.producer_ended = true;
         }

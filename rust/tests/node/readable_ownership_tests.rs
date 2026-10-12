@@ -381,3 +381,23 @@ fn terminated_streams_do_not_retain_late_event_captures_or_replay_them() {
     tasks.poll().unwrap();
     assert!(weak.upgrade().is_none());
 }
+
+#[test]
+fn destroyed_streams_release_late_end_listener_captures_without_emitting_end() {
+    let tasks = RuntimeTasks::<NodeError>::new();
+    let stream = Readable::new(tasks.handle());
+    stream.destroy().unwrap();
+    let token = Rc::new(());
+    let weak = Rc::downgrade(&token);
+    let owner = stream.clone();
+    let listener = Callable::new(move |()| {
+        let _capture = (&owner, &token);
+        panic!("destroyed stream emitted end");
+    });
+    stream.on_end("end", &listener).unwrap();
+    stream.once_end("end", &listener).unwrap();
+    drop(listener);
+    tasks.poll().unwrap();
+    assert!(!stream.readable_ended());
+    assert!(weak.upgrade().is_none());
+}

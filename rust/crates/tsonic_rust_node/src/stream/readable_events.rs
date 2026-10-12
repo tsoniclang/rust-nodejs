@@ -183,7 +183,7 @@ impl<E: From<NodeError> + 'static> Readable<E> {
         {
             let mut state = self.state.borrow_mut();
             if expected == "end" {
-                if !state.end_emitted {
+                if !state.destroyed && !state.end_emitted {
                     state.end_event.add(entry);
                 }
             } else {
