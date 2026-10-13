@@ -85,6 +85,10 @@ name = "stdin_ownership_tests"
 path = "../../tests/node/stdin_ownership_tests.rs"
 
 [[test]]
+name = "zlib_ownership_tests"
+path = "../../tests/node/zlib_ownership_tests.rs"
+
+[[test]]
 name = "abi_ledger_tests"
 path = "../../tests/abi_ledger_tests.rs"
 

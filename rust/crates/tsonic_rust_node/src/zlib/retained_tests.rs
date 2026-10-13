@@ -18,7 +18,10 @@ fn native_codec_projections_retain_the_original_codec_without_a_reference_cycle(
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     for keep_writable in [false, true] {
         let codec = Zlib::<NodeError>::new(readable_tasks.handle(), ZlibMode::Gzip, None);
-        let owner = Rc::downgrade(&codec.state);
+        let ZlibStorage::Gzip(state) = &codec.state else {
+            panic!("gzip must retain its concrete codec owner");
+        };
+        let owner = Rc::downgrade(state);
         let readable = zlib_as_readable(&codec);
         let writable = zlib_as_writable(&codec);
         let readable_owner = readable.downgrade();
@@ -33,7 +36,9 @@ fn native_codec_projections_retain_the_original_codec_without_a_reference_cycle(
             drop(writable);
             assert!(owner.upgrade().is_some());
             readable.destroy().unwrap();
-            assert!(owner.upgrade().is_none_or(|state| state.borrow().closed));
+            assert!(owner
+                .upgrade()
+                .is_none_or(|state| state.borrow().data.closed));
             drop(readable);
         }
         assert!(readable_owner.upgrade().is_none());

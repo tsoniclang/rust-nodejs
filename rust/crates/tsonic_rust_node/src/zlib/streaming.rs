@@ -14,18 +14,19 @@ pub enum ZlibMode {
 const MAX_PENDING_ZLIB_OUTPUT: usize = 16 * 1024 * 1024;
 
 pub struct Zlib<E: 'static = NodeError> {
-    state: std::rc::Rc<std::cell::RefCell<ZlibState<E>>>,
+    state: ZlibStorage<E>,
     transform: crate::stream::Transform<E>,
 }
 
-struct ZlibState<E: 'static> {
+struct ZlibStateData {
     mode: ZlibMode,
     bytes_written: usize,
     closed: bool,
     options: ZlibOptions,
     output: std::rc::Rc<std::cell::RefCell<ZlibOutput>>,
-    codec: Option<StreamingCodec<E>>,
 }
+
+include!("streaming_codec.rs");
 
 struct ZlibOutput {
     pending: std::collections::VecDeque<Buffer>,
@@ -107,23 +108,14 @@ impl<E: 'static> Write for ZlibSink<E> {
     }
 }
 
-enum StreamingCodec<E: 'static> {
-    Deflate(ZlibWriteEncoder<ZlibSink<E>>),
-    Inflate(ZlibWriteDecoder<ZlibSink<E>>),
-    Gzip(GzWriteEncoder<ZlibSink<E>>),
-    Gunzip(GzWriteDecoder<ZlibSink<E>>),
-    DeflateRaw(DeflateWriteEncoder<ZlibSink<E>>),
-    InflateRaw(DeflateWriteDecoder<ZlibSink<E>>),
-    BrotliCompress(brotli::CompressorWriter<ZlibSink<E>>),
-    BrotliDecompress(brotli::DecompressorWriter<ZlibSink<E>>),
-}
-
-struct ZlibBackend<E: 'static> {
-    state: std::rc::Rc<std::cell::RefCell<ZlibState<E>>>,
+struct ZlibBackend<E: 'static, Codec> {
+    state: std::rc::Rc<std::cell::RefCell<ZlibState<Codec>>>,
     readable: crate::stream::Readable<E>,
 }
 
-impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for ZlibBackend<E> {
+impl<E: From<NodeError> + 'static, Codec: StreamingCodec + 'static>
+    crate::stream::WritableBackend<E> for ZlibBackend<E, Codec>
+{
     fn bind(&self, owner: crate::stream::WeakWritable<E>) {
         let state = std::rc::Rc::clone(&self.state);
         let readable = self.readable.downgrade();
@@ -140,61 +132,25 @@ impl<E: From<NodeError> + 'static> crate::stream::WritableBackend<E> for ZlibBac
 
     fn write(&self, input: Buffer) -> crate::stream::StreamBackendResult<(), E> {
         let state = &self.state;
-        {
-            let mut state = state.borrow_mut();
-            if state.closed {
-                return Err(NodeError::new(
-                    "ERR_STREAM_WRITE_AFTER_END",
-                    "compression stream is closed",
-                )
-                .into());
-            }
-            state.bytes_written = state.bytes_written.saturating_add(input.len());
-            let codec = state
-                .codec
-                .as_mut()
-                .ok_or_else(unsupported_streaming_codec)?;
-            input
-                .with_bytes(|bytes| codec.write_all(bytes))
-                .map_err(map_zlib_error)?;
-        }
+        write_codec_state(state, &input)?;
         publish_codec_output(state, &self.readable)
             .map_err(crate::stream::StreamBackendFailure::Callback)
     }
 
     fn finish(&self) -> crate::stream::StreamBackendResult<bool, E> {
         let state = &self.state;
-        let codec = {
-            let mut state = state.borrow_mut();
-            if state.closed {
-                None
-            } else {
-                let codec = state.codec.take().ok_or_else(unsupported_streaming_codec)?;
-                state.closed = true;
-                Some(codec)
-            }
-        };
-        if let Some(codec) = codec {
-            codec.finish().map_err(map_zlib_error)?;
-        }
+        finish_codec_state(state)?;
         publish_codec_output(state, &self.readable)
             .map_err(crate::stream::StreamBackendFailure::Callback)?;
         Ok(true)
     }
 
     fn finish_accepted(&self) -> bool {
-        self.state.borrow().closed
+        self.state.borrow().data.closed
     }
 
     fn destroy(&self) -> crate::stream::StreamBackendResult<(), E> {
-        {
-            let mut state = self.state.borrow_mut();
-            state.closed = true;
-            state.codec = None;
-            let mut output = state.output.borrow_mut();
-            output.pending.clear();
-            output.pending_bytes = 0;
-        }
+        destroy_codec_state(&self.state);
         self.readable
             .destroy()
             .map_err(crate::stream::StreamBackendFailure::Callback)
@@ -226,49 +182,69 @@ impl<E: From<NodeError> + 'static> Zlib<E> {
             output: output.clone(),
             readable: readable.downgrade(),
         };
-        let codec = match mode {
-            ZlibMode::Deflate => Some(StreamingCodec::<E>::Deflate(ZlibWriteEncoder::new(
-                sink,
-                compression_from_level(options.level),
-            ))),
-            ZlibMode::Inflate => Some(StreamingCodec::<E>::Inflate(ZlibWriteDecoder::new(sink))),
-            ZlibMode::Gzip => Some(StreamingCodec::<E>::Gzip(GzWriteEncoder::new(
-                sink,
-                compression_from_level(options.level),
-            ))),
-            ZlibMode::Gunzip => Some(StreamingCodec::<E>::Gunzip(GzWriteDecoder::new(sink))),
-            ZlibMode::DeflateRaw => Some(StreamingCodec::<E>::DeflateRaw(
-                DeflateWriteEncoder::new(sink, compression_from_level(options.level)),
-            )),
-            ZlibMode::InflateRaw => Some(StreamingCodec::<E>::InflateRaw(
-                DeflateWriteDecoder::new(sink),
-            )),
-            ZlibMode::BrotliCompress => Some(StreamingCodec::<E>::BrotliCompress(
-                brotli::CompressorWriter::new(sink, options.chunk_size.max(1), 5, 22),
-            )),
-            ZlibMode::BrotliDecompress => Some(StreamingCodec::<E>::BrotliDecompress(
-                brotli::DecompressorWriter::new(sink, options.chunk_size.max(1)),
-            )),
-            ZlibMode::Unzip => None,
-        };
-        let state = std::rc::Rc::new(std::cell::RefCell::new(ZlibState::<E> {
+        let data = ZlibStateData {
             mode,
             bytes_written: 0,
             closed: false,
             options: options.clone(),
             output,
-            codec,
-        }));
+        };
+        let state = match mode {
+            ZlibMode::Deflate => ZlibStorage::Deflate(codec_state(
+                data,
+                Some(ZlibWriteEncoder::new(
+                    sink,
+                    compression_from_level(options.level),
+                )),
+            )),
+            ZlibMode::Inflate => {
+                ZlibStorage::Inflate(codec_state(data, Some(ZlibWriteDecoder::new(sink))))
+            }
+            ZlibMode::Gzip => ZlibStorage::Gzip(codec_state(
+                data,
+                Some(GzWriteEncoder::new(
+                    sink,
+                    compression_from_level(options.level),
+                )),
+            )),
+            ZlibMode::Gunzip => {
+                ZlibStorage::Gunzip(codec_state(data, Some(GzWriteDecoder::new(sink))))
+            }
+            ZlibMode::DeflateRaw => ZlibStorage::DeflateRaw(codec_state(
+                data,
+                Some(DeflateWriteEncoder::new(
+                    sink,
+                    compression_from_level(options.level),
+                )),
+            )),
+            ZlibMode::InflateRaw => {
+                ZlibStorage::InflateRaw(codec_state(data, Some(DeflateWriteDecoder::new(sink))))
+            }
+            ZlibMode::BrotliCompress => ZlibStorage::BrotliCompress(codec_state(
+                data,
+                Some(brotli::CompressorWriter::new(
+                    sink,
+                    options.chunk_size.max(1),
+                    5,
+                    22,
+                )),
+            )),
+            ZlibMode::BrotliDecompress => ZlibStorage::BrotliDecompress(codec_state(
+                data,
+                Some(brotli::DecompressorWriter::new(
+                    sink,
+                    options.chunk_size.max(1),
+                )),
+            )),
+            ZlibMode::Unzip => ZlibStorage::Unzip(codec_state(data, None)),
+        };
         let stream_options = crate::stream::StreamOptions {
             high_water_mark: options.chunk_size.max(1),
             ..Default::default()
         };
         let writable = crate::stream::Writable::<E>::with_backend(
             stream_options,
-            std::rc::Rc::new(ZlibBackend::<E> {
-                state: std::rc::Rc::clone(&state),
-                readable: readable.clone(),
-            }),
+            state.backend(&readable),
             Some(readable.lifecycle()),
         );
         Self {
@@ -307,12 +283,7 @@ impl<E: From<NodeError> + 'static> Zlib<E> {
     }
 
     pub fn flush(&self, callback: Option<impl FnOnce()>) -> Result<(), E> {
-        let native = {
-            let mut state = self.state.borrow_mut();
-            state.codec.as_mut().map_or(Ok(()), Write::flush)
-        };
-        native.map_err(map_zlib_error)?;
-        publish_codec_output(&self.state, &self.transform.readable_handle())?;
+        self.state.flush(&self.transform.readable_handle())?;
         if let Some(callback) = callback {
             callback();
         }
@@ -374,7 +345,7 @@ impl<E: 'static> std::fmt::Debug for Zlib<E> {
 
 impl<E: 'static> PartialEq for Zlib<E> {
     fn eq(&self, other: &Self) -> bool {
-        std::rc::Rc::ptr_eq(&self.state, &other.state)
+        self.state.ptr_eq(&other.state)
     }
 }
 
@@ -412,65 +383,11 @@ pub fn zlib_as_stream<E: From<NodeError> + 'static>(value: &Zlib<E>) -> crate::s
     crate::stream::transform_as_stream(&value.transform_handle())
 }
 
-impl<E: From<NodeError> + 'static> Write for StreamingCodec<E> {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        match self {
-            Self::Deflate(codec) => codec.write(bytes),
-            Self::Inflate(codec) => codec.write(bytes),
-            Self::Gzip(codec) => codec.write(bytes),
-            Self::Gunzip(codec) => codec.write(bytes),
-            Self::DeflateRaw(codec) => codec.write(bytes),
-            Self::InflateRaw(codec) => codec.write(bytes),
-            Self::BrotliCompress(codec) => codec.write(bytes),
-            Self::BrotliDecompress(codec) => codec.write(bytes),
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        match self {
-            Self::Deflate(codec) => codec.flush(),
-            Self::Inflate(codec) => codec.flush(),
-            Self::Gzip(codec) => codec.flush(),
-            Self::Gunzip(codec) => codec.flush(),
-            Self::DeflateRaw(codec) => codec.flush(),
-            Self::InflateRaw(codec) => codec.flush(),
-            Self::BrotliCompress(codec) => codec.flush(),
-            Self::BrotliDecompress(codec) => codec.flush(),
-        }
-    }
-}
-
-impl<E: From<NodeError> + 'static> StreamingCodec<E> {
-    fn finish(self) -> std::io::Result<()> {
-        match self {
-            Self::Deflate(mut codec) => codec.try_finish(),
-            Self::Inflate(mut codec) => codec.try_finish(),
-            Self::Gzip(mut codec) => codec.try_finish(),
-            Self::Gunzip(mut codec) => codec.try_finish(),
-            Self::DeflateRaw(mut codec) => codec.try_finish(),
-            Self::InflateRaw(mut codec) => codec.try_finish(),
-            Self::BrotliCompress(codec) => {
-                let output = codec.get_ref().output.clone();
-                let _ = codec.into_inner();
-                let terminal_error = output.borrow().terminal_error.clone();
-                match terminal_error {
-                    Some(message) => Err(std::io::Error::new(
-                        std::io::ErrorKind::OutOfMemory,
-                        message,
-                    )),
-                    None => Ok(()),
-                }
-            }
-            Self::BrotliDecompress(mut codec) => codec.close(),
-        }
-    }
-}
-
-fn publish_codec_output<E: From<NodeError> + 'static>(
-    state: &std::rc::Rc<std::cell::RefCell<ZlibState<E>>>,
+fn publish_codec_output<E: From<NodeError> + 'static, Codec>(
+    state: &std::rc::Rc<std::cell::RefCell<ZlibState<Codec>>>,
     readable: &crate::stream::Readable<E>,
 ) -> Result<(), E> {
-    let output = state.borrow().output.clone();
+    let output = state.borrow().data.output.clone();
     {
         let mut output = output.borrow_mut();
         if output.publishing {
@@ -490,7 +407,7 @@ fn publish_codec_output<E: From<NodeError> + 'static>(
             })
         };
         let Some(chunk) = chunk else {
-            let closed = state.borrow().closed;
+            let closed = state.borrow().data.closed;
             return if closed {
                 readable.finish_input()
             } else {
