@@ -180,15 +180,15 @@ fn interval_callable_propagates_fallible_callback_errors() {
 #[test]
 fn stream_pipeline_moves_closed_buffer_chunks() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
-    let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
+    let readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from_chunks(
         readable_tasks.handle(),
         vec![
             Buffer::from_string("hello", Some("utf8")).unwrap(),
             Buffer::from_string(" world", Some("utf8")).unwrap(),
         ],
     );
-    let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
-    stream::pipeline(&mut readable, &mut writable).unwrap();
+    let writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
+    stream::pipeline(&readable, &writable).unwrap();
     assert!(!readable.is_ended());
     assert!(writable.chunks().is_empty());
     readable_tasks.poll().unwrap();
@@ -304,14 +304,14 @@ fn stream_classes_promises_and_web_bridges_use_closed_buffers() {
         readable_tasks.handle(),
         vec![Buffer::from_string("web", Some("utf8")).unwrap()],
     );
-    let mut writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
+    let writable = stream::Writable::<tsonic_rust_runtime::TsonicError>::new();
     assert!(stream::is_readable(&readable));
     assert!(stream::is_writable(&writable));
-    readable.pipe(&mut writable).unwrap();
+    readable.pipe(&writable).unwrap();
     assert!(writable.chunks().is_empty());
     assert!(!readable.readable_ended());
     readable_tasks.poll().unwrap();
-    readable.unpipe(&mut writable).unwrap();
+    readable.unpipe(&writable).unwrap();
     assert_eq!(writable.chunks().len(), 1);
     assert!(readable.is_ended());
     let mut readable = stream::Readable::<tsonic_rust_runtime::TsonicError>::from(
@@ -729,8 +729,8 @@ fn stream_readable_functional_operators_are_closed_buffer_transforms() {
     assert_eq!(composed.to_vec().unwrap().len(), 2);
     let iterable = chunks();
     assert_eq!(iterable.iterator().unwrap().len(), 3);
-    let mut aborted = chunks();
-    stream::add_abort_signal(&mut aborted, true).unwrap();
+    let aborted = chunks();
+    stream::add_abort_signal(&aborted, true).unwrap();
     assert_eq!(
         aborted.errored(),
         Some("ERR_STREAM_DESTROYED: aborted".to_string())

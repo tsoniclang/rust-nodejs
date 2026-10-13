@@ -226,9 +226,10 @@ fn zlib_callback_failure_retains_its_non_display_non_send_native_payload() {
     )
     .unwrap();
     let returned =
-        tsonic_rust_node::run_with_contexts(prepend(&root, DispatchEnd::<Failure>::new()))
-            .err()
-            .expect("retained callback must fail");
+        match tsonic_rust_node::run_with_contexts(prepend(&root, DispatchEnd::<Failure>::new())) {
+            Err(error) => error,
+            Ok(_) => panic!("retained callback must fail"),
+        };
     match returned {
         Failure::Payload(value) => {
             assert!(Rc::ptr_eq(&value, &expected));
