@@ -48,10 +48,10 @@ fn original_non_display_error_stops_without_consuming_later_once_listeners() {
     });
     emitter.once_callable(&event, &first).unwrap();
     emitter.once_callable(&event, &second).unwrap();
-    let returned = emitter
-        .emit_callable(&event)
-        .err()
-        .expect("original callback error");
+    let returned = match emitter.emit_callable(&event) {
+        Err(error) => error,
+        Ok(_) => panic!("original callback error"),
+    };
     match returned {
         Failure::Original(value) => {
             assert!(Rc::ptr_eq(&value, &original));
@@ -124,15 +124,15 @@ fn pending_snapshot_and_new_registration_keep_distinct_once_ownership() {
 fn native_event_guards_enter_the_exact_error_domain() {
     let emitter = EventEmitter::<Failure>::new();
     let event = JsValue::from("error".to_owned());
-    let returned = emitter
-        .emit_callable(&event)
-        .err()
-        .expect("unhandled native event");
+    let returned = match emitter.emit_callable(&event) {
+        Err(error) => error,
+        Ok(_) => panic!("unhandled native event"),
+    };
     assert!(matches!(returned, Failure::Native(error) if error.code() == "ERR_UNHANDLED_ERROR"));
-    let returned = emitter
-        .emit_callable(&JsValue::Null)
-        .err()
-        .expect("invalid native event");
+    let returned = match emitter.emit_callable(&JsValue::Null) {
+        Err(error) => error,
+        Ok(_) => panic!("invalid native event"),
+    };
     assert!(matches!(returned, Failure::Native(error) if error.code() == "ERR_INVALID_ARG_TYPE"));
 }
 

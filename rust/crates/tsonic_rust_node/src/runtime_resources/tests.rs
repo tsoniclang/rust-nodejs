@@ -131,9 +131,10 @@ fn original_native_failure_retains_the_unvisited_resource_frontier() {
         .prepare(DispatchPhase::Ports)
         .ok()
         .expect("native frontier");
-    let returned = poll_prepared(&resources, &frontier)
-        .err()
-        .expect("original native error");
+    let returned = match poll_prepared(&resources, &frontier) {
+        Err(error) => error,
+        Ok(_) => panic!("original native error"),
+    };
     assert!(Rc::ptr_eq(&returned.0, &original));
     assert_eq!(first.polled.get(), 1);
     assert_eq!(second.polled.get(), 0);

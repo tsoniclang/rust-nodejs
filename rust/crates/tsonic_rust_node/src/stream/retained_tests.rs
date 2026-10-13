@@ -163,10 +163,10 @@ fn corked_writes_keep_later_native_chunks_after_the_first_source_failure() {
 fn native_stream_guards_are_not_formatted_source_errors() {
     let writable = Writable::<Failure>::new();
     assert!(writable.end().is_ok());
-    let error = writable
-        .write_string("after end")
-        .err()
-        .expect("native stream guard");
+    let error = match writable.write_string("after end") {
+        Err(error) => error,
+        Ok(_) => panic!("native stream guard"),
+    };
     assert!(
         matches!(error, Failure::Native(error) if error.code() == "ERR_STREAM_WRITE_AFTER_END")
     );

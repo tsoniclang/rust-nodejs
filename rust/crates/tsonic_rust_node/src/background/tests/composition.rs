@@ -37,9 +37,11 @@ fn composed_background_domains_use_one_ready_order_and_retain_uninvoked_callback
         &first,
         tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
-    let returned = tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background)
-        .err()
-        .expect("source callback must fail");
+    let returned =
+        match tsonic_rust_runtime::dispatch::poll_phase(&contexts, DispatchPhase::Background) {
+            Err(error) => error,
+            Ok(_) => panic!("source callback must fail"),
+        };
     let Failure::Payload(returned) = returned else {
         panic!("exact source error domain must survive");
     };
@@ -115,9 +117,10 @@ fn native_node_driver_transports_exact_component_background_errors() {
         &first,
         tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
-    let returned = crate::run_with_contexts(&contexts)
-        .err()
-        .expect("actual native callback must fail");
+    let returned = match crate::run_with_contexts(&contexts) {
+        Err(error) => error,
+        Ok(_) => panic!("actual native callback must fail"),
+    };
     let Failure::Payload(returned) = returned else {
         panic!("native driver must not format source errors");
     };
@@ -153,9 +156,10 @@ fn native_async_driver_drops_its_root_future_on_exact_callback_failure() {
         .unwrap();
     let released = Rc::new(Cell::new(0));
     let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<Failure>::new());
-    let returned = crate::block_on_with_contexts(PendingRoot(released.clone()), contexts)
-        .err()
-        .expect("native background callback must interrupt the root future");
+    let returned = match crate::block_on_with_contexts(PendingRoot(released.clone()), contexts) {
+        Err(error) => error,
+        Ok(_) => panic!("native background callback must interrupt the root future"),
+    };
     let Failure::Payload(returned) = returned else {
         panic!("source error type must survive native async driving");
     };

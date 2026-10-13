@@ -135,10 +135,10 @@ fn native_submission_rejection_clears_physical_pending_state() {
     )
     .unwrap();
     drop(background);
-    let error = stream
-        .write(Buffer::from_bytes(vec![1]))
-        .err()
-        .expect("closed background owner");
+    let error = match stream.write(Buffer::from_bytes(vec![1])) {
+        Err(error) => error,
+        Ok(_) => panic!("closed background owner"),
+    };
     assert!(
         matches!(error, Failure::Native(error) if error.code() == "ERR_NODE_BACKGROUND_CLOSED")
     );

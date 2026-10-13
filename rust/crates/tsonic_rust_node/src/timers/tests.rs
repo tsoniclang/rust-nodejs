@@ -116,15 +116,13 @@ fn selected_timer_driver_retains_non_display_non_send_nominal_failures() {
         &timers,
         tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
     );
-    match crate::run_with_contexts(&contexts)
-        .err()
-        .expect("original typed timer failure")
-    {
-        Failure::Source(value) => {
+    match crate::run_with_contexts(&contexts) {
+        Err(Failure::Source(value)) => {
             assert!(Rc::ptr_eq(&value, &original));
             assert_eq!(value.get(), 9_007_199_254_740_993);
         }
-        Failure::Native(error) => panic!("unexpected native fault: {error}"),
+        Err(Failure::Native(error)) => panic!("unexpected native fault: {error}"),
+        Ok(_) => panic!("original typed timer failure"),
     }
     assert!(!observed.get());
     assert!(timers.has_pending_work());
