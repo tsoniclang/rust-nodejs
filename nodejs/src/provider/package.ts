@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { createRustProviderPackage } from "@tsonic/target-rust/provider";
 import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
+import { nodejsProviderModules } from "./assembly/modules.js";
+import { nodejsProviderModuleSpecifiers } from "./declarations/specifiers.js";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
 import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
 import { hashCarrier, hmacCarrier, cryptoCarrier } from "./modules/crypto/carriers.js";
@@ -37,43 +39,39 @@ import { tlsConnectOptionsCarrier, tlsServerOptionsCarrier, tlsSocketCarrier, tl
 import { httpsServerCarrier, httpsClientRequestCarrier } from "./modules/https/carriers.js";
 import { readlineOptionsCarrier, readlineInterfaceCarrier } from "./modules/readline/carriers.js";
 import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./modules/worker-threads/carriers.js";
-import { assertModule, assertRows } from "./modules/assert.js";
-import { bufferModule, bufferRows } from "./modules/buffer/declarations.js";
-import { cryptoModule, cryptoRows } from "./modules/crypto/declarations.js";
-import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
-import { fsModule, fsRows } from "./modules/filesystem/calls.js";
+import { assertRows } from "./modules/assert.js";
+import { bufferRows } from "./modules/buffer/declarations.js";
+import { cryptoRows } from "./modules/crypto/declarations.js";
+import { childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
+import { fsRows } from "./modules/filesystem/calls.js";
 import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics, direntNameParameter } from "./modules/filesystem/paths.js";
 import { bufferEncodingOptionsCarrier } from "./modules/filesystem/realpath.js";
 import {
-  fsPromisesModule,
   fsPromisesRows,
 } from "./modules/filesystem/promises.js";
-import { httpModule, httpRows } from "./modules/http/declarations.js";
-import { osModule, osRows } from "./modules/os.js";
-import { v8HeapInfoCarrier, v8Module, v8Rows } from "./modules/v8.js";
-import { pathModule, pathRows } from "./modules/path.js";
-import { processModule, processRows } from "./modules/process/declarations.js";
+import { httpRows } from "./modules/http/declarations.js";
+import { osRows } from "./modules/os.js";
+import { v8HeapInfoCarrier, v8Rows } from "./modules/v8.js";
+import { pathRows } from "./modules/path.js";
+import { processRows } from "./modules/process/declarations.js";
 import { processCarrier } from "./modules/process/signals.js";
 import { processCpuCarrier } from "./modules/process/metrics.js";
-import { performanceCarrier, performanceModule, performanceRows } from "./modules/performance.js";
-import { timersModule, timersRows } from "./modules/timers/declarations.js";
-import { eventsModule, eventsRows } from "./modules/events/declarations.js";
-import { streamModule, streamRows } from "./modules/stream/declarations.js";
-import { urlModule, urlRows } from "./modules/url/declarations.js";
-import { utilModule, utilRows } from "./modules/util/declarations.js";
+import { performanceCarrier, performanceRows } from "./modules/performance.js";
+import { timersRows } from "./modules/timers/declarations.js";
+import { eventsRows } from "./modules/events/declarations.js";
+import { streamRows } from "./modules/stream/declarations.js";
+import { urlRows } from "./modules/url/declarations.js";
+import { utilRows } from "./modules/util/declarations.js";
 import {
-  dnsModule,
-  dnsPromisesModule,
   dnsRows,
 } from "./modules/dns/declarations.js";
-import { zlibModule, zlibRows } from "./modules/zlib/declarations.js";
-import { netModule, netRows } from "./modules/net/declarations.js";
-import { tlsModule, tlsRows } from "./modules/tls/declarations.js";
-import { httpsModule, httpsRows } from "./modules/https/declarations.js";
-import { readlineModule, readlineRows } from "./modules/readline/declarations.js";
+import { zlibRows } from "./modules/zlib/declarations.js";
+import { netRows } from "./modules/net/declarations.js";
+import { tlsRows } from "./modules/tls/declarations.js";
+import { httpsRows } from "./modules/https/declarations.js";
+import { readlineRows } from "./modules/readline/declarations.js";
 import {
   workerThreadCarrierTraits,
-  workerThreadsModule,
   workerThreadsRows,
 } from "./modules/worker-threads/declarations.js";
 
@@ -92,62 +90,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
     },
     displayName: "Node.js for Rust",
     version: "0.0.1",
-    moduleAliases: [
-      { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "node:assert/strict", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "buffer", canonicalModuleSpecifier: "node:buffer" },
-      { moduleSpecifier: "child_process", canonicalModuleSpecifier: "node:child_process" },
-      { moduleSpecifier: "crypto", canonicalModuleSpecifier: "node:crypto" },
-      { moduleSpecifier: "fs", canonicalModuleSpecifier: "node:fs" },
-      { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
-      { moduleSpecifier: "http", canonicalModuleSpecifier: "node:http" },
-      { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
-      { moduleSpecifier: "v8", canonicalModuleSpecifier: "node:v8" },
-      { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
-      { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
-      { moduleSpecifier: "perf_hooks", canonicalModuleSpecifier: "node:perf_hooks" },
-      { moduleSpecifier: "timers", canonicalModuleSpecifier: "node:timers" },
-      { moduleSpecifier: "events", canonicalModuleSpecifier: "node:events" },
-      { moduleSpecifier: "stream", canonicalModuleSpecifier: "node:stream" },
-      { moduleSpecifier: "dns", canonicalModuleSpecifier: "node:dns" },
-      { moduleSpecifier: "dns/promises", canonicalModuleSpecifier: "node:dns/promises" },
-      { moduleSpecifier: "zlib", canonicalModuleSpecifier: "node:zlib" },
-      { moduleSpecifier: "net", canonicalModuleSpecifier: "node:net" },
-      { moduleSpecifier: "tls", canonicalModuleSpecifier: "node:tls" },
-      { moduleSpecifier: "https", canonicalModuleSpecifier: "node:https" },
-      { moduleSpecifier: "readline", canonicalModuleSpecifier: "node:readline" },
-      { moduleSpecifier: "worker_threads", canonicalModuleSpecifier: "node:worker_threads" },
-      { moduleSpecifier: "util", canonicalModuleSpecifier: "node:util" },
-      { moduleSpecifier: "url", canonicalModuleSpecifier: "node:url" },
-    ],
-    modules: [
-      assertModule(),
-      pathModule(),
-      osModule(),
-      v8Module(),
-      fsModule(typedArrays),
-      fsPromisesModule(),
-      processModule(),
-      performanceModule(),
-      bufferModule(typedArrays),
-      childProcessModule(typedArrays),
-      urlModule(),
-      cryptoModule(typedArrays),
-      utilModule(typedArrays),
-      httpModule(),
-      timersModule(),
-      eventsModule(),
-      streamModule(),
-      dnsModule(),
-      dnsPromisesModule(),
-      zlibModule(typedArrays),
-      netModule(),
-      tlsModule(),
-      httpsModule(),
-      readlineModule(),
-      workerThreadsModule(),
-    ],
+    moduleAliases: nodejsProviderModuleSpecifiers(),
+    modules: nodejsProviderModules(typedArrays),
     types: [
       { exportId: "node:util::NodeError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:process::Process", targetCarrier: processCarrier },
