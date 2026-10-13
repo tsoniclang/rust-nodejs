@@ -166,9 +166,10 @@ fn verify_typed_signal_owners(scenario: &str) {
         );
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    let returned = poll_phase(&group, DispatchPhase::Signals)
-        .err()
-        .expect("original typed signal failure");
+    let returned = match poll_phase(&group, DispatchPhase::Signals) {
+        Err(error) => error,
+        Ok(_) => panic!("original typed signal failure"),
+    };
     match returned {
         SignalFailure::Original(value) => {
             assert!(Rc::ptr_eq(&value, &original));

@@ -105,15 +105,17 @@ fn readline_question_retains_non_display_non_send_source_failure() {
         )
         .is_ok());
     assert!(!background.has_pending_work());
-    let returned = tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::prepend(
-            &tasks,
-            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
-        ),
-    ))
-    .err()
-    .expect("original retained source failure");
+    let returned =
+        match tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::prepend(
+                &tasks,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+            ),
+        )) {
+            Err(error) => error,
+            Ok(_) => panic!("original retained source failure"),
+        };
     assert!(Rc::ptr_eq(&returned.0, &expected));
     assert_eq!(returned.0.get(), 9_007_199_254_740_993);
 }

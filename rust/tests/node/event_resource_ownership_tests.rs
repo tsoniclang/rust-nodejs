@@ -54,13 +54,10 @@ fn cold_worker_and_signal_roots_allocate_no_native_storage() {
         assert!(!tls.has_work());
         assert!(!poll_phase(&tls, DispatchPhase::Tls).unwrap());
         assert_eq!(tls.next_delay(), None);
-        assert_eq!(poll_phase(&workers, DispatchPhase::Ports).unwrap(), false);
-        assert_eq!(poll_phase(&signals, DispatchPhase::Signals).unwrap(), false);
-        assert_eq!(poll_phase(&servers, DispatchPhase::Net).unwrap(), false);
-        assert_eq!(
-            poll_phase(&watchers, DispatchPhase::Watchers).unwrap(),
-            false
-        );
+        assert!(!poll_phase(&workers, DispatchPhase::Ports).unwrap());
+        assert!(!poll_phase(&signals, DispatchPhase::Signals).unwrap());
+        assert!(!poll_phase(&servers, DispatchPhase::Net).unwrap());
+        assert!(!poll_phase(&watchers, DispatchPhase::Watchers).unwrap());
         assert_eq!(workers.next_delay(), None);
         assert_eq!(signals.next_delay(), None);
         assert_eq!(servers.next_delay(), None);
