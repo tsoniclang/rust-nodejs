@@ -28,6 +28,7 @@ test("native pipe preserves writable, transform and HTTP destination types and i
       return source.pipe(destination) === destination;
     }
     export function main(): void { check(run()); }
+  main();
   ` } });
   assertNoTargetDiagnostics(result.diagnostics);
   validateGeneratedProject("native-stream-destinations", result.artifacts, { run: true });

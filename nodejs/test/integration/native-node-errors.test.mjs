@@ -15,7 +15,7 @@ import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner
 test("Node callbacks retain native errors and exact optional error storage", { timeout: 300_000 }, () => {
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin" } },
-    files: { "index.ts": `${nativeNodeErrorSource}\nexport function main(): void { run(); }` },
+    files: { "index.ts": (`${nativeNodeErrorSource}\nexport function main(): void { run(); }` + "\nmain();\n") },
   });
   assertNoTargetDiagnostics(result.diagnostics);
   const execution = validateGeneratedProject("native-node-errors", result.artifacts, { run: true });
@@ -148,9 +148,9 @@ fn catch_finally_and_loop_reads_keep_the_original_value_available() {
 test("closed native error alternatives preserve every original error route", { timeout: 300_000 }, () => {
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin" } },
-    files: { "index.ts": `${nativeNodeErrorUnionProofSource}\nexport function main(): void {
+    files: { "index.ts": (`${nativeNodeErrorUnionProofSource}\nexport function main(): void {
       runUnions();
-    }` },
+    }` + "\nmain();\n") },
   });
   assert.equal(result.diagnostics.length, 0,
     result.diagnostics.map(({ code, message }) => `${code}: ${message}`).join("\n"));

@@ -10,7 +10,7 @@ test("native duplex lifecycle shares identity, closes resources and preserves fa
     surfaces: ["js"],
     capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin" } },
-    files: { "index.ts": `${nativeStreamLifecycleSource}\nexport function main(): void { run(); }` },
+    files: { "index.ts": (`${nativeStreamLifecycleSource}\nexport function main(): void { run(); }` + "\nmain();\n") },
   });
   assert.equal(result.diagnostics.length, 0, result.diagnostics.map(row => row.message).join("\n"));
   const execution = validateGeneratedProject("native-stream-lifecycle", result.artifacts, { run: true });

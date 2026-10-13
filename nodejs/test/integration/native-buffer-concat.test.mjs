@@ -12,9 +12,9 @@ import { createTsonicPlugin } from "../../../dist/index.js";
 test("native Buffer concat consumes dense input and preserves bounded output", { timeout: 300_000 }, () => {
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin" } }, files: {
-      "index.ts": `${nativeBufferConcatSource}\nexport function main(): void {
+      "index.ts": (`${nativeBufferConcatSource}\nexport function main(): void {
         if (!run()) throw new Error("concat behavior");
-      }`,
+      }` + "\nmain();\n"),
     } });
   assertNoTargetDiagnostics(result.diagnostics);
   validateGeneratedProject("native-buffer-concat", result.artifacts, { run: true });

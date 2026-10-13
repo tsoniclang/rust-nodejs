@@ -10,7 +10,7 @@ test("inherited file stream methods and erased codec destruction use the exact n
     surfaces: ["js"],
     capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin" } },
-    files: { "index.ts": `${nativeStreamInheritanceSource}\nexport function main(): void { run(); }` },
+    files: { "index.ts": (`${nativeStreamInheritanceSource}\nexport function main(): void { run(); }` + "\nmain();\n") },
   });
   assert.equal(result.diagnostics.length, 0, result.diagnostics.map(row => row.message).join("\n"));
   const execution = validateGeneratedProject("native-stream-inheritance", result.artifacts, { run: true });

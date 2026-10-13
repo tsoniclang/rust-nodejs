@@ -24,6 +24,7 @@ test("Buffer byte construction retains native array elements without a floating 
         const floating = Buffer.from([65.9, -1.9, Number.NaN]);
         check(floating.readUInt8() === 65 && floating.readUInt8(1) === 255 && floating.readUInt8(2) === 0);
       }
+    main();
     ` },
   });
   assert.deepEqual(result.diagnostics, []);
@@ -77,7 +78,7 @@ test("native option fields reject invalid dynamic numbers before use", { timeout
   const { result } = compileRust({
     surfaces: ["js"], capabilities: [createTsonicPlugin()], packages: [acmeTestingPackage()],
     target: { id: "rust", options: { outputType: "bin", crateName: "native_option_fields" } },
-    files: { "index.ts": `
+    files: { "index.ts": (`
       import { check } from "@acme/testing";
       import type { nativeUint } from "@tsonic/core/types.js";
       import type { RmOptions } from "node:fs";
@@ -90,7 +91,7 @@ test("native option fields reject invalid dynamic numbers before use", { timeout
         if (options.retryDelay === undefined) throw new Error("missing native option");
         check(options.retryDelay === 9007199254740993);
       }
-    ` },
+    ` + "\nmain();\n") },
   });
   assert.deepEqual(result.diagnostics, []);
   assert.doesNotMatch(artifactText(result, "src/index.rs"), /u64_to_f64|usize_to_f64/u);

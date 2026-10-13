@@ -22,6 +22,7 @@ test("Node optional arguments preserve omitted and explicit absence at native ca
       return !server.listening && !explicit.listening && source.destroyed && chunk !== undefined && chunk.length === 4;
     }
     export function main(): void { check(run()); }
+  main();
   ` } });
   assertNoTargetDiagnostics(result.diagnostics);
   const output = artifactText(result, "src/index.rs");
