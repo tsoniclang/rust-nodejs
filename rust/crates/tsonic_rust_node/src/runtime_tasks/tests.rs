@@ -40,15 +40,13 @@ fn typed_runtime_driver_preserves_original_failure_and_uninvoked_work() {
         &root,
         tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
     );
-    match crate::run_with_contexts(&contexts)
-        .err()
-        .expect("original source failure")
-    {
-        Failure::Source(value) => {
+    match crate::run_with_contexts(&contexts) {
+        Err(Failure::Source(value)) => {
             assert!(Rc::ptr_eq(&value, &original));
             assert_eq!(value.get(), 9_007_199_254_740_993);
         }
-        Failure::Native(error) => panic!("unexpected native failure: {error}"),
+        Err(Failure::Native(error)) => panic!("unexpected native failure: {error}"),
+        Ok(_) => panic!("original source failure"),
     }
     assert!(!observed.get());
     assert!(root.has_pending_work());

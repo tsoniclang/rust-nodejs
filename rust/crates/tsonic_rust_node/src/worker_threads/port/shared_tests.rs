@@ -143,21 +143,19 @@ fn a_shared_port_failure_retains_original_payload_and_uninvoked_once_registratio
         &first,
         prepend(&second, DispatchEnd::<CombinedFailure>::new()),
     );
-    match poll_phase(&group, DispatchPhase::Ports)
-        .err()
-        .expect("original source failure")
-    {
-        CombinedFailure::Second(OtherFailure::Original(returned)) => {
+    match poll_phase(&group, DispatchPhase::Ports) {
+        Err(CombinedFailure::Second(OtherFailure::Original(returned))) => {
             assert!(Rc::ptr_eq(&returned, &original));
             assert_eq!(returned.get(), 9_007_199_254_740_993);
         }
-        CombinedFailure::Second(OtherFailure::Native(error)) => {
+        Err(CombinedFailure::Second(OtherFailure::Native(error))) => {
             panic!("source error replaced: {}", error.code())
         }
-        CombinedFailure::First(Failure::Native(error)) => {
+        Err(CombinedFailure::First(Failure::Native(error))) => {
             panic!("wrong native domain: {}", error.code())
         }
-        CombinedFailure::First(Failure::Original(_)) => panic!("wrong source domain"),
+        Err(CombinedFailure::First(Failure::Original(_))) => panic!("wrong source domain"),
+        Ok(_) => panic!("original source failure"),
     }
     assert_eq!(calls.get(), 0);
     assert_eq!(left.owner.state.borrow().messages.len(), 1);

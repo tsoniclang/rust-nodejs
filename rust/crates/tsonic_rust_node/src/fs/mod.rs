@@ -47,10 +47,11 @@ mod numeric_bounds {
                 std::fs::File::open(source).unwrap(),
                 &options,
             );
-            assert_eq!(
-                result.err().expect("invalid range was accepted").code,
-                "ERR_OUT_OF_RANGE"
-            );
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("invalid range was accepted"),
+            };
+            assert_eq!(error.code, "ERR_OUT_OF_RANGE");
         }
         let options = super::ReadStreamOptions {
             end: Some(u64::MAX - 1),

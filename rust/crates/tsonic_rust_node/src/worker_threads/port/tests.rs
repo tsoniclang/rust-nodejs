@@ -34,9 +34,10 @@ fn port_failure_retains_exact_error_and_uninvoked_messages() {
     channel.port2.on_callable1(&event, &second).unwrap();
     channel.port1.post_message(JsValue::from(1)).unwrap();
     channel.port1.post_message(JsValue::from(2)).unwrap();
-    let returned = poll_phase(&resources, DispatchPhase::Ports)
-        .err()
-        .expect("original port error");
+    let returned = match poll_phase(&resources, DispatchPhase::Ports) {
+        Err(error) => error,
+        Ok(_) => panic!("original port error"),
+    };
     match returned {
         Failure::Original(value) => {
             assert!(Rc::ptr_eq(&value, &original));

@@ -532,10 +532,10 @@ fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
             id: unregistered.ticket(),
         })
         .unwrap();
-    let returned = root
-        .poll()
-        .err()
-        .expect("unregistered native completion must fail");
+    let returned = match root.poll() {
+        Err(error) => error,
+        Ok(_) => panic!("unregistered native completion must fail"),
+    };
     assert_eq!(
         returned.0.source_error().message(),
         "background work completed without its exact callback"

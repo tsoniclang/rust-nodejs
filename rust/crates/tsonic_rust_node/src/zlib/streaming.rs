@@ -485,9 +485,8 @@ fn publish_codec_output<E: From<NodeError> + 'static>(
         }
         let chunk = {
             let mut output = output.borrow_mut();
-            output.pending.pop_front().map(|chunk| {
+            output.pending.pop_front().inspect(|chunk| {
                 output.pending_bytes = output.pending_bytes.saturating_sub(chunk.len());
-                chunk
             })
         };
         let Some(chunk) = chunk else {

@@ -461,9 +461,9 @@ impl<E: From<NodeError> + 'static> EventEmitter<E> {
         let state = self.state.borrow();
         let listeners = state.callable_listeners.get(event).cloned();
         if event.is_error()
-            && listeners.as_ref().map_or(true, |listeners| {
-                listeners.iter().all(|entry| !entry.callback.is_pending())
-            })
+            && listeners
+                .as_ref()
+                .is_none_or(|listeners| listeners.iter().all(|entry| !entry.callback.is_pending()))
         {
             return Err(unhandled_error(arguments).into());
         }

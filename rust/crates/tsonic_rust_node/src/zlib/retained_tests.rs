@@ -84,10 +84,10 @@ fn native_codec_finalization_is_not_repeated_after_the_original_end_failure() {
 fn native_codec_guards_still_enter_the_producing_failure_domain() {
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let codec = Zlib::<Failure>::new(readable_tasks.handle(), ZlibMode::Gunzip, None);
-    let error = codec
-        .write(Buffer::from_bytes(vec![255; 32]))
-        .err()
-        .expect("invalid compressed input");
+    let error = match codec.write(Buffer::from_bytes(vec![255; 32])) {
+        Err(error) => error,
+        Ok(_) => panic!("invalid compressed input"),
+    };
     assert!(matches!(error, Failure::Native(error) if error.code() == "Z_DATA_ERROR"));
 }
 
