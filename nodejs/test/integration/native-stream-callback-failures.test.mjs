@@ -60,7 +60,7 @@ for (const [name, source] of synchronousCases) {
       surfaces: ["js"],
       capabilities: [createTsonicPlugin()],
       target: { id: "rust", options: { outputType: "bin" } },
-      files: { "index.ts": source },
+      files: { "index.ts": source + "\nmain();\n" },
     });
     assert.equal(result.diagnostics.length, 0,
       result.diagnostics.slice(0, 6).map(row => row.message.slice(0, 256)).join("\n"));

@@ -20,13 +20,13 @@ function compile(source, outputType = "bin") {
 }
 
 test("generated native Node driver consumes the demanded compression context", { timeout: 300_000 }, () => {
-  const result = compile(nativeBackgroundCompletionSource);
+  const result = compile(nativeBackgroundCompletionSource + "\nmain();\n");
   const output = validateGeneratedProject("native-background-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native completion/u);
 });
 
 test("generated asynchronous Node driver consumes the same component context", { timeout: 300_000 }, () => {
-  const result = compile(nativeBackgroundAsyncSource);
+  const result = compile(nativeBackgroundAsyncSource + "\nawait main();\n");
   const output = validateGeneratedProject("native-background-async-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native async completion/u);
 });
@@ -66,7 +66,7 @@ mod retained_source_failure {
 });
 
 test("unused background APIs emit no native context storage", { timeout: 300_000 }, () => {
-  const result = compile(nativeBackgroundNoDemandSource);
+  const result = compile(nativeBackgroundNoDemandSource + "\nmain();\n");
   assert.equal(result.artifacts.filter(row => row.path.endsWith(".rs"))
     .some(row => /pub static dispatch_root_/u.test(row.text)), false, "no undemanded physical roots");
   validateGeneratedProject("native-background-no-demand", result.artifacts, { run: true });
@@ -77,7 +77,8 @@ test("component background roots dispatch through exact two-hop package error do
     ["source-package-component:@acme/middle"]);
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
     target: { id: "rust", options: { outputType: "bin", crateName: "native_package_background" } },
-    sourcePackages: nativeBackgroundPackageGraph, files: nativeBackgroundPackageFiles,
+    sourcePackages: nativeBackgroundPackageGraph, files: { ...nativeBackgroundPackageFiles,
+      "index.ts": nativeBackgroundPackageFiles["index.ts"] + "\nmain();\n" },
   });
   assert.equal(result.diagnostics.length, 0,
     result.diagnostics.slice(0, 6).map(row => row.message.slice(0, 256)).join("\n"));
