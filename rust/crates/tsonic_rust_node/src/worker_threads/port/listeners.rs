@@ -256,6 +256,7 @@ struct PortOwner<E: 'static> {
     state: Rc<RefCell<MessagePortState>>,
     reservation: TaskReservation,
     callbacks: RefCell<PortCallbackSlots<E>>,
+    dispatch_owner: Cell<Option<DispatchOwner>>,
 }
 
 impl<E: 'static> PortListenerLifecycle for PortOwner<E> {
@@ -301,6 +302,7 @@ impl<E: 'static> MessagePort<E> {
         callback: EventCallback<E>,
     ) -> NodeResult<&Self> {
         let event = EventName::from_value(event)?;
+        self.ensure_owner()?;
         {
             let mut state = self.owner.state.borrow_mut();
             if state.routing.listeners >= MAXIMUM_PORT_LISTENERS {
@@ -310,6 +312,7 @@ impl<E: 'static> MessagePort<E> {
                 ));
             }
             let ticket = super::resources::admit_signal()?;
+            self.attach_to(&mut state);
             let slot = self
                 .owner
                 .callbacks

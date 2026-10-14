@@ -129,37 +129,41 @@ fn process_next_tick_executes_without_event_loop_guessing() {
 
 #[test]
 fn worker_message_channel_structured_clones_js_values() {
-    assert_eq!(worker_threads::initialize_worker_process().unwrap(), None);
-    let spawn_error = match worker_threads::resources::with_default(|resources| {
-        worker_threads::Worker::spawn_default("", resources)
-    }) {
-        Ok(_) => panic!("empty worker entry identity must reject"),
-        Err(error) => error,
-    };
-    assert_eq!(spawn_error.code, "ERR_WORKER_PATH");
-    let channel =
-        worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
-    channel.port1.start();
-    assert!(channel.port1.has_ref());
-    channel.port1.unref();
-    assert!(!channel.port1.has_ref());
-    channel.port1.ref_chain();
-    assert!(channel.port1.has_ref());
-    channel
-        .port1
-        .post_message(JsValue::from("hello".to_string()))
-        .unwrap();
-    assert_eq!(
-        worker_threads::receive_message_on_port(&channel.port2).unwrap(),
-        JsValue::from("hello".to_string())
-    );
-    assert!(worker_threads::is_main_thread());
-    assert!(
-        worker_threads::resources::with_default(worker_threads::parent_port)
-            .unwrap()
-            .is_none()
-    );
-    assert_eq!(worker_threads::worker_data(), JsValue::Null);
+    tsonic_rust_node::block_on(async {
+        assert_eq!(worker_threads::initialize_worker_process().unwrap(), None);
+        let spawn_error = match worker_threads::resources::with_default(|resources| {
+            worker_threads::Worker::spawn_default("", resources)
+        }) {
+            Ok(_) => panic!("empty worker entry identity must reject"),
+            Err(error) => error,
+        };
+        assert_eq!(spawn_error.code, "ERR_WORKER_PATH");
+        let channel =
+            worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
+        channel.port1.start().unwrap();
+        assert!(channel.port1.has_ref());
+        channel.port1.unref();
+        assert!(!channel.port1.has_ref());
+        channel.port1.ref_chain();
+        assert!(channel.port1.has_ref());
+        channel
+            .port1
+            .post_message(JsValue::from("hello".to_string()))
+            .unwrap();
+        assert_eq!(
+            worker_threads::receive_message_on_port(&channel.port2).unwrap(),
+            JsValue::from("hello".to_string())
+        );
+        assert!(worker_threads::is_main_thread());
+        assert!(
+            worker_threads::resources::with_default(worker_threads::parent_port)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(worker_threads::worker_data(), JsValue::Null);
+        channel.port1.unref();
+    })
+    .unwrap();
 }
 
 #[test]

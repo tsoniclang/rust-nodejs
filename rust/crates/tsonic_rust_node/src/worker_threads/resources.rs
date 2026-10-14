@@ -120,7 +120,17 @@ impl<E: 'static> WorkerResources<E> {
 impl<E: From<NodeError> + 'static> WorkerResources<E> {
     pub(super) fn register_port(&self, port: &MessagePort<E>) -> NodeResult<()> {
         self.resources
-            .register(port.ticket(), WorkerResource::Port(port.downgrade()))
+            .register_physical(port.ticket(), WorkerResource::Port(port.downgrade()))?;
+        self.activate_port(port);
+        Ok(())
+    }
+
+    fn activate_port(&self, port: &MessagePort<E>) {
+        if let Ok(owner) = tsonic_rust_js::event_loop::dispatch_owner() {
+            if self.resources.owns(owner) {
+                port.activate(owner);
+            }
+        }
     }
 
     pub(super) fn register_worker(&self, worker: &Worker<E>) -> NodeResult<()> {
@@ -143,6 +153,7 @@ impl<E: From<NodeError> + 'static> WorkerResources<E> {
         state: Rc<RefCell<MessagePortState>>,
     ) -> NodeResult<MessagePort<E>> {
         let port = MessagePort::from_state(state)?;
+        self.activate_port(&port);
         self.parent.set(port.clone()).map_err(|_| {
             NodeError::new(
                 "ERR_WORKER_PARENT_PORT",
@@ -161,13 +172,44 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
         if !self.resources.enter(owner) {
             return false;
         }
+        self.resources.visit(|resource| {
+            if let WorkerResource::Port(resource) = resource {
+                if let Some(port) = resource.upgrade() {
+                    port.activate(owner);
+                }
+            }
+        });
         if let Some(parent) = self.parent.get() {
-            parent.attach();
+            parent.activate(owner);
         }
         true
     }
     fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
-        if self.resources.close_owner(owner) {
+        if !self.resources.owns(owner) {
+            return;
+        }
+        self.resources.visit(|resource| {
+            if let WorkerResource::Port(resource) = resource {
+                if let Some(port) = resource.upgrade() {
+                    port.deactivate();
+                }
+            }
+        });
+        if let Some(parent) = self.parent.get() {
+            parent.deactivate();
+        }
+        if self
+            .resources
+            .close_owner_with(owner, |resource| match resource {
+                WorkerResource::Port(resource) => {
+                    if let Some(port) = resource.upgrade() {
+                        port.detach();
+                    }
+                    resource.is_alive()
+                }
+                WorkerResource::Worker(_) => false,
+            })
+        {
             if let Some(parent) = self.parent.get() {
                 parent.detach();
             }
@@ -176,7 +218,8 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
 
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         let resources = self.resources.prepare(phase)?;
-        let parent = if phase == crate::phases::PORTS {
+        let generation = self.resources.generation();
+        let parent = if phase == crate::phases::PORTS && self.resources.accepts(generation) {
             self.parent
                 .get()
                 .map(MessagePort::physical_state)
@@ -189,7 +232,7 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
         };
         Ok(WorkerFrontier {
             owner: self as *const Self as usize,
-            generation: self.resources.generation(),
+            generation,
             resources,
             parent,
         })

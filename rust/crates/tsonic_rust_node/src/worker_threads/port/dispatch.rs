@@ -26,14 +26,20 @@ impl PortSignal {
 pub struct PortFrontier {
     state: Rc<RefCell<MessagePortState>>,
     boundary: Option<TaskTicket>,
+    owner: DispatchOwner,
+    epoch: u64,
 }
 
 impl Drop for PortFrontier {
     fn drop(&mut self) {
         let mut state = self.state.borrow_mut();
+        if state.capture_owner != Some(self.owner) || state.capture_epoch != self.epoch {
+            return;
+        }
         state.capture_count -= 1;
         if state.capture_count == 0 {
             state.capture_boundary = None;
+            state.capture_owner = None;
         }
     }
 }
@@ -119,12 +125,21 @@ impl MessagePortState {
 }
 
 pub(super) fn capture_parent(state: Rc<RefCell<MessagePortState>>) -> NodeResult<PortFrontier> {
-    let boundary = {
+    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+    let (boundary, epoch) = {
         let mut physical = state.borrow_mut();
-        if physical.capture_count == 0 {
+        if physical.capture_owner != Some(owner) {
+            let epoch = physical.capture_epoch.checked_add(1).ok_or_else(|| {
+                NodeError::new(
+                    "ERR_WORKER_CAPTURE_LIMIT",
+                    "message port frontier generation exceeds the native range",
+                )
+            })?;
             physical.ingest_transport()?;
             physical.capture_boundary = physical.captured_boundary();
             physical.capture_count = 1;
+            physical.capture_owner = Some(owner);
+            physical.capture_epoch = epoch;
         } else {
             physical.capture_count = physical.capture_count.checked_add(1).ok_or_else(|| {
                 NodeError::new(
@@ -133,13 +148,21 @@ pub(super) fn capture_parent(state: Rc<RefCell<MessagePortState>>) -> NodeResult
                 )
             })?;
         }
-        physical.capture_boundary
+        (physical.capture_boundary, physical.capture_epoch)
     };
-    Ok(PortFrontier { state, boundary })
+    Ok(PortFrontier {
+        state,
+        boundary,
+        owner,
+        epoch,
+    })
 }
 
 impl<E: From<NodeError> + 'static> MessagePort<E> {
     pub(super) fn capture(&self) -> Result<Option<TaskTicket>, E> {
+        if !self.is_attached() {
+            return Ok(None);
+        }
         let captured = {
             let mut state = self.owner.state.borrow_mut();
             state.ingest_transport().map(|()| state.captured_boundary())
@@ -152,14 +175,28 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
     }
 
     pub(super) fn next_shared(&self, frontier: &PortFrontier) -> Option<u64> {
-        if !Rc::ptr_eq(&self.owner.state, &frontier.state) {
+        if self.owner.dispatch_owner.get() != Some(frontier.owner)
+            || !Rc::ptr_eq(&self.owner.state, &frontier.state)
+        {
             return None;
         }
-        self.next_delivery(frontier.boundary)
+        self.next_delivery(frontier.boundary, Some(frontier.epoch))
     }
 
-    fn next_delivery(&self, boundary: Option<TaskTicket>) -> Option<u64> {
+    fn next_delivery(&self, boundary: Option<TaskTicket>, epoch: Option<u64>) -> Option<u64> {
+        if self.owner.dispatch_owner.get().is_none() {
+            return None;
+        }
         let mut state = self.owner.state.borrow_mut();
+        if epoch.is_some_and(|epoch| epoch != state.capture_epoch)
+            || state
+                .routing
+                .owners
+                .get(self.owner.reservation.ticket())
+                .is_none()
+        {
+            return None;
+        }
         let (owner, _) = state.next_route(boundary?)?;
         (owner == self.owner.reservation.ticket()).then(|| state.reservation.ticket().sequence())
     }
@@ -173,7 +210,7 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
 
     pub(super) fn poll(&self, boundary: Option<TaskTicket>) -> Result<bool, E> {
         let mut did_work = false;
-        while self.next_delivery(boundary).is_some() {
+        while self.next_delivery(boundary, None).is_some() {
             did_work |= self.poll_delivery(boundary)?;
         }
         Ok(did_work)

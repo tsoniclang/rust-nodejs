@@ -1,9 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use tsonic_rust_js::JsValue;
+use tsonic_rust_runtime::dispatch::DispatchOwner;
 use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::Callable;
 
@@ -20,6 +21,9 @@ mod tests;
 
 #[cfg(test)]
 mod shared_tests;
+
+#[cfg(test)]
+mod epoch_tests;
 
 pub struct MessagePort<E: 'static = tsonic_rust_runtime::TsonicError> {
     owner: Rc<PortOwner<E>>,
@@ -39,6 +43,8 @@ pub(super) struct MessagePortState {
     routing: PortRouting,
     capture_count: usize,
     capture_boundary: Option<TaskTicket>,
+    capture_owner: Option<DispatchOwner>,
+    capture_epoch: u64,
 }
 
 enum PortSignal {
@@ -59,8 +65,43 @@ impl<E: 'static> Clone for MessagePort<E> {
 }
 
 impl<E: 'static> MessagePort<E> {
+    pub(super) fn activate(&self, owner: DispatchOwner) {
+        self.owner.dispatch_owner.set(Some(owner));
+    }
+
+    pub(super) fn deactivate(&self) {
+        self.owner.dispatch_owner.set(None);
+    }
+
+    fn ensure_owner(&self) -> NodeResult<()> {
+        let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+        if self.owner.dispatch_owner.get() != Some(owner) {
+            return Err(NodeError::new(
+                "ERR_NODE_RESOURCE_CLOSED",
+                "message port callbacks require their selected active native resource owner",
+            ));
+        }
+        Ok(())
+    }
+
+    fn is_attached(&self) -> bool {
+        self.owner.dispatch_owner.get().is_some()
+            && self
+                .owner
+                .state
+                .borrow()
+                .routing
+                .owners
+                .get(self.owner.reservation.ticket())
+                .is_some()
+    }
+
     pub(super) fn attach(&self) {
         let mut state = self.owner.state.borrow_mut();
+        self.attach_to(&mut state);
+    }
+
+    fn attach_to(&self, state: &mut MessagePortState) {
         let ticket = self.owner.reservation.ticket();
         if state.routing.owners.get(ticket).is_none() {
             let owner = Rc::downgrade(&self.owner);
@@ -73,16 +114,25 @@ impl<E: 'static> MessagePort<E> {
     }
 
     pub(super) fn detach(&self) {
-        self.owner
-            .state
-            .borrow_mut()
-            .routing
-            .remove_owner(self.owner.reservation.ticket());
+        let emission = {
+            let mut state = self.owner.state.borrow_mut();
+            state.routing.remove_owner(self.owner.reservation.ticket());
+            if state.routing.owners.iter().next().is_none() {
+                state.routing.cleanup_pending = false;
+                state.capture_owner = None;
+                state.capture_count = 0;
+                state.capture_boundary = None;
+                state.routing.active.take()
+            } else {
+                None
+            }
+        };
         let callbacks = std::mem::replace(
             &mut *self.owner.callbacks.borrow_mut(),
             PortCallbackSlots::new(),
         );
         drop(callbacks);
+        drop(emission);
     }
 }
 
@@ -103,6 +153,8 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
             routing: PortRouting::new(),
             capture_count: 0,
             capture_boundary: None,
+            capture_owner: None,
+            capture_epoch: 0,
         }));
         let value = Self::from_state(state)?;
         resources.register_port(&value)?;
@@ -115,9 +167,9 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
             state: Rc::clone(&state),
             reservation,
             callbacks: RefCell::new(PortCallbackSlots::new()),
+            dispatch_owner: Cell::new(None),
         });
         let value = Self { owner };
-        value.attach();
         Ok(value)
     }
 
@@ -151,8 +203,11 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
         Ok(state.messages.pop_front().map(|(_, value)| value.to_js()))
     }
 
-    pub fn start(&self) {
+    pub fn start(&self) -> NodeResult<()> {
+        self.ensure_owner()?;
+        self.attach();
         self.owner.state.borrow_mut().started = true;
+        Ok(())
     }
 
     pub fn close(&self) -> NodeResult<()> {
@@ -190,6 +245,9 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
     }
 
     pub(super) fn is_refed_active(&self) -> bool {
+        if !self.is_attached() {
+            return false;
+        }
         let state = self.owner.state.borrow();
         state.started
             && (state.routing.active.is_some()
@@ -360,5 +418,7 @@ pub(super) fn transport_state(
         routing: PortRouting::new(),
         capture_count: 0,
         capture_boundary: None,
+        capture_owner: None,
+        capture_epoch: 0,
     })))
 }
