@@ -17,13 +17,13 @@ function compile(source, outputType = "bin") {
 }
 
 test("generated native Node driver consumes the exact native network root", { timeout: 300_000 }, () => {
-  const result = compile(nativeNetworkCompletionSource);
+  const result = compile(`${nativeNetworkCompletionSource}\nmain();\n`);
   const output = validateGeneratedProject("native-network-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native network completion/u);
 });
 
 test("native network queries require no callback roots", { timeout: 300_000 }, () => {
-  const result = compile(nativeNetworkNoDemandSource);
+  const result = compile(`${nativeNetworkNoDemandSource}\nmain();\n`);
   assert.equal(result.artifacts.some(row => /pub static dispatch_root_/u.test(row.text)), false,
     "queries must not manufacture retained callback roots");
   validateGeneratedProject("native-network-no-demand", result.artifacts, { run: true });

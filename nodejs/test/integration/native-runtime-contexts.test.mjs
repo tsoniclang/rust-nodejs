@@ -17,7 +17,7 @@ function compile(source, outputType = "bin") {
 }
 
 test("generated Node driver selects source-thread readline tasks without worker scheduling", { timeout: 300_000 }, () => {
-  const result = compile(nativeRuntimeCompletionSource);
+  const result = compile(`${nativeRuntimeCompletionSource}\nmain();\n`);
   const output = validateGeneratedProject("native-runtime-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native runtime completion/u);
 });

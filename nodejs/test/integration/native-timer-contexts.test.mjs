@@ -17,7 +17,7 @@ function compile(source, outputType = "bin", node = true) {
 }
 
 test("generated Node driver drains independent Node and JS timer roots", { timeout: 300_000 }, () => {
-  const result = compile(nativeTimerCompletionSource);
+  const result = compile(`${nativeTimerCompletionSource}\nmain();\n`);
   const output = validateGeneratedProject("native-timer-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native timer completion/u);
   const entry = result.artifacts.find(row => row.path === "src/main.rs");
@@ -27,7 +27,7 @@ test("generated Node driver drains independent Node and JS timer roots", { timeo
 });
 
 test("generated JS-only driver selects the same native typed timer owner", { timeout: 300_000 }, () => {
-  const result = compile(nativeJsTimerCompletionSource, "bin", false);
+  const result = compile(`${nativeJsTimerCompletionSource}\nmain();\n`, "bin", false);
   const output = validateGeneratedProject("native-js-timer-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native timer completion/u);
   assert.equal(result.artifacts.some(row => row.text.includes("tsonic_rust_node")), false, "no unnecessary Node dependency");

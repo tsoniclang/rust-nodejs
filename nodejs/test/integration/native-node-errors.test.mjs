@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { analyzeRust, compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
 import { runCargo, validateGeneratedProject, writeGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
 import { nativeOwnershipCostSupport } from "../../../../tsonic-rust/test/helpers/native-ownership-cost.mjs";
+import { createRustRecordFixture } from "../../../../tsonic-rust/test/helpers/records.mjs";
 import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnionProofSource } from "../../../../tsonic/test/fixtures/native-node-errors.mjs";
 import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
-import { rustTargetOperationFactKey } from "../../../../tsonic-rust/dist/analysis/facts/keys.js";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/errors.js";
 
 test("Node callbacks retain native errors and exact optional error storage", { timeout: 300_000 }, () => {
@@ -34,7 +34,7 @@ test("native callback throwing requires exact operand, carrier and registration"
     .find(node => ast.text(ast.name(node)) === "fail");
   assert.ok(declaration);
   const statement = ast.statements(ast.body(declaration))[0];
-  const fact = program.facts.getFact(statement, rustTargetOperationFactKey);
+  const fact = program.records.targetOperation.get(statement);
   assert.equal(fact.kind, "throw-op");
   assert.equal(fact.error.kind, "conversion");
   assert.deepEqual(fact.error.conversion.route, { kind: "runtime", boundary: "provider-native" });
@@ -54,12 +54,14 @@ test("native callback throwing requires exact operand, carrier and registration"
     [{ error: fact.error, providerErrorCarriers: [] }, "Runtime error construction has no exact registered native error carrier."],
   ]) {
     const diagnostics = [];
-    const facts = { ...program.facts, getFact: (subject, key) => subject === statement && key === rustTargetOperationFactKey
-      ? { ...fact, error: mutation.error } : program.facts.getFact(subject, key) };
-    const changed = { ...program, facts, providerErrorCarriers: mutation.providerErrorCarriers ?? program.providerErrorCarriers };
+    const records = createRustRecordFixture({
+      targetOperation: { get: subject => subject === statement
+        ? { ...fact, error: mutation.error } : program.records.targetOperation.get(subject) },
+    }, program.records);
+    const changed = { ...program, records, providerErrorCarriers: mutation.providerErrorCarriers ?? program.providerErrorCarriers };
     assert.equal(planThrowStatement(statement, { input: { program: changed }, sourceFile: ast.getSourceFile(statement), diagnostics,
       fallibleBoundary: { componentId: "source", errorDomain: "runtime", errorTypePath: "rt::TsonicError" },
-    }), undefined);
+    }) === undefined, true, message);
     assert.equal(diagnostics.length, 1);
     assert.equal(diagnostics[0].message, `${message} Node kind: KindIdentifier.`);
   }
