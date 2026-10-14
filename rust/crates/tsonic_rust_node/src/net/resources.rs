@@ -36,19 +36,26 @@ impl<E: 'static> NetServers<E> {
 }
 
 impl<E: From<NodeError> + 'static> NetServers<E> {
-    pub(super) fn register(&self, server: &Server<E>) {
+    pub(super) fn register(&self, server: &Server<E>) -> NodeResult<()> {
         self.resources.register(
             server.state.borrow().reservation.ticket(),
             RuntimeServer {
                 state: Rc::downgrade(&server.state),
             },
-        );
+        )
     }
 }
 
 impl<E: From<NodeError> + 'static> DispatchContexts for NetServers<E> {
     type Error = E;
     type Frontier = ResourceFrontier;
+
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.resources.enter(owner)
+    }
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        self.resources.close(owner);
+    }
 
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         self.resources.prepare(phase)
@@ -87,7 +94,7 @@ impl<E: From<NodeError>> RuntimeResource for RuntimeServer<E> {
     }
 
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::Net
+        crate::phases::NET
     }
 
     fn capture(&self) -> Result<Option<TaskTicket>, E> {

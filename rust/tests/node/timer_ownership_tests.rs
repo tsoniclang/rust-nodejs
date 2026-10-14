@@ -48,13 +48,16 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
             for initial in 0..count {
                 let observed = Rc::clone(&observed);
                 let mut current = initial;
-                handles.push(timers::set_interval(
-                    move || {
-                        current += 1;
-                        observed.set(current);
-                    },
-                    60_000,
-                ));
+                handles.push(
+                    timers::set_interval(
+                        move || {
+                            current += 1;
+                            observed.set(current);
+                        },
+                        60_000,
+                    )
+                    .unwrap(),
+                );
             }
         });
         let expected = measure(|| {
@@ -133,7 +136,8 @@ fn aborted_callbacks_allocate_nothing_and_drop_once() {
                 r#ref: true,
                 signal_aborted: true,
             },
-        );
+        )
+        .unwrap();
         assert!(!timer.has_ref());
     });
     assert_eq!(cost, (0, 0));
@@ -167,7 +171,8 @@ fn cancelling_and_running_once_callbacks_release_their_captures_exactly_once() {
             panic!("cancelled timer executed");
         },
         0,
-    );
+    )
+    .unwrap();
     timers::clear_timeout(&mut cancelled);
     assert_eq!(drops.get(), 1);
     let called_probe = DropProbe(Rc::clone(&drops));
@@ -176,9 +181,10 @@ fn cancelling_and_running_once_callbacks_release_their_captures_exactly_once() {
         black_box(&called_probe);
         callback_calls.set(callback_calls.get() + 1);
         let nested_calls = Rc::clone(&callback_calls);
-        timers::set_immediate(move || nested_calls.set(nested_calls.get() + 1));
+        timers::set_immediate(move || nested_calls.set(nested_calls.get() + 1)).unwrap();
         run_event_loop().unwrap();
-    });
+    })
+    .unwrap();
     run_event_loop().unwrap();
     assert_eq!(calls.get(), 2);
     assert_eq!(drops.get(), 2);
@@ -203,7 +209,8 @@ fn mutable_interval_state_survives_repeated_calls_and_self_cancellation() {
             }
         },
         1,
-    );
+    )
+    .unwrap();
     *slot.borrow_mut() = Some(timer);
     run_event_loop().unwrap();
     assert_eq!(observed.get(), 2);
@@ -222,7 +229,8 @@ fn mutable_callbacks_reject_overlapping_reentrant_invocation() {
             run_event_loop().unwrap();
         },
         1,
-    );
+    )
+    .unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_event_loop));
     timers::clear_interval(&mut timer);
     assert!(result.is_err());

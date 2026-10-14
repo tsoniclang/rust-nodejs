@@ -30,6 +30,7 @@ pub mod path;
 pub mod path_posix;
 pub mod path_win32;
 pub mod perf_hooks;
+pub mod phases;
 pub mod process;
 pub mod punycode;
 pub mod querystring;

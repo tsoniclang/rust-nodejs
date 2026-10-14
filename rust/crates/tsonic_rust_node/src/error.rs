@@ -72,6 +72,15 @@ impl tsonic_rust_runtime::ToSourceString for NodeError {
 
 pub type NodeResult<T> = Result<T, NodeError>;
 
+impl From<JsError> for NodeError {
+    fn from(source: JsError) -> Self {
+        Self {
+            code: "ERR_NODE_EVENT_LOOP".to_owned(),
+            source,
+        }
+    }
+}
+
 impl From<tsonic_rust_runtime::timer_queue::TimerQueueError> for NodeError {
     fn from(value: tsonic_rust_runtime::timer_queue::TimerQueueError) -> Self {
         use tsonic_rust_runtime::timer_queue::TimerQueueError;

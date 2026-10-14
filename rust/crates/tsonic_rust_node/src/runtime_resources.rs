@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::time::Duration;
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{
+    DispatchContexts, DispatchGeneration, DispatchGenerationId, DispatchPhase,
+};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
 
 pub(crate) struct NativeResourceBudget {
@@ -56,6 +58,7 @@ struct Registration<TResource> {
 pub(crate) struct RuntimeResources<TResource> {
     registrations: RefCell<BTreeMap<TaskTicket, Registration<TResource>>>,
     limit: usize,
+    generation: DispatchGeneration,
 }
 
 pub struct ResourceFrontier {
@@ -64,6 +67,7 @@ pub struct ResourceFrontier {
     admission_boundary: Option<TaskTicket>,
     after: Cell<Option<TaskTicket>>,
     owner: usize,
+    generation: Option<DispatchGenerationId>,
 }
 
 impl<TResource> RuntimeResources<TResource> {
@@ -72,12 +76,47 @@ impl<TResource> RuntimeResources<TResource> {
         Self {
             registrations: RefCell::new(BTreeMap::new()),
             limit,
+            generation: DispatchGeneration::new_closed(),
         }
     }
 }
 
+impl<TResource> RuntimeResources<TResource> {
+    pub(crate) fn generation(&self) -> Option<DispatchGenerationId> {
+        self.generation.capture()
+    }
+
+    pub(crate) fn accepts(&self, generation: Option<DispatchGenerationId>) -> bool {
+        self.generation.accepts(generation)
+    }
+
+    pub(crate) fn enter_owner(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.generation.enter(owner)
+    }
+
+    pub(crate) fn close_owner(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        if !self.generation.close(owner) {
+            return false;
+        }
+        let retired = std::mem::take(&mut *self.registrations.borrow_mut());
+        drop(retired);
+        true
+    }
+}
+
 impl<TResource: RuntimeResource> RuntimeResources<TResource> {
-    pub(crate) fn register(&self, ticket: TaskTicket, resource: TResource) {
+    pub(crate) fn register(
+        &self,
+        ticket: TaskTicket,
+        resource: TResource,
+    ) -> crate::NodeResult<()> {
+        let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(crate::NodeError::from)?;
+        if !self.generation.owns(owner) {
+            return Err(crate::NodeError::new(
+                "ERR_NODE_RESOURCE_CLOSED",
+                "native resource owner is closed",
+            ));
+        }
         if self.registrations.borrow().len() >= self.limit {
             self.prune();
         }
@@ -87,6 +126,7 @@ impl<TResource: RuntimeResource> RuntimeResources<TResource> {
             registrations.insert(ticket, Registration { resource })
         };
         drop(previous);
+        Ok(())
     }
 
     fn prune(&self) {
@@ -117,7 +157,9 @@ impl<TResource: RuntimeResource> RuntimeResources<TResource> {
     }
 
     fn next_resource(&self, frontier: &ResourceFrontier) -> Option<(TaskTicket, TResource)> {
-        if frontier.owner != self as *const Self as usize {
+        if frontier.owner != self as *const Self as usize
+            || !self.generation.accepts(frontier.generation)
+        {
             return None;
         }
         let boundary = frontier.boundary?;
@@ -138,6 +180,14 @@ impl<TResource: RuntimeResource> DispatchContexts for RuntimeResources<TResource
     type Error = TResource::Error;
     type Frontier = ResourceFrontier;
 
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.enter_owner(owner)
+    }
+
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        self.close_owner(owner);
+    }
+
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, Self::Error> {
         self.prune();
         let registrations = self.registrations.borrow();
@@ -147,6 +197,7 @@ impl<TResource: RuntimeResource> DispatchContexts for RuntimeResources<TResource
             admission_boundary: None,
             after: Cell::new(None),
             owner: self as *const Self as usize,
+            generation: self.generation.capture(),
         };
         drop(registrations);
         while let Some((ticket, resource)) = self.next_resource(&frontier) {

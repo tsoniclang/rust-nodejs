@@ -8,6 +8,19 @@ use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation};
 
 struct Failure(Rc<Cell<i64>>);
 
+#[test]
+fn loop_owner_plain_native_resource_reservations_do_not_require_a_js_loop() {
+    let budget = NativeResourceBudget::new(2);
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+    let reservation = budget.reserve().unwrap();
+    let next = budget.admit().unwrap();
+    assert_eq!(next.sequence(), reservation.ticket().sequence() + 1);
+    assert_eq!(budget.budget().pending(), 1);
+    drop(reservation);
+    assert_eq!(budget.budget().pending(), 0);
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+}
+
 struct State {
     reservation: TaskReservation,
     action: RefCell<Option<Result<bool, Failure>>>,
@@ -23,7 +36,7 @@ impl RuntimeResource for Resource {
         self.0.strong_count() != 0
     }
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::Ports
+        crate::phases::PORTS
     }
     fn capture(&self) -> Result<Option<TaskTicket>, Failure> {
         Ok(self.0.upgrade().map(|state| state.reservation.ticket()))
@@ -56,7 +69,9 @@ fn register(
         action: RefCell::new(Some(action)),
         polled: Cell::new(0),
     });
-    resources.register(state.reservation.ticket(), Resource(Rc::downgrade(&state)));
+    resources
+        .register(state.reservation.ticket(), Resource(Rc::downgrade(&state)))
+        .unwrap();
     state
 }
 
@@ -67,13 +82,13 @@ fn native_resource_frontiers_skip_idle_candidates_without_losing_later_callbacks
     let idle = register(&resources, &budget, Ok(false));
     let ready = register(&resources, &budget, Ok(true));
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(idle.polled.get(), 1);
     assert_eq!(ready.polled.get(), 1);
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Workers).ok(),
+        poll_phase(&resources, crate::phases::WORKERS).ok(),
         Some(false)
     );
     assert_eq!(ready.polled.get(), 1);
@@ -86,7 +101,7 @@ fn captured_native_frontiers_exclude_admission_and_reject_foreign_roots() {
     let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
     let first = register(&resources, &budget, Ok(true));
     let frontier = resources
-        .prepare(DispatchPhase::Ports)
+        .prepare(crate::phases::PORTS)
         .ok()
         .expect("native frontier");
     let second = register(&resources, &budget, Ok(true));
@@ -96,7 +111,7 @@ fn captured_native_frontiers_exclude_admission_and_reject_foreign_roots() {
     assert_eq!(first.polled.get(), 1);
     assert_eq!(second.polled.get(), 0);
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(second.polled.get(), 1);
@@ -114,7 +129,7 @@ fn weak_native_resources_release_shared_quota_before_the_next_registry_poll() {
     let second = register(&resources, &budget, Ok(true));
     assert_eq!(resources.registrations.borrow().len(), 1);
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(second.polled.get(), 1);
@@ -128,7 +143,7 @@ fn original_native_failure_retains_the_unvisited_resource_frontier() {
     let first = register(&resources, &budget, Err(Failure(Rc::clone(&original))));
     let second = register(&resources, &budget, Ok(true));
     let frontier = resources
-        .prepare(DispatchPhase::Ports)
+        .prepare(crate::phases::PORTS)
         .ok()
         .expect("native frontier");
     let returned = match poll_prepared(&resources, &frontier) {
@@ -171,7 +186,7 @@ impl RuntimeResource for ReentrantResource {
         self.alive.get()
     }
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::Http
+        crate::phases::HTTP
     }
     fn capture(&self) -> crate::NodeResult<Option<TaskTicket>> {
         Ok(None)
@@ -188,6 +203,110 @@ impl RuntimeResource for ReentrantResource {
 }
 
 #[test]
+fn loop_owner_shutdown_drops_native_registrations_once_outside_registry_borrows() {
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    let resources = Rc::new(RuntimeResources::new(1));
+    let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+    let calls = Rc::new(Cell::new(0));
+    let mut stale = None;
+    for attempt in 0..128 {
+        let reservation = budget.reserve().unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::block_on_with_contexts(
+                async {
+                    let current = tsonic_rust_js::event_loop::dispatch_owner().unwrap();
+                    if let Some(retired) = stale {
+                        assert!(!resources.enter(retired));
+                        resources.close(retired);
+                    } else {
+                        stale = Some(current);
+                    }
+                    resources
+                        .register(
+                            reservation.ticket(),
+                            ReentrantResource {
+                                alive: Rc::new(Cell::new(true)),
+                                _owner: Rc::new(RegistryDrop {
+                                    resources: Rc::downgrade(&resources),
+                                    calls: Rc::clone(&calls),
+                                }),
+                            },
+                        )
+                        .unwrap();
+                    assert!(resources.generation.owns(current));
+                    assert_eq!(resources.registrations.borrow().len(), 1);
+                    assert_eq!(attempt % 2, 0, "original native root panic");
+                },
+                prepend(
+                    resources.as_ref(),
+                    DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+                ),
+            )
+        }));
+        if attempt % 2 == 0 {
+            assert!(result.unwrap().is_ok());
+        } else {
+            assert!(result.is_err());
+        }
+        assert!(resources.registrations.borrow().is_empty());
+        assert_eq!(calls.get(), attempt + 1);
+    }
+    assert_eq!(Rc::strong_count(&calls), 1);
+    assert_eq!(budget.pending(), 0);
+}
+
+#[test]
+fn loop_owner_stale_native_frontiers_never_select_a_reopened_source() {
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    let resources = Rc::new(RuntimeResources::<ReentrantResource>::new(1));
+    let calls = Rc::new(Cell::new(0));
+    let make_resource = || ReentrantResource {
+        alive: Rc::new(Cell::new(true)),
+        _owner: Rc::new(RegistryDrop {
+            resources: Rc::downgrade(&resources),
+            calls: Rc::clone(&calls),
+        }),
+    };
+    let stale = crate::block_on_with_contexts(
+        async {
+            let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+            let reservation = budget.reserve().unwrap();
+            resources
+                .register(reservation.ticket(), make_resource())
+                .unwrap();
+            resources.prepare(crate::phases::HTTP).ok().unwrap()
+        },
+        prepend(
+            resources.as_ref(),
+            DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    );
+    let stale = stale.ok().unwrap();
+    for _ in 0..128 {
+        crate::block_on_with_contexts(
+            async {
+                let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+                let reservation = budget.reserve().unwrap();
+                resources
+                    .register(reservation.ticket(), make_resource())
+                    .unwrap();
+                let current = resources.prepare(crate::phases::HTTP).ok().unwrap();
+                assert!(resources.next_ready(&current).is_some());
+                assert!(resources.next_ready(&stale).is_none());
+                assert_eq!(resources.poll_next(&stale).ok(), Some(false));
+            },
+            prepend(
+                resources.as_ref(),
+                DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+            ),
+        )
+        .ok()
+        .unwrap();
+        assert!(resources.registrations.borrow().is_empty());
+    }
+}
+
+#[test]
 fn pruning_and_replacement_release_native_resource_owners_outside_registry_borrows() {
     for replacement in [false, true] {
         let resources = Rc::new(RuntimeResources::new(1));
@@ -195,27 +314,31 @@ fn pruning_and_replacement_release_native_resource_owners_outside_registry_borro
         let reservation = budget.reserve().unwrap();
         let calls = Rc::new(Cell::new(0));
         let alive = Rc::new(Cell::new(true));
-        resources.register(
-            reservation.ticket(),
-            ReentrantResource {
-                alive: Rc::clone(&alive),
-                _owner: Rc::new(RegistryDrop {
-                    resources: Rc::downgrade(&resources),
-                    calls: Rc::clone(&calls),
-                }),
-            },
-        );
-        if replacement {
-            resources.register(
+        resources
+            .register(
                 reservation.ticket(),
                 ReentrantResource {
-                    alive: Rc::new(Cell::new(true)),
+                    alive: Rc::clone(&alive),
                     _owner: Rc::new(RegistryDrop {
                         resources: Rc::downgrade(&resources),
                         calls: Rc::clone(&calls),
                     }),
                 },
-            );
+            )
+            .unwrap();
+        if replacement {
+            resources
+                .register(
+                    reservation.ticket(),
+                    ReentrantResource {
+                        alive: Rc::new(Cell::new(true)),
+                        _owner: Rc::new(RegistryDrop {
+                            resources: Rc::downgrade(&resources),
+                            calls: Rc::clone(&calls),
+                        }),
+                    },
+                )
+                .unwrap();
             assert_eq!(calls.get(), 1);
             resources
                 .registrations
@@ -229,7 +352,7 @@ fn pruning_and_replacement_release_native_resource_owners_outside_registry_borro
         } else {
             alive.set(false);
         }
-        assert!(resources.prepare(DispatchPhase::Http).is_ok());
+        assert!(resources.prepare(crate::phases::HTTP).is_ok());
         assert_eq!(calls.get(), if replacement { 2 } else { 1 });
         assert!(resources.registrations.borrow().is_empty());
     }

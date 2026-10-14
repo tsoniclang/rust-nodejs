@@ -9,7 +9,7 @@ use tsonic_rust_node::process::SignalTasks;
 use tsonic_rust_node::tls::TlsServers;
 use tsonic_rust_node::worker_threads::{MessageChannel, WorkerResources};
 use tsonic_rust_node::NodeError;
-use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts};
 use tsonic_rust_runtime::Callable;
 
 #[path = "../support/allocation_counts.rs"]
@@ -52,12 +52,12 @@ fn cold_worker_and_signal_roots_allocate_no_native_storage() {
         assert!(!servers.has_work());
         assert!(!watchers.has_work());
         assert!(!tls.has_work());
-        assert!(!poll_phase(&tls, DispatchPhase::Tls).unwrap());
+        assert!(!poll_phase(&tls, tsonic_rust_node::phases::TLS).unwrap());
         assert_eq!(tls.next_delay(), None);
-        assert!(!poll_phase(&workers, DispatchPhase::Ports).unwrap());
-        assert!(!poll_phase(&signals, DispatchPhase::Signals).unwrap());
-        assert!(!poll_phase(&servers, DispatchPhase::Net).unwrap());
-        assert!(!poll_phase(&watchers, DispatchPhase::Watchers).unwrap());
+        assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
+        assert!(!poll_phase(&signals, tsonic_rust_node::phases::SIGNALS).unwrap());
+        assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
+        assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
         assert_eq!(workers.next_delay(), None);
         assert_eq!(signals.next_delay(), None);
         assert_eq!(servers.next_delay(), None);
@@ -70,11 +70,11 @@ fn cold_worker_and_signal_roots_allocate_no_native_storage() {
 fn warmed_native_server_frontiers_and_shared_handles_do_not_allocate() {
     let servers = NetServers::<NodeError>::new();
     let server = Server::new(&servers).unwrap();
-    assert!(!poll_phase(&servers, DispatchPhase::Net).unwrap());
+    assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
     let cost = measure(|| {
         for _ in 0..1024 {
             black_box(server.clone());
-            assert!(!poll_phase(&servers, DispatchPhase::Net).unwrap());
+            assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
             assert!(!servers.has_work());
             assert_eq!(servers.next_delay(), None);
         }
@@ -91,11 +91,11 @@ fn warmed_native_watcher_frontiers_and_shared_handles_do_not_allocate() {
         tsonic_rust_node::fs::WatchFileOptions::default(),
     )
     .unwrap();
-    assert!(!poll_phase(&watchers, DispatchPhase::Watchers).unwrap());
+    assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
     let cost = measure(|| {
         for _ in 0..1024 {
             black_box(watcher.clone());
-            assert!(!poll_phase(&watchers, DispatchPhase::Watchers).unwrap());
+            assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
             assert!(!watchers.has_work());
             assert_eq!(watchers.next_delay(), None);
         }
@@ -109,11 +109,11 @@ fn warmed_native_resource_frontiers_do_not_allocate_snapshot_wrappers() {
     let workers = WorkerResources::<NodeError>::new();
     let channel = MessageChannel::new(&workers).unwrap();
     channel.port2.start();
-    assert!(!poll_phase(&workers, DispatchPhase::Ports).unwrap());
+    assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
     let cost = measure(|| {
         for _ in 0..1024 {
             black_box(channel.port2.clone());
-            assert!(!poll_phase(&workers, DispatchPhase::Ports).unwrap());
+            assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
             assert!(workers.has_work());
             assert_eq!(workers.next_delay(), None);
         }
@@ -138,11 +138,11 @@ fn warmed_port_delivery_uses_one_queue_without_per_emission_wrappers_or_allocati
         )
         .unwrap();
     channel.port1.post_message(JsValue::from(1)).unwrap();
-    assert!(poll_phase(&workers, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
     let cost = measure(|| {
         for _ in 0..1024 {
             channel.port1.post_message(JsValue::from(1)).unwrap();
-            assert!(poll_phase(&workers, DispatchPhase::Ports).unwrap());
+            assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
         }
     });
     assert_eq!(calls.get(), 1025);

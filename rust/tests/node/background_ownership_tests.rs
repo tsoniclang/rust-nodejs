@@ -94,7 +94,7 @@ fn warmed_background_queries_and_weak_handle_clones_allocate_nothing() {
 
 #[test]
 fn composed_background_dispatch_queries_allocate_nothing() {
-    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd};
     let first = BackgroundTasks::<Failure>::new();
     let second = BackgroundTasks::<Failure>::new();
     black_box(first.handle());
@@ -106,7 +106,7 @@ fn composed_background_dispatch_queries_allocate_nothing() {
     let cost = measure(|| {
         for _ in 0..1024 {
             let frontier = contexts
-                .prepare(DispatchPhase::Background)
+                .prepare(tsonic_rust_node::phases::BACKGROUND)
                 .unwrap_or_else(|Failure(error)| panic!("empty group cannot fail: {error}"));
             assert!(contexts.next_ready(&frontier).is_none());
             assert!(matches!(contexts.poll_next(&frontier), Ok(false)));

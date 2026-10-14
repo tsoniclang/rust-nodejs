@@ -76,17 +76,17 @@ impl<E: 'static> Watchers<E> {
 }
 
 impl<E: From<NodeError> + 'static> Watchers<E> {
-    pub(super) fn register_handle(&self, watcher: &FsWatcher<E>) {
+    pub(super) fn register_handle(&self, watcher: &FsWatcher<E>) -> NodeResult<()> {
         self.resources.register(
             ticket(watcher),
             WatchOwnership::Handle(Rc::downgrade(&watcher.state)),
-        );
+        )
     }
 
-    pub(super) fn retain_stat(&self, watcher: &FsWatcher<E>) {
+    pub(super) fn retain_stat(&self, watcher: &FsWatcher<E>) -> NodeResult<()> {
         let ticket = ticket(watcher);
         self.resources
-            .register(ticket, WatchOwnership::Process(Rc::clone(&watcher.state)));
+            .register(ticket, WatchOwnership::Process(Rc::clone(&watcher.state)))?;
         let control: Rc<dyn StatWatcherControl> = watcher.state.clone();
         STAT_WATCHERS.with(|watchers| {
             let mut watchers = watchers.borrow_mut();
@@ -94,6 +94,7 @@ impl<E: From<NodeError> + 'static> Watchers<E> {
             assert!(watchers.len() < MAXIMUM_WATCHERS || watchers.contains_key(&ticket));
             watchers.insert(ticket, Rc::downgrade(&control));
         });
+        Ok(())
     }
 }
 
@@ -110,6 +111,12 @@ fn ticket<E: 'static>(watcher: &FsWatcher<E>) -> TaskTicket {
 impl<E: From<NodeError> + 'static> DispatchContexts for Watchers<E> {
     type Error = E;
     type Frontier = ResourceFrontier;
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.resources.enter(owner)
+    }
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        self.resources.close(owner);
+    }
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         self.resources.prepare(phase)
     }
@@ -134,7 +141,7 @@ impl<E: From<NodeError>> RuntimeResource for WatchOwnership<E> {
         self.owner().is_some_and(|owner| !owner.borrow().closed)
     }
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::Watchers
+        crate::phases::WATCHERS
     }
 
     fn capture(&self) -> Result<Option<TaskTicket>, E> {

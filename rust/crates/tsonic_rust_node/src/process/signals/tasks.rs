@@ -2,6 +2,7 @@ use crate::error::{NodeError, NodeResult};
 use std::cell::OnceCell;
 use std::time::Duration;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{DispatchGeneration, DispatchGenerationId};
 use tsonic_rust_runtime::Callable;
 
 thread_local! {
@@ -9,6 +10,7 @@ thread_local! {
 }
 
 pub struct SignalTasks<E: 'static> {
+    generation: DispatchGeneration,
     #[cfg(unix)]
     source: OnceCell<native::SignalSource<E>>,
     #[cfg(not(unix))]
@@ -16,6 +18,7 @@ pub struct SignalTasks<E: 'static> {
 }
 
 pub struct SignalFrontier {
+    generation: Option<DispatchGenerationId>,
     #[cfg(unix)]
     ready: Vec<(i32, u64)>,
     #[cfg(unix)]
@@ -32,6 +35,7 @@ impl<E: 'static> Default for SignalTasks<E> {
 impl<E: 'static> SignalTasks<E> {
     pub const fn new() -> Self {
         Self {
+            generation: DispatchGeneration::new_closed(),
             #[cfg(unix)]
             source: OnceCell::new(),
             #[cfg(not(unix))]
@@ -44,6 +48,13 @@ impl<E: 'static> SignalTasks<E> {
         name: &str,
         listener: &Callable<'static, (), Result<(), E>>,
     ) -> NodeResult<()> {
+        let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+        if !self.generation.owns(owner) {
+            return Err(NodeError::new(
+                "ERR_NODE_SIGNAL_CLOSED",
+                "native signal context is not registered with this event loop",
+            ));
+        }
         #[cfg(unix)]
         {
             native::check_owner()?;
@@ -90,9 +101,22 @@ impl<E: From<NodeError> + 'static> DispatchContexts for SignalTasks<E> {
     type Error = E;
     type Frontier = SignalFrontier;
 
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.generation.enter(owner)
+    }
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        if !self.generation.close(owner) {
+            return;
+        }
+        #[cfg(unix)]
+        if let Some(source) = self.source.get() {
+            source.close();
+        }
+    }
+
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         #[cfg(unix)]
-        let ready = if phase == DispatchPhase::Signals {
+        let ready = if phase == crate::phases::SIGNALS {
             self.source
                 .get()
                 .map_or(Ok(Vec::new()), native::SignalSource::ready)?
@@ -102,6 +126,7 @@ impl<E: From<NodeError> + 'static> DispatchContexts for SignalTasks<E> {
         #[cfg(not(unix))]
         let _ = phase;
         Ok(SignalFrontier {
+            generation: self.generation.capture(),
             #[cfg(unix)]
             ready,
             #[cfg(unix)]
@@ -111,7 +136,9 @@ impl<E: From<NodeError> + 'static> DispatchContexts for SignalTasks<E> {
     }
 
     fn next_ready(&self, frontier: &Self::Frontier) -> Option<u64> {
-        if frontier.owner != self as *const Self as usize {
+        if frontier.owner != self as *const Self as usize
+            || !self.generation.accepts(frontier.generation)
+        {
             return None;
         }
         #[cfg(unix)]
@@ -248,6 +275,18 @@ mod native {
                 emitter: EventEmitter::new(),
                 subscriptions: RefCell::new(BTreeMap::new()),
             }
+        }
+
+        pub(super) fn close(&self) {
+            let subscriptions = std::mem::take(&mut *self.subscriptions.borrow_mut());
+            self.emitter.remove_all_callable_listeners();
+            self.emitter.remove_all_listeners(None);
+            drop(subscriptions);
+            FLAGS.with(|flags| {
+                flags
+                    .borrow_mut()
+                    .retain(|_, flags| Rc::strong_count(flags) > 1)
+            });
         }
 
         pub(super) fn once(

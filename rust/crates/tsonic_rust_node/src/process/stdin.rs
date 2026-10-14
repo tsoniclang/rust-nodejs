@@ -1,4 +1,4 @@
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::time::Duration;
 
 use crate::runtime_resources::{
@@ -18,6 +18,7 @@ thread_local! {
 pub struct StdinResources<E: 'static> {
     stream: RefCell<Option<Readable<E>>>,
     resources: OnceCell<RuntimeResources<StdinResource<E>>>,
+    owner: Cell<Option<tsonic_rust_runtime::dispatch::DispatchOwner>>,
 }
 
 impl<E: 'static> Default for StdinResources<E> {
@@ -31,6 +32,7 @@ impl<E: 'static> StdinResources<E> {
         Self {
             stream: RefCell::new(None),
             resources: OnceCell::new(),
+            owner: Cell::new(None),
         }
     }
 }
@@ -80,13 +82,22 @@ impl<E: From<NodeError> + 'static> StdinResources<E> {
                 input.retain_lease(reservation);
                 readable.attach_stdin(input);
                 self.resources
-                    .get_or_init(|| RuntimeResources::new(MAXIMUM_STDIN_RESOURCES))
+                    .get_or_init(|| {
+                        let resources = RuntimeResources::new(MAXIMUM_STDIN_RESOURCES);
+                        if let Some(owner) = self.owner.get() {
+                            assert!(
+                                resources.enter_owner(owner),
+                                "a fresh native stdin context accepts its owner"
+                            );
+                        }
+                        resources
+                    })
                     .register(
                         ticket,
                         StdinResource {
                             readable: readable.downgrade(),
                         },
-                    );
+                    )?;
                 readable
             };
             self.stream.replace(Some(stream.clone()));
@@ -106,6 +117,26 @@ impl<E: From<NodeError> + 'static> StdinResources<E> {
 impl<E: From<NodeError> + 'static> DispatchContexts for StdinResources<E> {
     type Error = E;
     type Frontier = Option<ResourceFrontier>;
+
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        if !owner.claim(&self.owner) {
+            return false;
+        }
+        self.resources
+            .get()
+            .is_none_or(|resources| resources.enter(owner))
+    }
+
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        if !owner.release(&self.owner) {
+            return;
+        }
+        if let Some(resources) = self.resources.get() {
+            resources.close(owner);
+        }
+        let stream = self.stream.borrow_mut().take();
+        drop(stream);
+    }
 
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         self.resources
@@ -156,7 +187,7 @@ impl<E: From<NodeError> + 'static> RuntimeResource for StdinResource<E> {
     }
 
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::RuntimeTasks
+        crate::phases::RUNTIME_TASKS
     }
 
     fn capture(&self) -> Result<Option<TaskTicket>, E> {

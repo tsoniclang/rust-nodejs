@@ -9,9 +9,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
-use tsonic_rust_runtime::dispatch::{
-    poll_phase, poll_prepared, prepend, DispatchContexts, DispatchPhase,
-};
+use tsonic_rust_runtime::dispatch::{poll_phase, poll_prepared, prepend, DispatchContexts};
 use tsonic_rust_runtime::Callable;
 
 enum Failure {
@@ -68,7 +66,7 @@ fn typed_watchers_keep_original_errors_and_other_roots_pending_work() {
     enqueue_stat(&failing, 1);
     enqueue_stat(&pending, 9_007_199_254_740_993);
     let contexts = prepend(&first, &second);
-    match poll_phase(&contexts, DispatchPhase::Watchers) {
+    match poll_phase(&contexts, crate::phases::WATCHERS) {
         Err(Failure::Original(returned)) => {
             assert!(Rc::ptr_eq(&original, &returned));
             assert_eq!(returned.get(), 9_007_199_254_740_993);
@@ -79,7 +77,7 @@ fn typed_watchers_keep_original_errors_and_other_roots_pending_work() {
     assert_eq!(calls.get(), 0);
     assert!(pending.state.borrow().pending_stat.is_some());
     assert!(matches!(
-        poll_phase(&contexts, DispatchPhase::Watchers),
+        poll_phase(&contexts, crate::phases::WATCHERS),
         Ok(true)
     ));
     assert_eq!(calls.get(), 1);
@@ -106,7 +104,7 @@ fn stat_callback_reentry_waits_for_the_next_captured_frontier() {
         },
     )));
     enqueue_stat(&value, 1);
-    let frontier = match roots.prepare(DispatchPhase::Watchers) {
+    let frontier = match roots.prepare(crate::phases::WATCHERS) {
         Ok(value) => value,
         Err(_) => panic!("valid capture failed"),
     };
@@ -114,7 +112,7 @@ fn stat_callback_reentry_waits_for_the_next_captured_frontier() {
     assert_eq!(calls.get(), 1);
     assert!(value.state.borrow().pending_stat.is_some());
     assert!(matches!(
-        poll_phase(&roots, DispatchPhase::Watchers),
+        poll_phase(&roots, crate::phases::WATCHERS),
         Ok(true)
     ));
     assert_eq!(calls.get(), 2);
@@ -135,8 +133,8 @@ fn unwatch_closes_registrations_across_different_native_error_roots() {
     .unwrap();
     left.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
     right.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
-    first.retain_stat(&left);
-    second.retain_stat(&right);
+    first.retain_stat(&left).unwrap();
+    second.retain_stat(&right).unwrap();
     assert!(first.has_work());
     assert!(second.has_work());
     crate::fs::unwatch_file("native-shared-stat-path");
@@ -213,7 +211,7 @@ fn native_notifications_keep_every_path_across_a_finite_decoding_queue() {
     sender.send(Ok(event)).unwrap();
     for count in [2, 4, 5] {
         assert!(matches!(
-            poll_phase(&roots, DispatchPhase::Watchers),
+            poll_phase(&roots, crate::phases::WATCHERS),
             Ok(true)
         ));
         assert_eq!(names.borrow().len(), count);
@@ -254,7 +252,7 @@ fn overflow_is_an_explicit_native_guard_and_pending_events_survive() {
             },
         ));
     }
-    match roots.prepare(DispatchPhase::Watchers) {
+    match roots.prepare(crate::phases::WATCHERS) {
         Err(Failure::Native(error)) => assert_eq!(error.code(), "ERR_FS_WATCHER_QUEUE_LIMIT"),
         _ => panic!("native overflow guard was lost"),
     }
@@ -262,7 +260,7 @@ fn overflow_is_an_explicit_native_guard_and_pending_events_survive() {
     assert_eq!(observed.get(), 0);
     assert_eq!(value.state.borrow().pending_events.len(), 1);
     assert!(matches!(
-        poll_phase(&roots, DispatchPhase::Watchers),
+        poll_phase(&roots, crate::phases::WATCHERS),
         Ok(true)
     ));
     assert_eq!(observed.get(), 1);
@@ -292,7 +290,7 @@ fn weak_watcher_roots_do_not_extend_native_listener_lifetimes() {
     assert_eq!(drops.get(), 1);
     assert!(!roots.has_work());
     assert!(matches!(
-        poll_phase(&roots, DispatchPhase::Watchers),
+        poll_phase(&roots, crate::phases::WATCHERS),
         Ok(false)
     ));
 }

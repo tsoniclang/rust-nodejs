@@ -3,6 +3,81 @@ use std::cell::Cell;
 use tsonic_rust_runtime::{ErrorObject, TsonicError};
 
 #[test]
+fn loop_owner_all_convenience_timer_admissions_fail_exactly_without_a_loop() {
+    let options = TimerOptions::default();
+    let results = [
+        set_timeout(|| panic!("unadmitted timeout"), 0),
+        set_timeout_with_options(|| panic!("unadmitted timeout"), 0, options),
+        set_immediate(|| panic!("unadmitted immediate")),
+        set_immediate_with_options(|| panic!("unadmitted immediate"), options),
+        set_interval(|| panic!("unadmitted interval"), 0),
+        set_interval_with_options(|| panic!("unadmitted interval"), 0, options),
+    ];
+    for result in results {
+        let error = result
+            .err()
+            .expect("missing loop must reject timer admission");
+        assert_eq!(error.code(), "ERR_NODE_EVENT_LOOP");
+        assert_eq!(
+            error.message(),
+            "No JavaScript event loop is running on this thread."
+        );
+    }
+    let capture = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&capture);
+    assert!(set_timeout(move || observed.set(1), 0).is_err());
+    assert_eq!(capture.get(), 0);
+    assert_eq!(Rc::strong_count(&capture), 1);
+    assert!(!has_refed_runtime_timers());
+}
+
+#[test]
+fn loop_owner_shutdown_releases_unrefed_timers_and_stale_handles_cannot_touch_replacements() {
+    let capture = Rc::new(Cell::new(0));
+    let mut first = None;
+    let options = TimerOptions {
+        r#ref: false,
+        signal_aborted: false,
+    };
+    crate::block_on(async {
+        let observed = Rc::clone(&capture);
+        first = Some(set_timeout_with_options(move || observed.set(1), 60_000, options).unwrap());
+    })
+    .unwrap();
+    assert_eq!(Rc::strong_count(&capture), 1);
+    let mut first = first.unwrap();
+    assert!(!first.has_ref());
+    for _ in 0..128 {
+        crate::block_on(async {
+            let observed = Rc::clone(&capture);
+            let mut current =
+                set_timeout_with_options(move || observed.set(2), 60_000, options).unwrap();
+            first.close().refresh().r#ref();
+            current.r#ref();
+            assert!(current.has_ref());
+            current.unref();
+            assert!(!first.has_ref());
+            assert_eq!(Rc::strong_count(&capture), 2);
+        })
+        .unwrap();
+        assert_eq!(Rc::strong_count(&capture), 1);
+    }
+    assert_eq!(capture.get(), 0);
+}
+
+#[test]
+fn loop_owner_native_timers_cannot_attach_to_a_js_only_loop() {
+    tsonic_rust_js::event_loop::block_on(async {
+        let error = set_timeout(|| panic!("unregistered native timer"), 0)
+            .err()
+            .unwrap();
+        assert_eq!(error.code(), "ERR_NODE_TIMER_CLOSED");
+    })
+    .unwrap();
+    assert!(!has_refed_runtime_timers());
+}
+
+#[test]
 fn local_timer_context_and_handle_retain_borrowed_callback_environment() {
     let calls = Cell::new(0);
     let timers = new::<std::convert::Infallible>();
@@ -42,10 +117,11 @@ fn first_timer_failure_retains_original_identity_and_uninvoked_callbacks() {
         0,
         false,
         TimerOptions::default(),
-    );
+    )
+    .unwrap();
     let observed = Rc::new(Cell::new(0));
     let recorded = observed.clone();
-    set_timeout(move || recorded.set(1), 0);
+    set_timeout(move || recorded.set(1), 0).unwrap();
     let returned = poll_runtime_timers().unwrap_err();
     assert_eq!(
         returned.source_error().error_identity_key(),
@@ -68,11 +144,12 @@ fn cancellation_and_reentrant_admission_follow_the_live_timer_store() {
         move || {
             clear_timeout(handle.borrow_mut().as_mut().unwrap());
             let later = recorded.clone();
-            set_timeout(move || later.set(7), 0);
+            set_timeout(move || later.set(7), 0).unwrap();
         },
         0,
-    );
-    *cancelled.borrow_mut() = Some(set_timeout(|| panic!("cancelled ready timer"), 0));
+    )
+    .unwrap();
+    *cancelled.borrow_mut() = Some(set_timeout(|| panic!("cancelled ready timer"), 0).unwrap());
     assert!(poll_runtime_timers().unwrap());
     assert_eq!(observed.get(), 0);
     assert!(has_refed_runtime_timers());

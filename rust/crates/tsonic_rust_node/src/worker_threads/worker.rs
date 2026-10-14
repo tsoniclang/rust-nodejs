@@ -164,7 +164,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
             })),
             emitter: EventEmitter::new(),
         };
-        resources.register_worker(&value);
+        resources.register_worker(&value)?;
         Ok(value)
     }
 

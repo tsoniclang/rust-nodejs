@@ -2,7 +2,52 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use super::*;
-use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts};
+
+#[test]
+fn loop_owner_native_worker_transport_bootstrap_round_trip_has_no_js_loop() {
+    use super::super::protocol::{read_frame, write_frame};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::{Duration, Instant};
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let (native, _) = listener.accept().unwrap();
+    let (transport, incoming) = WorkerTransport::start(native).unwrap();
+    let state = transport_state(transport, incoming).unwrap();
+    let resources = WorkerResources::<NodeError>::new();
+    let port = resources.bind_parent(state).unwrap();
+    let value = JsValue::String("before loop".to_owned());
+    let payload = encode(&ClonedValue::from_js(&value).unwrap()).unwrap();
+    write_frame(&mut peer, WorkerFrameKind::Message, &payload).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match crate::worker_threads::receive_message_on_port(&port).unwrap() {
+            JsValue::Null => {
+                assert!(
+                    Instant::now() < deadline,
+                    "native bootstrap receive timed out"
+                );
+                std::thread::yield_now();
+            }
+            JsValue::String(text) => {
+                assert_eq!(text, "before loop");
+                break;
+            }
+            _ => panic!("native bootstrap returned the wrong exact carrier"),
+        }
+    }
+    port.post_message(JsValue::String("reply before loop".to_owned()))
+        .unwrap();
+    let frame = read_frame(&mut peer).unwrap();
+    assert_eq!(frame.kind, WorkerFrameKind::Message);
+    match decode(&frame.payload).unwrap().to_js() {
+        JsValue::String(text) => assert_eq!(text, "reply before loop"),
+        _ => panic!("native bootstrap reply changed carrier"),
+    }
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+}
 
 pub(super) enum Failure {
     Original(Rc<Cell<i64>>),
@@ -34,7 +79,7 @@ fn port_failure_retains_exact_error_and_uninvoked_messages() {
     channel.port2.on_callable1(&event, &second).unwrap();
     channel.port1.post_message(JsValue::from(1)).unwrap();
     channel.port1.post_message(JsValue::from(2)).unwrap();
-    let returned = match poll_phase(&resources, DispatchPhase::Ports) {
+    let returned = match poll_phase(&resources, crate::phases::PORTS) {
         Err(error) => error,
         Ok(_) => panic!("original port error"),
     };
@@ -48,7 +93,7 @@ fn port_failure_retains_exact_error_and_uninvoked_messages() {
     assert_eq!(calls.get(), 0);
     assert_eq!(channel.port2.owner.state.borrow().messages.len(), 1);
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(calls.get(), 1);
@@ -74,12 +119,12 @@ fn reentrant_port_messages_wait_for_the_next_captured_frontier() {
         .unwrap();
     channel.port1.post_message(JsValue::from(1)).unwrap();
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(calls.get(), 1);
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(true)
     );
     assert_eq!(calls.get(), 2);
@@ -111,7 +156,7 @@ fn weak_resource_root_does_not_keep_ports_or_listener_captures_alive() {
     assert_eq!(drops.get(), 1);
     assert!(!resources.has_work());
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports).ok(),
+        poll_phase(&resources, crate::phases::PORTS).ok(),
         Some(false)
     );
 }
@@ -140,9 +185,9 @@ fn all_selected_roots_capture_before_any_callback_admits_work_to_another_root() 
     left.port1.post_message(JsValue::from(1)).unwrap();
     right.port1.post_message(JsValue::from(1)).unwrap();
     let group = prepend(&first, prepend(&second, DispatchEnd::<Failure>::new()));
-    assert_eq!(poll_phase(&group, DispatchPhase::Ports).ok(), Some(true));
+    assert_eq!(poll_phase(&group, crate::phases::PORTS).ok(), Some(true));
     assert_eq!(calls.get(), 1);
-    assert_eq!(poll_phase(&group, DispatchPhase::Ports).ok(), Some(true));
+    assert_eq!(poll_phase(&group, crate::phases::PORTS).ok(), Some(true));
     assert_eq!(calls.get(), 2);
 }
 

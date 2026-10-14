@@ -32,7 +32,7 @@ fn register_ready<TError>(
         )
         .is_none());
     source
-        .sender
+        .completion_sender()
         .try_send(super::WorkCompletion { id })
         .unwrap();
     id
@@ -127,8 +127,8 @@ fn malformed_completion_and_ticket_exhaustion_fail_before_invocation() {
         });
         let unknown = super::background_task_budget().reserve().unwrap();
         source
-            .borrow()
-            .sender
+            .borrow_mut()
+            .completion_sender()
             .try_send(super::WorkCompletion {
                 id: if duplicate { id } else { unknown.ticket() },
             })
@@ -526,8 +526,8 @@ fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
     REENTRANT_NATIVE_FAULT_HANDLE.set(Some(handle));
     let unregistered = super::background_task_budget().reserve().unwrap();
     root.scheduling_source()
-        .borrow()
-        .sender
+        .borrow_mut()
+        .completion_sender()
         .try_send(super::WorkCompletion {
             id: unregistered.ticket(),
         })

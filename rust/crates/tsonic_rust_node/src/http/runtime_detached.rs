@@ -195,7 +195,7 @@ mod detached_response_tests {
     use std::io::{Cursor, Read, Write};
     use std::net::SocketAddr;
     use std::rc::Rc;
-    use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+    use tsonic_rust_runtime::dispatch::DispatchContexts;
     use tsonic_rust_runtime::{Callable, TsonicError};
 
     struct MemoryTransport {
@@ -259,7 +259,7 @@ mod detached_response_tests {
         let response = retained.borrow_mut().take().unwrap();
         response.write_string("a").unwrap();
         response.end_string("b").unwrap();
-        roots.prepare(DispatchPhase::Http).unwrap();
+        roots.prepare(crate::phases::HTTP).unwrap();
         assert!(!roots.has_work());
 
         let wire = output.borrow();

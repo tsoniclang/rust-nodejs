@@ -33,8 +33,24 @@ impl PortOwners {
     fn push(&mut self, owner: PortOwnerRegistration) {
         if self.first.is_none() && self.others.is_empty() {
             self.first = Some(owner);
-        } else {
-            self.others.push(owner);
+            return;
+        }
+        if self
+            .first
+            .as_ref()
+            .is_some_and(|entry| entry.ticket == owner.ticket)
+        {
+            return;
+        }
+        let index = self
+            .others
+            .partition_point(|entry| entry.ticket < owner.ticket);
+        if self
+            .others
+            .get(index)
+            .is_none_or(|entry| entry.ticket != owner.ticket)
+        {
+            self.others.insert(index, owner);
         }
     }
 
