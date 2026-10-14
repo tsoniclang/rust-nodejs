@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
-use tsonic_rust_js::event_loop::EventLoopDriver;
+use tsonic_rust_js::event_loop::{EventLoopDriver, LoopLifecycle};
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
@@ -55,6 +55,22 @@ struct NodeDriver<TContexts> {
     contexts: TContexts,
 }
 
+impl<TContexts: DispatchContexts> NodeDriver<TContexts> {
+    fn poll_context<TNative: DispatchContexts>(
+        &self,
+        native: &TNative,
+        phase: DispatchPhase,
+    ) -> Result<bool, TContexts::Error>
+    where
+        TContexts::Error: From<TNative::Error>,
+    {
+        tsonic_rust_runtime::dispatch::poll_phase(
+            &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+            phase,
+        )
+    }
+}
+
 struct NodeWake(Arc<mio::Waker>);
 
 impl Wake for NodeWake {
@@ -73,96 +89,86 @@ where
 {
     type Error = TContexts::Error;
 
-    fn poll(&mut self) -> Result<bool, Self::Error> {
-        let mut did_work = false;
-        let mut can_dispatch_signals = false;
-        for phase in [
-            DispatchPhase::JsTimers,
-            DispatchPhase::Background,
-            DispatchPhase::RuntimeTasks,
-            DispatchPhase::Signals,
-            DispatchPhase::Timers,
-            DispatchPhase::Http,
-            DispatchPhase::Net,
-            DispatchPhase::Tls,
-            DispatchPhase::Watchers,
-            DispatchPhase::Workers,
-            DispatchPhase::Ports,
-        ] {
-            let work = match phase {
-                DispatchPhase::JsTimers => tsonic_rust_js::timers::with_default(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Background => crate::background::with_default(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::RuntimeTasks => crate::runtime_tasks::with_default(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Timers => crate::timers::with_default(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Workers | DispatchPhase::Ports => {
-                    crate::worker_threads::resources::with_default(|native| {
-                        tsonic_rust_runtime::dispatch::poll_phase(
-                            &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                            phase,
-                        )
-                    })?
+    fn admission_error(error: tsonic_rust_runtime::JsError) -> Self::Error {
+        tsonic_rust_runtime::TsonicError::from(error).into()
+    }
+
+    fn lifecycle(&mut self, transition: LoopLifecycle) -> Result<(), Self::Error> {
+        match transition {
+            LoopLifecycle::Enter(owner) => {
+                let entered = tsonic_rust_js::timers::with_default(|context| context.enter(owner))
+                    && crate::timers::with_default(|context| context.enter(owner))
+                    && self.contexts.enter(owner)
+                    && crate::background::with_default(|context| context.enter(owner))
+                    && crate::runtime_tasks::with_default(|context| context.enter(owner))
+                    && crate::http::with_default_http(|context| context.enter(owner))
+                    && crate::net::with_default(|context| context.enter(owner))
+                    && crate::tls::with_default_tls(|context| context.enter(owner))
+                    && crate::fs::with_default_watchers(|context| context.enter(owner))
+                    && crate::worker_threads::resources::with_default(|context| {
+                        context.enter(owner)
+                    })
+                    && crate::process::with_default_signals(|context| context.enter(owner));
+                if !entered {
+                    return Err(Self::admission_error(tsonic_rust_runtime::JsError::error("native dispatch context belongs to another event loop or has exhausted its generations")));
                 }
-                DispatchPhase::Net => crate::net::with_default(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Tls => crate::tls::with_default_tls(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Watchers => crate::fs::with_default_watchers(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Http => crate::http::with_default_http(|native| {
-                    tsonic_rust_runtime::dispatch::poll_phase(
-                        &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                        phase,
-                    )
-                })?,
-                DispatchPhase::Signals => {
-                    if can_dispatch_signals {
-                        crate::process::with_default_signals(|native| {
-                            tsonic_rust_runtime::dispatch::poll_phase(
-                                &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
-                                phase,
-                            )
-                        })?
-                    } else {
-                        false
-                    }
+            }
+            LoopLifecycle::Shutdown(owner) => {
+                crate::runtime_tasks::with_default(|context| context.close(owner));
+                crate::background::with_default(|context| context.close(owner));
+                self.contexts.close(owner);
+                crate::worker_threads::resources::with_default(|context| context.close(owner));
+                crate::fs::with_default_watchers(|context| context.close(owner));
+                crate::tls::with_default_tls(|context| context.close(owner));
+                crate::net::with_default(|context| context.close(owner));
+                crate::http::with_default_http(|context| context.close(owner));
+                crate::process::with_default_signals(|context| context.close(owner));
+                crate::timers::with_default(|context| context.close(owner));
+                tsonic_rust_js::timers::with_default(|context| context.close(owner));
+            }
+        }
+        Ok(())
+    }
+
+    fn poll(&mut self) -> Result<bool, Self::Error> {
+        let mut did_work = tsonic_rust_js::timers::with_default(|native| {
+            self.poll_context(native, tsonic_rust_js::timers::PHASE)
+        })?;
+        let can_dispatch_signals = has_runtime_work() || self.contexts.has_work();
+        for domain in crate::phases::ORDER {
+            use crate::phases::Phase;
+            let phase = domain.registration();
+            let work = match domain {
+                Phase::Background => {
+                    crate::background::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::RuntimeTasks => {
+                    crate::runtime_tasks::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::Signals if can_dispatch_signals => {
+                    crate::process::with_default_signals(|native| self.poll_context(native, phase))?
+                }
+                Phase::Signals => false,
+                Phase::Timers => {
+                    crate::timers::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::Http => {
+                    crate::http::with_default_http(|native| self.poll_context(native, phase))?
+                }
+                Phase::Net => crate::net::with_default(|native| self.poll_context(native, phase))?,
+                Phase::Tls => {
+                    crate::tls::with_default_tls(|native| self.poll_context(native, phase))?
+                }
+                Phase::Watchers => {
+                    crate::fs::with_default_watchers(|native| self.poll_context(native, phase))?
+                }
+                Phase::Workers | Phase::Ports => {
+                    crate::worker_threads::resources::with_default(|native| {
+                        self.poll_context(native, phase)
+                    })?
                 }
             };
             did_work |= work;
-            if phase == DispatchPhase::JsTimers {
-                can_dispatch_signals = has_runtime_work() || self.contexts.has_work();
-            }
         }
         Ok(did_work)
     }

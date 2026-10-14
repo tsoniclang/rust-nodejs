@@ -58,6 +58,34 @@ impl<E: 'static> Clone for MessagePort<E> {
     }
 }
 
+impl<E: 'static> MessagePort<E> {
+    pub(super) fn attach(&self) {
+        let mut state = self.owner.state.borrow_mut();
+        let ticket = self.owner.reservation.ticket();
+        if state.routing.owners.get(ticket).is_none() {
+            let owner = Rc::downgrade(&self.owner);
+            let owner: Weak<dyn PortListenerLifecycle> = owner;
+            state
+                .routing
+                .owners
+                .push(PortOwnerRegistration { ticket, owner });
+        }
+    }
+
+    pub(super) fn detach(&self) {
+        self.owner
+            .state
+            .borrow_mut()
+            .routing
+            .remove_owner(self.owner.reservation.ticket());
+        let callbacks = std::mem::replace(
+            &mut *self.owner.callbacks.borrow_mut(),
+            PortCallbackSlots::new(),
+        );
+        drop(callbacks);
+    }
+}
+
 impl<E: From<NodeError> + 'static> MessagePort<E> {
     fn local(resources: &WorkerResources<E>) -> NodeResult<Self> {
         let reservation = super::resources::reserve_resource()?;
@@ -77,28 +105,20 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
             capture_boundary: None,
         }));
         let value = Self::from_state(state)?;
-        resources.register_port(&value);
+        resources.register_port(&value)?;
         Ok(value)
     }
 
     pub(super) fn from_state(state: Rc<RefCell<MessagePortState>>) -> NodeResult<Self> {
         let reservation = super::resources::reserve_resource()?;
-        let ticket = reservation.ticket();
         let owner = Rc::new(PortOwner {
             state: Rc::clone(&state),
             reservation,
             callbacks: RefCell::new(PortCallbackSlots::new()),
         });
-        let lifecycle: Rc<dyn PortListenerLifecycle> = owner.clone();
-        state
-            .borrow_mut()
-            .routing
-            .owners
-            .push(PortOwnerRegistration {
-                ticket,
-                owner: Rc::downgrade(&lifecycle),
-            });
-        Ok(Self { owner })
+        let value = Self { owner };
+        value.attach();
+        Ok(value)
     }
 
     fn connect(&self, peer: &Self) {

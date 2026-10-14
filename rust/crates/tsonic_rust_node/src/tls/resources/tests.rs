@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
-use tsonic_rust_runtime::dispatch::{poll_phase, poll_prepared, DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{poll_phase, poll_prepared, DispatchContexts};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
 enum Failure {
@@ -45,7 +45,7 @@ fn server(
             refed: true,
         })),
     };
-    roots.register(&value);
+    roots.register(&value)?;
     Ok(value)
 }
 
@@ -77,7 +77,7 @@ fn native_tls_callbacks_keep_original_failure_and_later_work() {
             Ok(())
         }),
     );
-    match poll_phase(&roots, DispatchPhase::Tls) {
+    match poll_phase(&roots, crate::phases::TLS) {
         Err(Failure::Original(returned)) => {
             assert!(Rc::ptr_eq(&returned, &original));
             assert_eq!(returned.get(), 9_007_199_254_740_993);
@@ -88,7 +88,7 @@ fn native_tls_callbacks_keep_original_failure_and_later_work() {
     }
     assert_eq!(calls.get(), 0);
     assert_eq!(value.state.borrow().pending.len(), 1);
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Tls), Ok(true)));
+    assert!(matches!(poll_phase(&roots, crate::phases::TLS), Ok(true)));
     assert_eq!(calls.get(), 1);
 }
 
@@ -114,13 +114,13 @@ fn reentrant_tls_callbacks_wait_for_the_next_native_frontier() {
             Ok(())
         }),
     );
-    let frontier = match roots.prepare(DispatchPhase::Tls) {
+    let frontier = match roots.prepare(crate::phases::TLS) {
         Ok(value) => value,
         Err(_) => panic!("valid native TLS capture failed"),
     };
     assert!(matches!(poll_prepared(&roots, &frontier), Ok(true)));
     assert_eq!(calls.get(), 0);
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Tls), Ok(true)));
+    assert!(matches!(poll_phase(&roots, crate::phases::TLS), Ok(true)));
     assert_eq!(calls.get(), 1);
 }
 
@@ -150,7 +150,7 @@ fn weak_tls_roots_release_the_actual_source_capture() {
     drop(alias);
     assert_eq!(drops.get(), 1);
     assert!(!roots.has_work());
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Tls), Ok(false)));
+    assert!(matches!(poll_phase(&roots, crate::phases::TLS), Ok(false)));
 }
 
 #[test]

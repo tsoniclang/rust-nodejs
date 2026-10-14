@@ -46,7 +46,7 @@ impl<E: From<NodeError> + 'static> Server<E> {
                 listening: false,
             })),
         };
-        resources.register(&value);
+        resources.register(&value)?;
         Ok(value)
     }
 

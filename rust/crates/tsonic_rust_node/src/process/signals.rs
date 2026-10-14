@@ -100,9 +100,6 @@ pub fn remove_listener<E: 'static>(
 
 pub fn poll_signals() -> tsonic_rust_runtime::TsonicResult<bool> {
     with_default_signals(|tasks| {
-        tsonic_rust_runtime::dispatch::poll_phase(
-            tasks,
-            tsonic_rust_runtime::dispatch::DispatchPhase::Signals,
-        )
+        tsonic_rust_runtime::dispatch::poll_phase(tasks, crate::phases::SIGNALS)
     })
 }

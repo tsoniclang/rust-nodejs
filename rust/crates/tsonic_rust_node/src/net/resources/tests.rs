@@ -3,7 +3,7 @@ use crate::NodeError;
 use std::cell::Cell;
 use std::net::TcpStream;
 use std::rc::Rc;
-use tsonic_rust_runtime::dispatch::{poll_phase, poll_prepared, DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::{poll_phase, poll_prepared, DispatchContexts};
 use tsonic_rust_runtime::Callable;
 
 enum Failure {
@@ -46,7 +46,7 @@ fn native_connections_retain_the_original_failure_and_later_accepted_connections
     let clients: Vec<_> = (0..4)
         .map(|_| TcpStream::connect(("127.0.0.1", port)).unwrap())
         .collect();
-    match poll_phase(&roots, DispatchPhase::Net) {
+    match poll_phase(&roots, crate::phases::NET) {
         Err(Failure::Original(returned)) => {
             assert!(Rc::ptr_eq(&returned, &original));
             assert_eq!(returned.get(), 9_007_199_254_740_993_u64);
@@ -56,7 +56,7 @@ fn native_connections_retain_the_original_failure_and_later_accepted_connections
     }
     assert_eq!(calls.get(), 1);
     assert_eq!(server.state.borrow().pending.len(), 3);
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Net), Ok(true)));
+    assert!(matches!(poll_phase(&roots, crate::phases::NET), Ok(true)));
     assert_eq!(calls.get(), 4);
     server.close();
     assert!(!roots.has_work());
@@ -84,13 +84,13 @@ fn reentrant_listening_work_waits_for_the_next_captured_native_frontier() {
             Ok(())
         }),
     );
-    let captured = match roots.prepare(DispatchPhase::Net) {
+    let captured = match roots.prepare(crate::phases::NET) {
         Ok(value) => value,
         Err(_) => panic!("valid native capture failed"),
     };
     assert!(matches!(poll_prepared(&roots, &captured), Ok(true)));
     assert_eq!(calls.get(), 0);
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Net), Ok(true)));
+    assert!(matches!(poll_phase(&roots, crate::phases::NET), Ok(true)));
     assert_eq!(calls.get(), 1);
 }
 
@@ -128,7 +128,7 @@ fn weak_server_roots_release_listener_captures_when_the_last_native_owner_drops(
     drop(alias);
     assert_eq!(drops.get(), 1);
     assert!(!roots.has_work());
-    assert!(matches!(poll_phase(&roots, DispatchPhase::Net), Ok(false)));
+    assert!(matches!(poll_phase(&roots, crate::phases::NET), Ok(false)));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ thread_local! {
 
 pub struct RuntimeTasks<TError> {
     queue: OnceCell<TaskQueue<TError>>,
+    owner: Cell<Option<tsonic_rust_runtime::dispatch::DispatchOwner>>,
 }
 
 impl<TError> Default for RuntimeTasks<TError> {
@@ -28,6 +29,7 @@ impl<TError> RuntimeTasks<TError> {
     pub const fn new() -> Self {
         Self {
             queue: OnceCell::new(),
+            owner: Cell::new(None),
         }
     }
 
@@ -39,6 +41,13 @@ impl<TError> RuntimeTasks<TError> {
         &self,
         callback: impl FnOnce() -> Result<(), TError> + 'static,
     ) -> NodeResult<()> {
+        let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+        if self.owner.get() != Some(owner) {
+            return Err(NodeError::new(
+                "ERR_NODE_RUNTIME_TASK_CLOSED",
+                "native task context is not registered with this event loop",
+            ));
+        }
         self.scheduling_queue()
             .enqueue(callback)
             .map(|_| ())
@@ -67,7 +76,14 @@ impl<TError> RuntimeTasks<TError> {
                     })
                     .clone()
             });
-            TaskQueue::new(budget)
+            let queue = TaskQueue::new_closed(budget);
+            if let Some(owner) = self.owner.get() {
+                assert!(
+                    queue.enter(owner),
+                    "a fresh native queue accepts its registered owner"
+                );
+            }
+            queue
         })
     }
 }
@@ -76,8 +92,23 @@ impl<TError> DispatchContexts for RuntimeTasks<TError> {
     type Error = TError;
     type Frontier = Option<TaskTicket>;
 
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        if !owner.claim(&self.owner) {
+            return false;
+        }
+        self.queue.get().is_none_or(|queue| queue.enter(owner))
+    }
+
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        if owner.release(&self.owner) {
+            if let Some(queue) = self.queue.get() {
+                queue.close(owner);
+            }
+        }
+    }
+
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, Self::Error> {
-        Ok(if phase == DispatchPhase::RuntimeTasks {
+        Ok(if phase == crate::phases::RUNTIME_TASKS {
             self.queue.get().and_then(TaskQueue::ready_boundary)
         } else {
             None

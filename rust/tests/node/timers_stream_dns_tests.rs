@@ -8,7 +8,7 @@ use tsonic_rust_runtime::Callable;
 fn timers_run_callbacks_and_expose_handle_state() {
     let called = Rc::new(Cell::new(false));
     let callback_called = Rc::clone(&called);
-    let timeout = timers::set_timeout(move || callback_called.set(true), 0);
+    let timeout = timers::set_timeout(move || callback_called.set(true), 0).unwrap();
     assert!(!called.get());
     assert!(timeout.id() > 0);
     assert_eq!(timeout.delay_ms(), 0);
@@ -30,7 +30,7 @@ fn timers_run_callbacks_and_expose_handle_state() {
     ))
     .unwrap();
 
-    let mut timeout = timers::set_timeout(|| {}, 10_000);
+    let mut timeout = timers::set_timeout(|| {}, 10_000).unwrap();
     timeout.unref();
     assert!(!timeout.has_ref());
     timeout.r#ref();
@@ -40,7 +40,7 @@ fn timers_run_callbacks_and_expose_handle_state() {
     timeout.on_timeout(|| called.set(false));
     assert!(!called.get());
 
-    let (_, value) = timers::promises::set_timeout_value(0, "done");
+    let (_, value) = timers::promises::set_timeout_value(0, "done").unwrap();
     assert_eq!(value, "done");
     let aborted_called = Rc::new(Cell::new(false));
     let callback_called = Rc::clone(&aborted_called);
@@ -51,7 +51,8 @@ fn timers_run_callbacks_and_expose_handle_state() {
             r#ref: true,
             signal_aborted: true,
         },
-    );
+    )
+    .unwrap();
     assert!(!aborted_called.get());
     assert!(!aborted.has_ref());
 }
@@ -89,7 +90,8 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
     assert!(!interval.has_ref());
 
     let callback_count = Rc::clone(&count);
-    let mut immediate = timers::set_immediate(move || callback_count.set(callback_count.get() + 1));
+    let mut immediate =
+        timers::set_immediate(move || callback_count.set(callback_count.get() + 1)).unwrap();
     assert_eq!(count.get(), 2);
     tsonic_rust_node::run_event_loop().unwrap();
     assert_eq!(count.get(), 3);
@@ -104,11 +106,12 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             r#ref: false,
             signal_aborted: false,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(count.get(), 4);
     assert!(!immediate_options.has_ref());
 
-    let mut another = timers::set_interval(|| {}, 0);
+    let mut another = timers::set_interval(|| {}, 0).unwrap();
     timers::clear_interval(&mut another);
     assert!(!another.has_ref());
     let callback_count = Rc::clone(&count);
@@ -119,13 +122,14 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             r#ref: false,
             signal_aborted: false,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(count.get(), 4);
     assert!(!interval_options.has_ref());
 
-    let (_, values) = timers::promises::set_interval_values(0, "tick", 3);
+    let (_, values) = timers::promises::set_interval_values(0, "tick", 3).unwrap();
     assert_eq!(values, vec!["tick", "tick", "tick"]);
-    let (_, value) = timers::promises::set_immediate_value("immediate");
+    let (_, value) = timers::promises::set_immediate_value("immediate").unwrap();
     assert_eq!(value, "immediate");
     let (_, value) = timers::promises::set_immediate_value_with_options(
         "immediate options",
@@ -133,7 +137,8 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             r#ref: false,
             signal_aborted: false,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(value, "immediate options");
     let (unrefed, value) = timers::promises::set_timeout_value_with_options(
         0,
@@ -142,7 +147,8 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             r#ref: false,
             signal_aborted: false,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(value, "quiet");
     assert!(!unrefed.has_ref());
     let (unrefed_interval, values) = timers::promises::set_interval_values_with_options(
@@ -153,7 +159,8 @@ fn timers_cover_interval_immediate_and_scheduler_shapes() {
             r#ref: false,
             signal_aborted: false,
         },
-    );
+    )
+    .unwrap();
     assert_eq!(values, vec!["quiet tick", "quiet tick"]);
     assert!(!unrefed_interval.has_ref());
     timers::promises::scheduler::wait(0);

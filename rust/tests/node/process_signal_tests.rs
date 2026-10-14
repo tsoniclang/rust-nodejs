@@ -122,9 +122,7 @@ impl From<tsonic_rust_node::NodeError> for SignalFailure {
 }
 
 fn verify_typed_signal_owners(scenario: &str) {
-    use tsonic_rust_runtime::dispatch::{
-        poll_phase, prepend, DispatchContexts, DispatchEnd, DispatchPhase,
-    };
+    use tsonic_rust_runtime::dispatch::{poll_phase, prepend, DispatchContexts, DispatchEnd};
     let first = process::SignalTasks::<SignalFailure>::new();
     let second = process::SignalTasks::<SignalFailure>::new();
     let original = Rc::new(Cell::new(9_007_199_254_740_993));
@@ -153,7 +151,7 @@ fn verify_typed_signal_owners(scenario: &str) {
     );
     let started = std::time::Instant::now();
     loop {
-        let frontier = match first.prepare(DispatchPhase::Signals) {
+        let frontier = match first.prepare(tsonic_rust_node::phases::SIGNALS) {
             Ok(frontier) => frontier,
             Err(_) => panic!("native signal preparation failed"),
         };
@@ -166,7 +164,7 @@ fn verify_typed_signal_owners(scenario: &str) {
         );
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    let returned = match poll_phase(&group, DispatchPhase::Signals) {
+    let returned = match poll_phase(&group, tsonic_rust_node::phases::SIGNALS) {
         Err(error) => error,
         Ok(_) => panic!("original typed signal failure"),
     };
@@ -180,9 +178,15 @@ fn verify_typed_signal_owners(scenario: &str) {
         }
     }
     assert_eq!(calls.get(), 0);
-    assert_eq!(poll_phase(&group, DispatchPhase::Signals).ok(), Some(true));
+    assert_eq!(
+        poll_phase(&group, tsonic_rust_node::phases::SIGNALS).ok(),
+        Some(true)
+    );
     assert_eq!(calls.get(), 1);
-    assert_eq!(poll_phase(&group, DispatchPhase::Signals).ok(), Some(false));
+    assert_eq!(
+        poll_phase(&group, tsonic_rust_node::phases::SIGNALS).ok(),
+        Some(false)
+    );
     assert_eq!(calls.get(), 1);
 }
 

@@ -1,7 +1,7 @@
 use crate::runtime_resources::{
     NativeResourceBudget, ResourceFrontier, RuntimeResource, RuntimeResources,
 };
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::time::Duration;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
 use tsonic_rust_runtime::TsonicError;
@@ -14,14 +14,17 @@ thread_local! {
 
 pub struct HttpServers<E: 'static> {
     resources: OnceCell<Rc<RuntimeResources<HttpResource<E>>>>,
+    owner: Cell<Option<tsonic_rust_runtime::dispatch::DispatchOwner>>,
 }
 pub struct HttpHandle<E: 'static> {
     resources: Weak<RuntimeResources<HttpResource<E>>>,
+    generation: Option<tsonic_rust_runtime::dispatch::DispatchGenerationId>,
 }
 impl<E: 'static> Clone for HttpHandle<E> {
     fn clone(&self) -> Self {
         Self {
             resources: self.resources.clone(),
+            generation: self.generation,
         }
     }
 }
@@ -34,14 +37,23 @@ impl<E: 'static> HttpServers<E> {
     pub const fn new() -> Self {
         Self {
             resources: OnceCell::new(),
+            owner: Cell::new(None),
         }
     }
     pub fn handle(&self) -> HttpHandle<E> {
+        let resources = self.resources.get_or_init(|| {
+            let resources = RuntimeResources::new(HTTP_MAXIMUM_RESOURCES);
+            if let Some(owner) = self.owner.get() {
+                assert!(
+                    resources.enter_owner(owner),
+                    "a fresh native HTTP context accepts its owner"
+                );
+            }
+            Rc::new(resources)
+        });
         HttpHandle {
-            resources: Rc::downgrade(
-                self.resources
-                    .get_or_init(|| Rc::new(RuntimeResources::new(HTTP_MAXIMUM_RESOURCES))),
-            ),
+            resources: Rc::downgrade(resources),
+            generation: resources.generation(),
         }
     }
 }
@@ -53,8 +65,13 @@ impl<E: From<NodeError> + 'static> HttpHandle<E> {
                 "the owning HTTP dispatch context is closed",
             )
         })?;
-        resources.register(ticket, resource);
-        Ok(())
+        if !resources.accepts(self.generation) {
+            return Err(NodeError::new(
+                "ERR_HTTP_OWNER_CLOSED",
+                "the owning HTTP dispatch context is closed",
+            ));
+        }
+        resources.register(ticket, resource)
     }
     fn retain_response(&self, response: ServerResponse<E>) -> NodeResult<()> {
         if response.writable_finished() || response.destroyed() {
@@ -69,6 +86,23 @@ impl<E: From<NodeError> + 'static> HttpHandle<E> {
 impl<E: From<NodeError> + 'static> DispatchContexts for HttpServers<E> {
     type Error = E;
     type Frontier = Option<ResourceFrontier>;
+
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        if !owner.claim(&self.owner) {
+            return false;
+        }
+        self.resources
+            .get()
+            .is_none_or(|resources| resources.enter(owner))
+    }
+
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        if owner.release(&self.owner) {
+            if let Some(resources) = self.resources.get() {
+                resources.close(owner);
+            }
+        }
+    }
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         self.resources
             .get()
@@ -120,7 +154,7 @@ impl<E: From<NodeError> + 'static> RuntimeResource for HttpResource<E> {
         }
     }
     fn phase(&self) -> DispatchPhase {
-        DispatchPhase::Http
+        crate::phases::HTTP
     }
     fn capture(&self) -> Result<Option<TaskTicket>, E> {
         match self {

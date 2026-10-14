@@ -65,7 +65,7 @@ impl<E: From<NodeError> + 'static> TlsServer<E> {
                 refed: true,
             })),
         };
-        roots.register(&value);
+        roots.register(&value)?;
         Ok(value)
     }
 

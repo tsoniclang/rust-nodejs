@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, SyncSender};
 
+use tsonic_rust_runtime::dispatch::{DispatchGeneration, DispatchGenerationId, DispatchOwner};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
 use tsonic_rust_runtime::TsonicError;
 
@@ -53,18 +54,17 @@ struct PendingCompletion<TError> {
 }
 
 struct SourceThreadCompletions<TError> {
-    sender: SyncSender<WorkCompletion>,
-    receiver: Receiver<WorkCompletion>,
+    generation: DispatchGeneration,
+    channel: Option<(SyncSender<WorkCompletion>, Receiver<WorkCompletion>)>,
     in_flight: BTreeMap<TaskTicket, PendingCompletion<TError>>,
     ready: VecDeque<(u64, PendingCompletion<TError>)>,
 }
 
 impl<TError> SourceThreadCompletions<TError> {
     fn new() -> Self {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(MAX_PENDING_BACKGROUND_WORK);
         Self {
-            sender,
-            receiver,
+            generation: DispatchGeneration::new_closed(),
+            channel: None,
             in_flight: BTreeMap::new(),
             ready: VecDeque::new(),
         }
@@ -73,20 +73,30 @@ impl<TError> SourceThreadCompletions<TError> {
     fn pending(&self) -> usize {
         self.in_flight.len() + self.ready.len()
     }
+
+    fn completion_sender(&mut self) -> SyncSender<WorkCompletion> {
+        self.channel
+            .get_or_insert_with(|| std::sync::mpsc::sync_channel(MAX_PENDING_BACKGROUND_WORK))
+            .0
+            .clone()
+    }
 }
 
 pub struct BackgroundTasks<TError> {
     source: OnceCell<Rc<RefCell<SourceThreadCompletions<TError>>>>,
+    owner: Cell<Option<DispatchOwner>>,
 }
 
 pub struct BackgroundHandle<TError> {
     source: Weak<RefCell<SourceThreadCompletions<TError>>>,
+    generation: Option<DispatchGenerationId>,
 }
 
 impl<TError> Clone for BackgroundHandle<TError> {
     fn clone(&self) -> Self {
         Self {
             source: self.source.clone(),
+            generation: self.generation,
         }
     }
 }
@@ -101,6 +111,7 @@ impl<TError> BackgroundTasks<TError> {
     pub const fn new() -> Self {
         Self {
             source: OnceCell::new(),
+            owner: Cell::new(None),
         }
     }
 
@@ -111,14 +122,24 @@ impl<TError> BackgroundTasks<TError> {
     }
 
     pub fn handle(&self) -> BackgroundHandle<TError> {
+        let source = self.scheduling_source();
         BackgroundHandle {
-            source: Rc::downgrade(self.scheduling_source()),
+            source: Rc::downgrade(source),
+            generation: source.borrow().generation.capture(),
         }
     }
 
     fn scheduling_source(&self) -> &Rc<RefCell<SourceThreadCompletions<TError>>> {
-        self.source
-            .get_or_init(|| Rc::new(RefCell::new(SourceThreadCompletions::new())))
+        self.source.get_or_init(|| {
+            let source = SourceThreadCompletions::new();
+            if let Some(owner) = self.owner.get() {
+                assert!(
+                    source.generation.enter(owner),
+                    "a fresh native completion source accepts its owner"
+                );
+            }
+            Rc::new(RefCell::new(source))
+        })
     }
 }
 
@@ -157,12 +178,19 @@ impl<TError: From<crate::NodeError>> BackgroundHandle<TError> {
                 "background callback owner has been released",
             )
         })?;
+        if !source.borrow().generation.accepts(self.generation) {
+            return Err(crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            ));
+        }
         let reservation = reserve_background_task()?;
         spawn_on_source(&source, reservation, work, completion)
     }
 }
 
 fn reserve_background_task() -> crate::NodeResult<TaskReservation> {
+    tsonic_rust_js::event_loop::ensure_running().map_err(crate::NodeError::from)?;
     background_task_budget()
         .reserve()
         .map_err(|error| crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string()))
@@ -177,11 +205,18 @@ fn spawn_on_source<TResult, TError: From<crate::NodeError>>(
 where
     TResult: Send + 'static,
 {
-    let wake = crate::readiness::waker()?;
+    let wake = tsonic_rust_js::event_loop::dispatch_handle().map_err(crate::NodeError::from)?;
+    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(crate::NodeError::from)?;
     let id = reservation.ticket();
     let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
     let completion_sender = {
         let mut source = source.borrow_mut();
+        if !source.generation.owns(owner) {
+            return Err(crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            ));
+        }
         source.in_flight.insert(
             id,
             PendingCompletion {
@@ -192,7 +227,7 @@ where
                 }),
             },
         );
-        source.sender.clone()
+        source.completion_sender()
     };
     let submitted = worker::submit(move || {
         let result = worker::execute(work);
@@ -286,7 +321,10 @@ fn publish_completions<TError>(
 ) -> crate::NodeResult<Option<u64>> {
     let mut source = source.borrow_mut();
     loop {
-        match source.receiver.try_recv() {
+        let Some((_, receiver)) = &source.channel else {
+            break;
+        };
+        match receiver.try_recv() {
             Ok(value) => {
                 let ticket = NEXT_COMPLETION_TICKET.with(|sequence| {
                     let ticket = sequence.get();
@@ -325,11 +363,40 @@ impl<TError: From<crate::NodeError>> tsonic_rust_runtime::dispatch::DispatchCont
     type Error = TError;
     type Frontier = Option<u64>;
 
+    fn enter(&self, owner: DispatchOwner) -> bool {
+        if !owner.claim(&self.owner) {
+            return false;
+        }
+        self.source
+            .get()
+            .is_none_or(|source| source.borrow().generation.enter(owner))
+    }
+
+    fn close(&self, owner: DispatchOwner) {
+        if !owner.release(&self.owner) {
+            return;
+        }
+        if let Some(source) = self.source.get() {
+            let retired = {
+                let mut source = source.borrow_mut();
+                if !source.generation.close(owner) {
+                    return;
+                }
+                (
+                    source.channel.take(),
+                    std::mem::take(&mut source.in_flight),
+                    std::mem::take(&mut source.ready),
+                )
+            };
+            drop(retired);
+        }
+    }
+
     fn prepare(
         &self,
         phase: tsonic_rust_runtime::dispatch::DispatchPhase,
     ) -> Result<Self::Frontier, TError> {
-        if phase != tsonic_rust_runtime::dispatch::DispatchPhase::Background {
+        if phase != crate::phases::BACKGROUND {
             return Ok(None);
         }
         self.source.get().map_or(Ok(None), |source| {

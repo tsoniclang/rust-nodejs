@@ -282,7 +282,7 @@ pub fn watch_with_options<E: From<NodeError> + 'static>(
             refed: options.persistent,
         })),
     };
-    roots.register_handle(&value);
+    roots.register_handle(&value)?;
     Ok(value)
 }
 
@@ -358,7 +358,7 @@ pub fn watch_file_with_options<E: From<NodeError> + 'static>(
             refed: options.persistent,
         })),
     };
-    roots.register_handle(&value);
+    roots.register_handle(&value)?;
     Ok(value)
 }
 
@@ -380,7 +380,7 @@ pub fn watch_file_options_callable<E: From<NodeError> + 'static>(
 ) -> NodeResult<()> {
     let watcher = watch_file_with_options(roots, path, options)?;
     watcher.state.borrow_mut().callback = Some(WatchCallback::Stat(callback));
-    roots.retain_stat(&watcher);
+    roots.retain_stat(&watcher)?;
     Ok(())
 }
 

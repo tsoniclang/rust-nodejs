@@ -44,8 +44,8 @@ impl<E: From<NodeError> + 'static> RuntimeResource for WorkerResource<E> {
 
     fn phase(&self) -> DispatchPhase {
         match self {
-            Self::Port(_) => DispatchPhase::Ports,
-            Self::Worker(_) => DispatchPhase::Workers,
+            Self::Port(_) => crate::phases::PORTS,
+            Self::Worker(_) => crate::phases::WORKERS,
         }
     }
 
@@ -97,6 +97,7 @@ pub struct WorkerResources<E: 'static> {
 
 pub struct WorkerFrontier {
     owner: usize,
+    generation: Option<tsonic_rust_runtime::dispatch::DispatchGenerationId>,
     resources: ResourceFrontier,
     parent: Option<PortFrontier>,
 }
@@ -117,14 +118,14 @@ impl<E: 'static> WorkerResources<E> {
 }
 
 impl<E: From<NodeError> + 'static> WorkerResources<E> {
-    pub(super) fn register_port(&self, port: &MessagePort<E>) {
+    pub(super) fn register_port(&self, port: &MessagePort<E>) -> NodeResult<()> {
         self.resources
-            .register(port.ticket(), WorkerResource::Port(port.downgrade()));
+            .register(port.ticket(), WorkerResource::Port(port.downgrade()))
     }
 
-    pub(super) fn register_worker(&self, worker: &Worker<E>) {
+    pub(super) fn register_worker(&self, worker: &Worker<E>) -> NodeResult<()> {
         self.resources
-            .register(worker.ticket(), WorkerResource::Worker(worker.downgrade()));
+            .register(worker.ticket(), WorkerResource::Worker(worker.downgrade()))
     }
 
     pub(super) fn parent_port(&self) -> NodeResult<Option<MessagePort<E>>> {
@@ -156,9 +157,26 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
     type Error = E;
     type Frontier = WorkerFrontier;
 
+    fn enter(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        if !self.resources.enter(owner) {
+            return false;
+        }
+        if let Some(parent) = self.parent.get() {
+            parent.attach();
+        }
+        true
+    }
+    fn close(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) {
+        if self.resources.close_owner(owner) {
+            if let Some(parent) = self.parent.get() {
+                parent.detach();
+            }
+        }
+    }
+
     fn prepare(&self, phase: DispatchPhase) -> Result<Self::Frontier, E> {
         let resources = self.resources.prepare(phase)?;
-        let parent = if phase == DispatchPhase::Ports {
+        let parent = if phase == crate::phases::PORTS {
             self.parent
                 .get()
                 .map(MessagePort::physical_state)
@@ -171,13 +189,16 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
         };
         Ok(WorkerFrontier {
             owner: self as *const Self as usize,
+            generation: self.resources.generation(),
             resources,
             parent,
         })
     }
 
     fn next_ready(&self, frontier: &Self::Frontier) -> Option<u64> {
-        if frontier.owner != self as *const Self as usize {
+        if frontier.owner != self as *const Self as usize
+            || !self.resources.accepts(frontier.generation)
+        {
             return None;
         }
         let resources = self.resources.next_ready(&frontier.resources);
@@ -192,7 +213,9 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
     }
 
     fn poll_next(&self, frontier: &Self::Frontier) -> Result<bool, E> {
-        if frontier.owner != self as *const Self as usize {
+        if frontier.owner != self as *const Self as usize
+            || !self.resources.accepts(frontier.generation)
+        {
             return Ok(false);
         }
         let resources = self.resources.next_ready(&frontier.resources);

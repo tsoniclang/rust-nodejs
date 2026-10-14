@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchPhase};
+use tsonic_rust_runtime::dispatch::DispatchContexts;
 use tsonic_rust_runtime::timer_queue::{TimerContext, TimerHandle};
 use tsonic_rust_runtime::{Callable, TsonicResult};
 
@@ -12,11 +12,11 @@ type MutableCallback = Rc<RefCell<dyn FnMut() -> TsonicResult<()>>>;
 
 pub const fn new<'environment, TError>(
 ) -> TimerContext<Callable<'environment, (), Result<(), TError>>> {
-    TimerContext::new(DispatchPhase::Timers)
+    TimerContext::new(crate::phases::TIMERS)
 }
 
 thread_local! {
-    static DEFAULT_TIMERS: TimerContext<MutableCallback> = const { TimerContext::new(DispatchPhase::Timers) };
+    static DEFAULT_TIMERS: TimerContext<MutableCallback> = const { TimerContext::new(crate::phases::TIMERS) };
 }
 
 pub(crate) fn with_default<TOutput>(
@@ -115,7 +115,7 @@ impl Default for TimerOptions {
     }
 }
 
-pub fn set_timeout(callback: impl FnOnce() + 'static, delay_ms: u64) -> Timeout {
+pub fn set_timeout(callback: impl FnOnce() + 'static, delay_ms: u64) -> NodeResult<Timeout> {
     set_timeout_with_options(callback, delay_ms, TimerOptions::default())
 }
 
@@ -123,7 +123,7 @@ pub fn set_timeout_with_options(
     callback: impl FnOnce() + 'static,
     delay_ms: u64,
     options: TimerOptions,
-) -> Timeout {
+) -> NodeResult<Timeout> {
     let mut callback = Some(callback);
     schedule(
         move || {
@@ -138,18 +138,18 @@ pub fn set_timeout_with_options(
     )
 }
 
-pub fn set_immediate(callback: impl FnOnce() + 'static) -> Timeout {
+pub fn set_immediate(callback: impl FnOnce() + 'static) -> NodeResult<Timeout> {
     set_immediate_with_options(callback, TimerOptions::default())
 }
 
 pub fn set_immediate_with_options(
     callback: impl FnOnce() + 'static,
     options: TimerOptions,
-) -> Timeout {
+) -> NodeResult<Timeout> {
     set_timeout_with_options(callback, 0, options)
 }
 
-pub fn set_interval(callback: impl FnMut() + 'static, delay_ms: u64) -> Timeout {
+pub fn set_interval(callback: impl FnMut() + 'static, delay_ms: u64) -> NodeResult<Timeout> {
     set_interval_with_options(callback, delay_ms, TimerOptions::default())
 }
 
@@ -157,7 +157,7 @@ pub fn set_interval_with_options(
     callback: impl FnMut() + 'static,
     delay_ms: u64,
     options: TimerOptions,
-) -> Timeout {
+) -> NodeResult<Timeout> {
     let mut callback = callback;
     schedule(
         move || {
@@ -202,6 +202,13 @@ fn schedule_callable<'environment, TError>(
     delay_ms: u64,
     interval: bool,
 ) -> NodeResult<Timeout<Callable<'environment, (), Result<(), TError>>>> {
+    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+    if !timers.belongs_to(owner) {
+        return Err(NodeError::new(
+            "ERR_NODE_TIMER_CLOSED",
+            "native timer context is not registered with this event loop",
+        ));
+    }
     timers
         .schedule_with(
             Duration::from_millis(delay_ms),
@@ -244,8 +251,15 @@ fn schedule(
     delay_ms: u64,
     interval: bool,
     options: TimerOptions,
-) -> Timeout {
+) -> NodeResult<Timeout> {
+    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
     with_default(|timers| {
+        if !timers.belongs_to(owner) {
+            return Err(NodeError::new(
+                "ERR_NODE_TIMER_CLOSED",
+                "native timer context is not registered with this event loop",
+            ));
+        }
         timers
             .schedule_with(
                 Duration::from_millis(delay_ms),
@@ -255,7 +269,7 @@ fn schedule(
                 || Rc::new(RefCell::new(callback)) as MutableCallback,
             )
             .map(|handle| Timeout { handle })
-            .expect("native timer admission")
+            .map_err(NodeError::from)
     })
 }
 
@@ -264,8 +278,9 @@ mod tests;
 
 pub mod promises {
     use super::{set_timeout_with_options, Timeout, TimerOptions};
+    use crate::NodeResult;
 
-    pub fn set_timeout_value<T>(delay_ms: u64, value: T) -> (Timeout, T) {
+    pub fn set_timeout_value<T>(delay_ms: u64, value: T) -> NodeResult<(Timeout, T)> {
         set_timeout_value_with_options(delay_ms, value, TimerOptions::default())
     }
 
@@ -273,16 +288,19 @@ pub mod promises {
         delay_ms: u64,
         value: T,
         options: TimerOptions,
-    ) -> (Timeout, T) {
-        let timeout = set_timeout_with_options(|| {}, delay_ms, options);
-        (timeout, value)
+    ) -> NodeResult<(Timeout, T)> {
+        let timeout = set_timeout_with_options(|| {}, delay_ms, options)?;
+        Ok((timeout, value))
     }
 
-    pub fn set_immediate_value<T>(value: T) -> (Timeout, T) {
+    pub fn set_immediate_value<T>(value: T) -> NodeResult<(Timeout, T)> {
         set_timeout_value(0, value)
     }
 
-    pub fn set_immediate_value_with_options<T>(value: T, options: TimerOptions) -> (Timeout, T) {
+    pub fn set_immediate_value_with_options<T>(
+        value: T,
+        options: TimerOptions,
+    ) -> NodeResult<(Timeout, T)> {
         set_timeout_value_with_options(0, value, options)
     }
 
@@ -290,7 +308,7 @@ pub mod promises {
         delay_ms: u64,
         value: T,
         count: usize,
-    ) -> (Timeout, Vec<T>) {
+    ) -> NodeResult<(Timeout, Vec<T>)> {
         set_interval_values_with_options(delay_ms, value, count, TimerOptions::default())
     }
 
@@ -299,9 +317,9 @@ pub mod promises {
         value: T,
         count: usize,
         options: TimerOptions,
-    ) -> (Timeout, Vec<T>) {
-        let timeout = set_timeout_with_options(|| {}, delay_ms, options);
-        (timeout, vec![value; count])
+    ) -> NodeResult<(Timeout, Vec<T>)> {
+        let timeout = set_timeout_with_options(|| {}, delay_ms, options)?;
+        Ok((timeout, vec![value; count]))
     }
 
     pub mod scheduler {

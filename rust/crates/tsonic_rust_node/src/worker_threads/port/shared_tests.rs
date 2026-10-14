@@ -2,8 +2,150 @@ use super::tests::Failure;
 use super::*;
 use std::cell::Cell;
 use tsonic_rust_runtime::dispatch::{
-    poll_phase, poll_prepared, prepend, DispatchContexts, DispatchEnd, DispatchPhase,
+    poll_phase, poll_prepared, prepend, DispatchContexts, DispatchEnd,
 };
+
+#[test]
+fn loop_owner_registration_reattachment_preserves_sorted_unique_lookup_and_cached_storage() {
+    struct Lifecycle;
+    impl PortListenerLifecycle for Lifecycle {
+        fn retire(&self, _ticket: TaskTicket, _slot: usize, _captured: bool) {}
+        fn is_registered(&self, _ticket: TaskTicket, _slot: usize) -> bool {
+            false
+        }
+        fn prune(&self) {}
+    }
+    let budget = tsonic_rust_runtime::dispatch_queue::TaskBudget::new(
+        std::num::NonZeroUsize::new(8).unwrap(),
+    );
+    let tickets: Vec<_> = (0..6).map(|_| budget.admit().unwrap()).collect();
+    let lifecycle: Rc<dyn PortListenerLifecycle> = Rc::new(Lifecycle);
+    let mut owners = PortOwners::new();
+    let entry = |index: usize| PortOwnerRegistration {
+        ticket: tickets[index],
+        owner: Rc::downgrade(&lifecycle),
+    };
+    owners.push(entry(4));
+    assert_eq!(owners.others.capacity(), 0);
+    for index in [2, 5, 1, 3, 0] {
+        owners.push(entry(index));
+    }
+    let capacity = owners.others.capacity();
+    let allocation = owners.others.as_ptr();
+    assert_eq!(Rc::weak_count(&lifecycle), 6);
+    for _ in 0..128 {
+        for ticket in &tickets {
+            assert!(owners.get(*ticket).and_then(Weak::upgrade).is_some());
+        }
+        assert!(owners
+            .others
+            .windows(2)
+            .all(|entries| entries[0].ticket < entries[1].ticket));
+        for index in [5, 0, 3, 4, 1, 2] {
+            owners.push(entry(index));
+        }
+        assert_eq!(owners.iter().count(), 6);
+        assert_eq!(Rc::weak_count(&lifecycle), 6);
+        for index in [0, 2, 5, 1, 4, 3] {
+            owners.remove(tickets[index]);
+            assert!(owners.get(tickets[index]).is_none());
+        }
+        assert_eq!(Rc::weak_count(&lifecycle), 0);
+        for index in [3, 5, 1, 4, 2, 0] {
+            owners.push(entry(index));
+        }
+        assert_eq!(owners.others.capacity(), capacity);
+        assert_eq!(owners.others.as_ptr(), allocation);
+    }
+    drop(lifecycle);
+    for ticket in &tickets {
+        assert!(owners.get(*ticket).unwrap().upgrade().is_none());
+        owners.remove(*ticket);
+    }
+    assert_eq!(owners.iter().count(), 0);
+    assert_eq!(owners.others.capacity(), capacity);
+}
+
+#[test]
+fn loop_owner_detaches_only_its_callbacks_without_closing_shared_physical_ports() {
+    let channels = WorkerResources::<NodeError>::new();
+    let left = WorkerResources::<NodeError>::new();
+    let right = WorkerResources::<NodeError>::new();
+    let calls_left = Rc::new(Cell::new(0));
+    let calls_right = Rc::new(Cell::new(0));
+    let mut physical = None;
+    let contexts = prepend(
+        &channels,
+        prepend(
+            &left,
+            prepend(
+                &right,
+                DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+            ),
+        ),
+    );
+    crate::block_on_with_contexts(
+        async {
+            let channel = MessageChannel::new(&channels).unwrap();
+            let state = Rc::clone(&channel.port2.owner.state);
+            let first = left.bind_parent(Rc::clone(&state)).unwrap();
+            let second = right.bind_parent(Rc::clone(&state)).unwrap();
+            let observed = Rc::clone(&calls_left);
+            first
+                .on_callable(
+                    &JsValue::String("message".to_owned()),
+                    &Callable::new(move |()| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                )
+                .unwrap();
+            let observed = Rc::clone(&calls_right);
+            second
+                .on_callable(
+                    &JsValue::String("message".to_owned()),
+                    &Callable::new(move |()| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                )
+                .unwrap();
+            assert_eq!(Rc::strong_count(&calls_left), 2);
+            assert_eq!(Rc::strong_count(&calls_right), 2);
+            first.detach();
+            assert_eq!(Rc::strong_count(&calls_left), 1);
+            assert_eq!(Rc::strong_count(&calls_right), 2);
+            assert!(!state.borrow().closed);
+            channel.port1.post_message(JsValue::from(1)).unwrap();
+            assert!(poll_phase(&contexts, crate::phases::PORTS).unwrap());
+            assert_eq!(calls_left.get(), 0);
+            assert_eq!(calls_right.get(), 1);
+            first.attach();
+            let observed = Rc::clone(&calls_left);
+            first
+                .on_callable(
+                    &JsValue::String("message".to_owned()),
+                    &Callable::new(move |()| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                )
+                .unwrap();
+            channel.port1.post_message(JsValue::from(2)).unwrap();
+            assert!(poll_phase(&contexts, crate::phases::PORTS).unwrap());
+            assert_eq!(calls_left.get(), 1);
+            assert_eq!(calls_right.get(), 2);
+            channel.port1.unref();
+            channel.port2.unref();
+            physical = Some(state);
+        },
+        &contexts,
+    )
+    .unwrap();
+    assert!(!physical.unwrap().borrow().closed);
+    assert_eq!(Rc::strong_count(&calls_left), 1);
+    assert_eq!(Rc::strong_count(&calls_right), 1);
+}
 
 enum OtherFailure {
     Original(Rc<Cell<u64>>),
@@ -106,7 +248,7 @@ fn one_physical_port_delivers_interleaved_callbacks_to_their_exact_component_dom
         &second,
         prepend(&first, DispatchEnd::<CombinedFailure>::new()),
     );
-    assert_eq!(poll_phase(&group, DispatchPhase::Ports).ok(), Some(true));
+    assert_eq!(poll_phase(&group, crate::phases::PORTS).ok(), Some(true));
     assert_eq!(*order.borrow(), [1, 2, 3, 1, 2, 3]);
     assert!(left.owner.state.borrow().messages.is_empty());
 }
@@ -143,7 +285,7 @@ fn a_shared_port_failure_retains_original_payload_and_uninvoked_once_registratio
         &first,
         prepend(&second, DispatchEnd::<CombinedFailure>::new()),
     );
-    match poll_phase(&group, DispatchPhase::Ports) {
+    match poll_phase(&group, crate::phases::PORTS) {
         Err(CombinedFailure::Second(OtherFailure::Original(returned))) => {
             assert!(Rc::ptr_eq(&returned, &original));
             assert_eq!(returned.get(), 9_007_199_254_740_993);
@@ -159,9 +301,9 @@ fn a_shared_port_failure_retains_original_payload_and_uninvoked_once_registratio
     }
     assert_eq!(calls.get(), 0);
     assert_eq!(left.owner.state.borrow().messages.len(), 1);
-    assert_eq!(poll_phase(&group, DispatchPhase::Ports).ok(), Some(true));
+    assert_eq!(poll_phase(&group, crate::phases::PORTS).ok(), Some(true));
     assert_eq!(calls.get(), 1);
-    assert_eq!(poll_phase(&group, DispatchPhase::Ports).ok(), Some(false));
+    assert_eq!(poll_phase(&group, crate::phases::PORTS).ok(), Some(false));
 }
 
 #[test]
@@ -241,7 +383,7 @@ fn cancellation_during_shared_delivery_preserves_current_snapshot_but_not_the_ne
     sender.post_message(JsValue::from(1)).unwrap();
     sender.post_message(JsValue::from(2)).unwrap();
     let group = prepend(&first, prepend(&second, DispatchEnd::<NodeError>::new()));
-    assert!(poll_phase(&group, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&group, crate::phases::PORTS).unwrap());
     assert_eq!(*order.borrow(), [1, 2, 1]);
     assert!(right.owner.callbacks.borrow().is_empty());
 }
@@ -271,16 +413,16 @@ fn shared_capture_defers_reentrant_messages_and_rejects_foreign_projection_front
     )
     .unwrap();
     sender.post_message(JsValue::from(1)).unwrap();
-    let frontier = first.prepare(DispatchPhase::Ports).unwrap();
+    let frontier = first.prepare(crate::phases::PORTS).unwrap();
     assert!(second.next_ready(&frontier).is_none());
     assert!(!second.poll_next(&frontier).unwrap());
     drop(frontier);
     let group = prepend(&second, prepend(&first, DispatchEnd::<NodeError>::new()));
-    let frontier = group.prepare(DispatchPhase::Ports).unwrap();
+    let frontier = group.prepare(crate::phases::PORTS).unwrap();
     assert!(poll_prepared(&group, &frontier).unwrap());
     assert_eq!(calls.get(), 1);
     drop(frontier);
-    assert!(poll_phase(&group, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&group, crate::phases::PORTS).unwrap());
     assert_eq!(calls.get(), 2);
 }
 
@@ -291,7 +433,7 @@ fn a_lazily_used_component_joins_the_existing_physical_frontier_without_eager_ca
     let first = WorkerResources::<NodeError>::new();
     let second = Rc::new(WorkerResources::<NodeError>::new());
     let left = crate::worker_threads::parent_port(&first).unwrap().unwrap();
-    let unused = second.prepare(DispatchPhase::Ports).unwrap();
+    let unused = second.prepare(crate::phases::PORTS).unwrap();
     assert_eq!(state.borrow().routing.owners.iter().count(), 1);
     drop(unused);
     let order = Rc::new(RefCell::new(Vec::new()));
@@ -321,7 +463,7 @@ fn a_lazily_used_component_joins_the_existing_physical_frontier_without_eager_ca
         second.as_ref(),
         prepend(&first, DispatchEnd::<NodeError>::new()),
     );
-    assert!(poll_phase(&group, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&group, crate::phases::PORTS).unwrap());
     assert_eq!(*order.borrow(), [1, 1, 2]);
 }
 
@@ -347,7 +489,7 @@ fn callback_slots_reuse_native_storage_without_reviving_an_old_registration() {
     channel.port2.on_callable(&event, &replacement).unwrap();
     assert_eq!(channel.port2.owner.callbacks.borrow().entries.len(), 1);
     channel.port1.post_message(JsValue::from(1)).unwrap();
-    assert!(poll_phase(&resources, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
     assert_eq!(removed_calls.get(), 0);
     assert_eq!(replacement_calls.get(), 1);
 }
@@ -390,7 +532,7 @@ fn dropping_a_component_retires_its_routes_without_retaining_its_capture_or_cons
     )
     .unwrap();
     sender.post_message(JsValue::from(1)).unwrap();
-    assert!(poll_phase(&survivor, DispatchPhase::Ports).unwrap());
+    assert!(poll_phase(&survivor, crate::phases::PORTS).unwrap());
     assert_eq!(calls.get(), 1);
     assert_eq!(port.owner.state.borrow().routing.listeners, 0);
 }
@@ -431,11 +573,11 @@ fn port_listener_admission_and_native_errors_preserve_independent_guards() {
         .push_error("native port failure".to_owned())
         .unwrap();
     assert_eq!(
-        poll_phase(&resources, DispatchPhase::Ports)
+        poll_phase(&resources, crate::phases::PORTS)
             .err()
             .unwrap()
             .code(),
         "ERR_UNHANDLED_ERROR"
     );
-    assert!(!poll_phase(&resources, DispatchPhase::Ports).unwrap());
+    assert!(!poll_phase(&resources, crate::phases::PORTS).unwrap());
 }
