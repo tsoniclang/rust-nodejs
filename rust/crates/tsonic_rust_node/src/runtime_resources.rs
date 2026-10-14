@@ -94,6 +94,10 @@ impl<TResource> RuntimeResources<TResource> {
         self.generation.enter(owner)
     }
 
+    pub(crate) fn owns(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
+        self.generation.owns(owner)
+    }
+
     pub(crate) fn close_owner(&self, owner: tsonic_rust_runtime::dispatch::DispatchOwner) -> bool {
         if !self.generation.close(owner) {
             return false;
@@ -117,16 +121,82 @@ impl<TResource: RuntimeResource> RuntimeResources<TResource> {
                 "native resource owner is closed",
             ));
         }
+        self.register_physical(ticket, resource)
+    }
+
+    pub(crate) fn register_physical(
+        &self,
+        ticket: TaskTicket,
+        resource: TResource,
+    ) -> crate::NodeResult<()> {
         if self.registrations.borrow().len() >= self.limit {
             self.prune();
         }
         let previous = {
             let mut registrations = self.registrations.borrow_mut();
-            assert!(registrations.len() < self.limit || registrations.contains_key(&ticket));
+            if !self.generation.is_open() && registrations.contains_key(&ticket) {
+                return Err(crate::NodeError::new(
+                    "ERR_NODE_RESOURCE_CLOSED",
+                    "closed native resource registrations cannot be replaced",
+                ));
+            }
+            if registrations.len() >= self.limit && !registrations.contains_key(&ticket) {
+                return Err(crate::NodeError::new(
+                    "ERR_NODE_RESOURCE_LIMIT",
+                    "native resources exceed the finite registration limit",
+                ));
+            }
             registrations.insert(ticket, Registration { resource })
         };
         drop(previous);
         Ok(())
+    }
+
+    fn retain_registered(&self, mut retain: impl FnMut(&TResource) -> bool) {
+        let boundary = self
+            .registrations
+            .borrow()
+            .last_key_value()
+            .map(|(ticket, _)| *ticket);
+        let Some(boundary) = boundary else {
+            return;
+        };
+        let mut after = None;
+        loop {
+            let next = self
+                .registrations
+                .borrow()
+                .range((after.map_or(Unbounded, Excluded), Included(boundary)))
+                .next()
+                .map(|(ticket, entry)| (*ticket, entry.resource.clone()));
+            let Some((ticket, resource)) = next else {
+                return;
+            };
+            after = Some(ticket);
+            if !retain(&resource) {
+                let removed = self.registrations.borrow_mut().remove(&ticket);
+                drop(removed);
+            }
+        }
+    }
+
+    pub(crate) fn visit(&self, mut operation: impl FnMut(&TResource)) {
+        self.retain_registered(|resource| {
+            operation(resource);
+            true
+        });
+    }
+
+    pub(crate) fn close_owner_with(
+        &self,
+        owner: tsonic_rust_runtime::dispatch::DispatchOwner,
+        retain: impl FnMut(&TResource) -> bool,
+    ) -> bool {
+        if !self.generation.close(owner) {
+            return false;
+        }
+        self.retain_registered(retain);
+        true
     }
 
     fn prune(&self) {

@@ -222,7 +222,7 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       receiverCarrier: messageChannelCarrier,
     })),
     receiverMethod(messagePortId, "postMessage", "post_message", messagePortCarrier, [jsValueCarrier], unitCarrier, false, true),
-    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier),
+    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier, false, true),
     receiverMethod(messagePortId, "close", "close", messagePortCarrier, [], unitCarrier, false, true),
     receiverMethod(messagePortId, "ref", "ref_chain", messagePortCarrier, [], reference(messagePortCarrier)),
     receiverMethod(messagePortId, "unref", "unref", messagePortCarrier, [], reference(messagePortCarrier)),

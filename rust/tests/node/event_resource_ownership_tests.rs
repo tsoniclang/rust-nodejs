@@ -107,46 +107,66 @@ fn warmed_native_watcher_frontiers_and_shared_handles_do_not_allocate() {
 #[test]
 fn warmed_native_resource_frontiers_do_not_allocate_snapshot_wrappers() {
     let workers = WorkerResources::<NodeError>::new();
-    let channel = MessageChannel::new(&workers).unwrap();
-    channel.port2.start();
-    assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-    let cost = measure(|| {
-        for _ in 0..1024 {
-            black_box(channel.port2.clone());
+    tsonic_rust_node::block_on_with_contexts(
+        async {
+            let channel = MessageChannel::new(&workers).unwrap();
+            channel.port2.start().unwrap();
             assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-            assert!(workers.has_work());
-            assert_eq!(workers.next_delay(), None);
-        }
-    });
-    assert_eq!(cost, (0, 0));
+            let cost = measure(|| {
+                for _ in 0..1024 {
+                    black_box(channel.port2.clone());
+                    assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
+                    assert!(workers.has_work());
+                    assert_eq!(workers.next_delay(), None);
+                }
+            });
+            assert_eq!(cost, (0, 0));
+            channel.port2.unref();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &workers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap();
 }
 
 #[test]
 fn warmed_port_delivery_uses_one_queue_without_per_emission_wrappers_or_allocations() {
     let workers = WorkerResources::<NodeError>::new();
-    let channel = MessageChannel::new(&workers).unwrap();
-    let calls = Rc::new(Cell::new(0));
-    let observed = Rc::clone(&calls);
-    channel
-        .port2
-        .on_callable(
-            &JsValue::String("message".to_owned()),
-            &Callable::new(move |()| {
-                observed.set(observed.get() + 1);
-                Ok::<(), NodeError>(())
-            }),
-        )
-        .unwrap();
-    channel.port1.post_message(JsValue::from(1)).unwrap();
-    assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-    let cost = measure(|| {
-        for _ in 0..1024 {
+    tsonic_rust_node::block_on_with_contexts(
+        async {
+            let channel = MessageChannel::new(&workers).unwrap();
+            let calls = Rc::new(Cell::new(0));
+            let observed = Rc::clone(&calls);
+            channel
+                .port2
+                .on_callable(
+                    &JsValue::String("message".to_owned()),
+                    &Callable::new(move |()| {
+                        observed.set(observed.get() + 1);
+                        Ok::<(), NodeError>(())
+                    }),
+                )
+                .unwrap();
             channel.port1.post_message(JsValue::from(1)).unwrap();
             assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-        }
-    });
-    assert_eq!(calls.get(), 1025);
-    assert_eq!(cost, (0, 0));
+            let cost = measure(|| {
+                for _ in 0..1024 {
+                    channel.port1.post_message(JsValue::from(1)).unwrap();
+                    assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
+                }
+            });
+            assert_eq!(calls.get(), 1025);
+            assert_eq!(cost, (0, 0));
+            channel.port2.unref();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &workers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap();
 }
 
 #[test]

@@ -8,6 +8,268 @@ use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation};
 
 struct Failure(Rc<Cell<i64>>);
 
+enum LoopFailure {
+    Source(Failure),
+    Native(tsonic_rust_runtime::TsonicError),
+}
+
+impl From<Failure> for LoopFailure {
+    fn from(error: Failure) -> Self {
+        Self::Source(error)
+    }
+}
+
+impl From<tsonic_rust_runtime::TsonicError> for LoopFailure {
+    fn from(error: tsonic_rust_runtime::TsonicError) -> Self {
+        Self::Native(error)
+    }
+}
+
+fn with_loop<T>(resources: &RuntimeResources<Resource>, operation: impl FnOnce() -> T) -> T {
+    let contexts = tsonic_rust_runtime::dispatch::prepend(
+        resources,
+        tsonic_rust_runtime::dispatch::DispatchEnd::<LoopFailure>::new(),
+    );
+    match crate::block_on_with_contexts(async { operation() }, contexts) {
+        Ok(value) => value,
+        Err(LoopFailure::Source(error)) => {
+            panic!("unhandled native test source failure: {}", error.0.get())
+        }
+        Err(LoopFailure::Native(error)) => panic!("native test loop failed: {error}"),
+    }
+}
+
+fn physical_resource(budget: &TaskBudget) -> Rc<State> {
+    Rc::new(State {
+        reservation: budget.reserve().unwrap(),
+        action: RefCell::new(None),
+        polled: Cell::new(0),
+    })
+}
+
+#[test]
+fn retained_physical_registrations_retire_once_and_reject_stale_owners() {
+    let resources = RuntimeResources::new(1);
+    let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+    let state = physical_resource(&budget);
+    resources
+        .register_physical(state.reservation.ticket(), Resource(Rc::downgrade(&state)))
+        .unwrap();
+    let first = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(first));
+    let retired = Cell::new(0);
+    assert!(resources.close_owner_with(first, |resource| {
+        assert!(resources.registrations.try_borrow_mut().is_ok());
+        retired.set(retired.get() + 1);
+        resource.is_alive()
+    }));
+    assert_eq!(retired.get(), 1);
+    assert_eq!(resources.registrations.borrow().len(), 1);
+    assert!(
+        !resources.close_owner_with(first, |_| panic!("stale owner retired a live registration"))
+    );
+    let second = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(second));
+    assert!(!resources.enter_owner(first));
+    assert!(!resources.close_owner_with(first, |_| panic!("old owner reached the new generation")));
+    assert!(resources.owns(second));
+    assert!(resources.close_owner_with(second, |resource| {
+        retired.set(retired.get() + 1);
+        resource.is_alive()
+    }));
+    assert_eq!(retired.get(), 2);
+    assert_eq!(Rc::weak_count(&state), 1);
+    assert_eq!(budget.pending(), 1);
+    drop(state);
+    assert_eq!(budget.pending(), 0);
+    assert!(resources.prepare(crate::phases::PORTS).is_ok());
+    assert!(resources.registrations.borrow().is_empty());
+}
+
+#[test]
+fn retirement_preserves_new_native_admissions_without_revisiting_them() {
+    let resources = RuntimeResources::new(2);
+    let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
+    let original = physical_resource(&budget);
+    resources
+        .register_physical(
+            original.reservation.ticket(),
+            Resource(Rc::downgrade(&original)),
+        )
+        .unwrap();
+    let owner = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(owner));
+    let mut added = None;
+    let mut retired = 0;
+    assert!(resources.close_owner_with(owner, |resource| {
+        retired += 1;
+        assert!(resources.registrations.try_borrow_mut().is_ok());
+        assert!(!resources.owns(owner));
+        let state = physical_resource(&budget);
+        resources
+            .register_physical(state.reservation.ticket(), Resource(Rc::downgrade(&state)))
+            .unwrap();
+        added = Some(state);
+        resource.is_alive()
+    }));
+    assert_eq!(retired, 1);
+    assert_eq!(resources.registrations.borrow().len(), 2);
+    assert_eq!(Rc::weak_count(&original), 1);
+    assert_eq!(Rc::weak_count(added.as_ref().unwrap()), 1);
+    drop(original);
+    drop(added);
+    assert_eq!(budget.pending(), 0);
+    assert!(resources.prepare(crate::phases::PORTS).is_ok());
+    assert!(resources.registrations.borrow().is_empty());
+}
+
+#[test]
+fn physical_retention_preserves_quota_and_prunes_dead_weak_entries_before_reuse() {
+    let resources = RuntimeResources::new(1);
+    let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+    let state = physical_resource(&budget);
+    resources
+        .register_physical(state.reservation.ticket(), Resource(Rc::downgrade(&state)))
+        .unwrap();
+    for _ in 0..128 {
+        let owner = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+        assert!(resources.enter_owner(owner));
+        assert!(resources.close_owner_with(owner, RuntimeResource::is_alive));
+        assert_eq!(resources.registrations.borrow().len(), 1);
+        assert_eq!(Rc::weak_count(&state), 1);
+        assert_eq!(budget.pending(), 1);
+        assert!(budget.reserve().is_err());
+    }
+    let retired_ticket = state.reservation.ticket();
+    drop(state);
+    assert_eq!(budget.pending(), 0);
+    let replacement = physical_resource(&budget);
+    resources
+        .register_physical(
+            replacement.reservation.ticket(),
+            Resource(Rc::downgrade(&replacement)),
+        )
+        .unwrap();
+    assert_eq!(resources.registrations.borrow().len(), 1);
+    assert!(!resources
+        .registrations
+        .borrow()
+        .contains_key(&retired_ticket));
+    let owner = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(owner));
+    assert!(resources.close_owner(owner));
+    assert!(resources.registrations.borrow().is_empty());
+    assert_eq!(budget.pending(), 1);
+    drop(replacement);
+    assert_eq!(budget.pending(), 0);
+}
+
+#[test]
+fn native_registration_visits_are_bounded_and_do_not_borrow_across_callbacks() {
+    let resources = RuntimeResources::new(2);
+    let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
+    let original = physical_resource(&budget);
+    resources
+        .register_physical(
+            original.reservation.ticket(),
+            Resource(Rc::downgrade(&original)),
+        )
+        .unwrap();
+    let mut calls = 0;
+    let mut added = None;
+    resources.visit(|resource| {
+        assert!(resources.registrations.try_borrow_mut().is_ok());
+        assert!(resource.0.upgrade().is_some());
+        calls += 1;
+        let state = physical_resource(&budget);
+        resources
+            .register_physical(state.reservation.ticket(), Resource(Rc::downgrade(&state)))
+            .unwrap();
+        added = Some(state);
+    });
+    assert_eq!(calls, 1);
+    assert_eq!(resources.registrations.borrow().len(), 2);
+    assert_eq!(budget.pending(), 2);
+    drop(original);
+    drop(added);
+    assert_eq!(budget.pending(), 0);
+    assert!(resources.prepare(crate::phases::PORTS).is_ok());
+    assert!(resources.registrations.borrow().is_empty());
+}
+
+#[test]
+fn native_retirement_keeps_the_existing_registry_limit_during_reentrant_admission() {
+    let resources = RuntimeResources::new(1);
+    let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
+    let original = physical_resource(&budget);
+    resources
+        .register_physical(
+            original.reservation.ticket(),
+            Resource(Rc::downgrade(&original)),
+        )
+        .unwrap();
+    let owner = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(owner));
+    assert!(resources.close_owner_with(owner, |resource| {
+        let rejected = physical_resource(&budget);
+        assert_eq!(
+            resources
+                .register_physical(
+                    rejected.reservation.ticket(),
+                    Resource(Rc::downgrade(&rejected))
+                )
+                .unwrap_err()
+                .code(),
+            "ERR_NODE_RESOURCE_LIMIT"
+        );
+        assert_eq!(
+            resources
+                .register_physical(
+                    original.reservation.ticket(),
+                    Resource(Rc::downgrade(&rejected))
+                )
+                .unwrap_err()
+                .code(),
+            "ERR_NODE_RESOURCE_CLOSED"
+        );
+        assert_eq!(resources.registrations.borrow().len(), 1);
+        resource.is_alive()
+    }));
+    assert_eq!(Rc::weak_count(&original), 1);
+    assert_eq!(budget.pending(), 1);
+    drop(original);
+    assert_eq!(budget.pending(), 0);
+    assert!(resources.prepare(crate::phases::PORTS).is_ok());
+    assert!(resources.registrations.borrow().is_empty());
+}
+
+#[test]
+fn native_partial_retirement_drops_captures_once_outside_registry_borrows() {
+    let resources = Rc::new(RuntimeResources::new(1));
+    let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+    let reservation = budget.reserve().unwrap();
+    let calls = Rc::new(Cell::new(0));
+    resources
+        .register_physical(
+            reservation.ticket(),
+            ReentrantResource {
+                alive: Rc::new(Cell::new(true)),
+                _owner: Rc::new(RegistryDrop {
+                    resources: Rc::downgrade(&resources),
+                    calls: Rc::clone(&calls),
+                }),
+            },
+        )
+        .unwrap();
+    let owner = tsonic_rust_runtime::dispatch::DispatchOwner::new().unwrap();
+    assert!(resources.enter_owner(owner));
+    assert!(resources.close_owner_with(owner, |_| false));
+    assert_eq!(calls.get(), 1);
+    assert!(resources.registrations.borrow().is_empty());
+    assert!(!resources.close_owner_with(owner, |_| panic!("resource retired twice")));
+    assert_eq!(calls.get(), 1);
+}
+
 #[test]
 fn loop_owner_plain_native_resource_reservations_do_not_require_a_js_loop() {
     let budget = NativeResourceBudget::new(2);
@@ -78,83 +340,91 @@ fn register(
 #[test]
 fn native_resource_frontiers_skip_idle_candidates_without_losing_later_callbacks() {
     let resources = RuntimeResources::new(3);
-    let budget = TaskBudget::new(NonZeroUsize::new(3).unwrap());
-    let idle = register(&resources, &budget, Ok(false));
-    let ready = register(&resources, &budget, Ok(true));
-    assert_eq!(
-        poll_phase(&resources, crate::phases::PORTS).ok(),
-        Some(true)
-    );
-    assert_eq!(idle.polled.get(), 1);
-    assert_eq!(ready.polled.get(), 1);
-    assert_eq!(
-        poll_phase(&resources, crate::phases::WORKERS).ok(),
-        Some(false)
-    );
-    assert_eq!(ready.polled.get(), 1);
+    with_loop(&resources, || {
+        let budget = TaskBudget::new(NonZeroUsize::new(3).unwrap());
+        let idle = register(&resources, &budget, Ok(false));
+        let ready = register(&resources, &budget, Ok(true));
+        assert_eq!(
+            poll_phase(&resources, crate::phases::PORTS).ok(),
+            Some(true)
+        );
+        assert_eq!(idle.polled.get(), 1);
+        assert_eq!(ready.polled.get(), 1);
+        assert_eq!(
+            poll_phase(&resources, crate::phases::WORKERS).ok(),
+            Some(false)
+        );
+        assert_eq!(ready.polled.get(), 1);
+    });
 }
 
 #[test]
 fn captured_native_frontiers_exclude_admission_and_reject_foreign_roots() {
     let resources = RuntimeResources::new(2);
-    let other = RuntimeResources::<Resource>::new(2);
-    let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
-    let first = register(&resources, &budget, Ok(true));
-    let frontier = resources
-        .prepare(crate::phases::PORTS)
-        .ok()
-        .expect("native frontier");
-    let second = register(&resources, &budget, Ok(true));
-    assert!(other.next_ready(&frontier).is_none());
-    assert_eq!(other.poll_next(&frontier).ok(), Some(false));
-    assert_eq!(poll_prepared(&resources, &frontier).ok(), Some(true));
-    assert_eq!(first.polled.get(), 1);
-    assert_eq!(second.polled.get(), 0);
-    assert_eq!(
-        poll_phase(&resources, crate::phases::PORTS).ok(),
-        Some(true)
-    );
-    assert_eq!(second.polled.get(), 1);
+    with_loop(&resources, || {
+        let other = RuntimeResources::<Resource>::new(2);
+        let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
+        let first = register(&resources, &budget, Ok(true));
+        let frontier = resources
+            .prepare(crate::phases::PORTS)
+            .ok()
+            .expect("native frontier");
+        let second = register(&resources, &budget, Ok(true));
+        assert!(other.next_ready(&frontier).is_none());
+        assert_eq!(other.poll_next(&frontier).ok(), Some(false));
+        assert_eq!(poll_prepared(&resources, &frontier).ok(), Some(true));
+        assert_eq!(first.polled.get(), 1);
+        assert_eq!(second.polled.get(), 0);
+        assert_eq!(
+            poll_phase(&resources, crate::phases::PORTS).ok(),
+            Some(true)
+        );
+        assert_eq!(second.polled.get(), 1);
+    });
 }
 
 #[test]
 fn weak_native_resources_release_shared_quota_before_the_next_registry_poll() {
     let resources = RuntimeResources::new(1);
-    let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
-    let first = register(&resources, &budget, Ok(true));
-    assert_eq!(budget.pending(), 1);
-    assert!(budget.reserve().is_err());
-    drop(first);
-    assert_eq!(budget.pending(), 0);
-    let second = register(&resources, &budget, Ok(true));
-    assert_eq!(resources.registrations.borrow().len(), 1);
-    assert_eq!(
-        poll_phase(&resources, crate::phases::PORTS).ok(),
-        Some(true)
-    );
-    assert_eq!(second.polled.get(), 1);
+    with_loop(&resources, || {
+        let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+        let first = register(&resources, &budget, Ok(true));
+        assert_eq!(budget.pending(), 1);
+        assert!(budget.reserve().is_err());
+        drop(first);
+        assert_eq!(budget.pending(), 0);
+        let second = register(&resources, &budget, Ok(true));
+        assert_eq!(resources.registrations.borrow().len(), 1);
+        assert_eq!(
+            poll_phase(&resources, crate::phases::PORTS).ok(),
+            Some(true)
+        );
+        assert_eq!(second.polled.get(), 1);
+    });
 }
 
 #[test]
 fn original_native_failure_retains_the_unvisited_resource_frontier() {
     let resources = RuntimeResources::new(2);
-    let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
-    let original = Rc::new(Cell::new(9_007_199_254_740_993));
-    let first = register(&resources, &budget, Err(Failure(Rc::clone(&original))));
-    let second = register(&resources, &budget, Ok(true));
-    let frontier = resources
-        .prepare(crate::phases::PORTS)
-        .ok()
-        .expect("native frontier");
-    let returned = match poll_prepared(&resources, &frontier) {
-        Err(error) => error,
-        Ok(_) => panic!("original native error"),
-    };
-    assert!(Rc::ptr_eq(&returned.0, &original));
-    assert_eq!(first.polled.get(), 1);
-    assert_eq!(second.polled.get(), 0);
-    assert_eq!(poll_prepared(&resources, &frontier).ok(), Some(true));
-    assert_eq!(second.polled.get(), 1);
+    with_loop(&resources, || {
+        let budget = TaskBudget::new(NonZeroUsize::new(2).unwrap());
+        let original = Rc::new(Cell::new(9_007_199_254_740_993));
+        let first = register(&resources, &budget, Err(Failure(Rc::clone(&original))));
+        let second = register(&resources, &budget, Ok(true));
+        let frontier = resources
+            .prepare(crate::phases::PORTS)
+            .ok()
+            .expect("native frontier");
+        let returned = match poll_prepared(&resources, &frontier) {
+            Err(error) => error,
+            Ok(_) => panic!("original native error"),
+        };
+        assert!(Rc::ptr_eq(&returned.0, &original));
+        assert_eq!(first.polled.get(), 1);
+        assert_eq!(second.polled.get(), 0);
+        assert_eq!(poll_prepared(&resources, &frontier).ok(), Some(true));
+        assert_eq!(second.polled.get(), 1);
+    });
 }
 
 #[derive(Clone)]
@@ -310,50 +580,60 @@ fn loop_owner_stale_native_frontiers_never_select_a_reopened_source() {
 fn pruning_and_replacement_release_native_resource_owners_outside_registry_borrows() {
     for replacement in [false, true] {
         let resources = Rc::new(RuntimeResources::new(1));
-        let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
-        let reservation = budget.reserve().unwrap();
-        let calls = Rc::new(Cell::new(0));
-        let alive = Rc::new(Cell::new(true));
-        resources
-            .register(
-                reservation.ticket(),
-                ReentrantResource {
-                    alive: Rc::clone(&alive),
-                    _owner: Rc::new(RegistryDrop {
-                        resources: Rc::downgrade(&resources),
-                        calls: Rc::clone(&calls),
-                    }),
-                },
-            )
-            .unwrap();
-        if replacement {
-            resources
-                .register(
-                    reservation.ticket(),
-                    ReentrantResource {
-                        alive: Rc::new(Cell::new(true)),
-                        _owner: Rc::new(RegistryDrop {
-                            resources: Rc::downgrade(&resources),
-                            calls: Rc::clone(&calls),
-                        }),
-                    },
-                )
-                .unwrap();
-            assert_eq!(calls.get(), 1);
-            resources
-                .registrations
-                .borrow()
-                .values()
-                .next()
-                .unwrap()
-                .resource
-                .alive
-                .set(false);
-        } else {
-            alive.set(false);
-        }
-        assert!(resources.prepare(crate::phases::HTTP).is_ok());
-        assert_eq!(calls.get(), if replacement { 2 } else { 1 });
-        assert!(resources.registrations.borrow().is_empty());
+        crate::block_on_with_contexts(
+            async {
+                let budget = TaskBudget::new(NonZeroUsize::new(1).unwrap());
+                let reservation = budget.reserve().unwrap();
+                let calls = Rc::new(Cell::new(0));
+                let alive = Rc::new(Cell::new(true));
+                resources
+                    .register(
+                        reservation.ticket(),
+                        ReentrantResource {
+                            alive: Rc::clone(&alive),
+                            _owner: Rc::new(RegistryDrop {
+                                resources: Rc::downgrade(&resources),
+                                calls: Rc::clone(&calls),
+                            }),
+                        },
+                    )
+                    .unwrap();
+                if replacement {
+                    resources
+                        .register(
+                            reservation.ticket(),
+                            ReentrantResource {
+                                alive: Rc::new(Cell::new(true)),
+                                _owner: Rc::new(RegistryDrop {
+                                    resources: Rc::downgrade(&resources),
+                                    calls: Rc::clone(&calls),
+                                }),
+                            },
+                        )
+                        .unwrap();
+                    assert_eq!(calls.get(), 1);
+                    resources
+                        .registrations
+                        .borrow()
+                        .values()
+                        .next()
+                        .unwrap()
+                        .resource
+                        .alive
+                        .set(false);
+                } else {
+                    alive.set(false);
+                }
+                assert!(resources.prepare(crate::phases::HTTP).is_ok());
+                assert_eq!(calls.get(), if replacement { 2 } else { 1 });
+                assert!(resources.registrations.borrow().is_empty());
+            },
+            tsonic_rust_runtime::dispatch::prepend(
+                resources.as_ref(),
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(
+                ),
+            ),
+        )
+        .unwrap();
     }
 }
