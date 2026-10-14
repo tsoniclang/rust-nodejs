@@ -17,7 +17,7 @@ function compile(source, outputType = "bin") {
 }
 
 test("generated native Node driver consumes exact TLS and background roots", { timeout: 300_000 }, () => {
-  const result = compile(nativeTlsCompletionSource);
+  const result = compile(`${nativeTlsCompletionSource}\nmain();\n`);
   const output = validateGeneratedProject("native-tls-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native TLS completion/u);
 });

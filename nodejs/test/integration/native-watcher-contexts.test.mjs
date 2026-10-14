@@ -17,13 +17,13 @@ function compile(source, outputType = "bin") {
 }
 
 test("generated native Node driver consumes the exact native watcher root", { timeout: 300_000 }, () => {
-  const result = compile(nativeWatcherCompletionSource);
+  const result = compile(`${nativeWatcherCompletionSource}\nmain();\n`);
   const output = validateGeneratedProject("native-watcher-context", result.artifacts, { run: true });
   assert.match(output.stdout, /native watcher completion/u);
 });
 
 test("native filesystem queries require no watcher roots", { timeout: 300_000 }, () => {
-  const result = compile(nativeWatcherNoDemandSource);
+  const result = compile(`${nativeWatcherNoDemandSource}\nmain();\n`);
   assert.equal(result.artifacts.some(row => /pub static dispatch_root_/u.test(row.text)), false,
     "filesystem queries must not manufacture retained callback roots");
   validateGeneratedProject("native-watcher-no-demand", result.artifacts, { run: true });

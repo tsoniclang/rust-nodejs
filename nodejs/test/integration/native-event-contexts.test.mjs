@@ -22,7 +22,7 @@ for (const [name, source, expected] of [
   ["native-port-completion", nativePortCompletionSource, "native port completion"],
 ]) {
   test(name, { timeout: 300_000 }, () => {
-    const result = compile(source);
+    const result = compile(`${source}\nmain();\n`);
     const output = validateGeneratedProject(name, result.artifacts, { run: true });
     assert.equal(output.stdout.includes(expected), true);
     if (name.startsWith("native-event-")) {
