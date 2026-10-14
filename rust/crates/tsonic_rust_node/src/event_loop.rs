@@ -269,7 +269,11 @@ mod tests {
                 tsonic_rust_js::timers::with_default(|timers| {
                     tsonic_rust_js::timers::set_timeout_callable(
                         timers,
-                        Callable::new(move |()| resolve.call((PromiseResolution::Value(3),))),
+                        Callable::new(move |()| {
+                            resolve.call((PromiseResolution::Value(3),))
+                                .expect("native Promise resolution is infallible");
+                            Ok(())
+                        }),
                         1.0,
                     )
                 })
