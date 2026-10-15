@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
-use tsonic_rust_js::event_loop::{EventLoopDriver, LoopLifecycle};
+use tsonic_rust_js::event_loop::{EventLoopDriver, LoopExitStatus, LoopLifecycle};
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
@@ -21,20 +21,24 @@ fn has_runtime_work() -> bool {
         || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
 }
 
+const STOPPED_BEFORE_COMPLETION: &str =
+    "The event loop stopped on a requested exit before the awaited future completed.";
+
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
-    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())
+    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()).map(|_| ())
 }
 
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    block_on_with_contexts(
+    let (output, _) = block_on_with_contexts(
         future,
         DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    )
+    )?;
+    output.ok_or_else(|| tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into())
 }
 
 pub fn run_with_contexts<TContexts: DispatchContexts>(
     contexts: TContexts,
-) -> Result<(), TContexts::Error>
+) -> Result<LoopExitStatus, TContexts::Error>
 where
     TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
 {
@@ -44,11 +48,21 @@ where
 pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
     future: impl Future<Output = TOutput>,
     contexts: TContexts,
-) -> Result<TOutput, TContexts::Error>
+) -> Result<(Option<TOutput>, LoopExitStatus), TContexts::Error>
 where
     TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
 {
     tsonic_rust_js::event_loop::block_on_with_driver(future, &mut NodeDriver { contexts })
+}
+
+pub fn run_entry_with_contexts<TOutput, TContexts: DispatchContexts>(
+    entry: impl FnOnce() -> TOutput,
+    contexts: TContexts,
+) -> Result<(TOutput, LoopExitStatus), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::run_entry_with_driver(entry, &mut NodeDriver { contexts })
 }
 
 struct NodeDriver<TContexts> {
@@ -264,29 +278,95 @@ mod tests {
 
     #[test]
     fn node_driver_runs_js_timers_and_discarded_continuations() {
-        let source = JsPromise::create(Callable::new(
-            |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
-                tsonic_rust_js::timers::with_default(|timers| {
-                    tsonic_rust_js::timers::set_timeout_callable(
-                        timers,
-                        Callable::new(move |()| resolve.call((PromiseResolution::Value(3),))),
-                        1.0,
-                    )
-                })
-                .unwrap();
-                Ok(())
-            },
-        ));
         let completed = std::rc::Rc::new(Cell::new(0));
         let observed = std::rc::Rc::clone(&completed);
-        drop(source.then(
-            Callable::new(move |(value,)| {
-                observed.set(value);
-                Ok(())
-            }),
-            None,
-        ));
-        super::run_event_loop().unwrap();
+        let ((), status) = super::run_entry_with_contexts(
+            move || {
+                let source = JsPromise::create(Callable::new(
+                    |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
+                        tsonic_rust_js::timers::with_default(|timers| {
+                            tsonic_rust_js::timers::set_timeout_callable(
+                                timers,
+                                Callable::new(move |()| {
+                                    resolve
+                                        .call((PromiseResolution::Value(3),))
+                                        .expect("native Promise resolution is infallible");
+                                    Ok(())
+                                }),
+                                1.0,
+                            )
+                        })
+                        .unwrap();
+                        Ok(())
+                    },
+                ));
+                drop(source.then(
+                    Callable::new(move |(value,)| {
+                        observed.set(value);
+                        Ok(())
+                    }),
+                    None,
+                ));
+            },
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(!status.exit_requested());
         assert_eq!(completed.get(), 3);
+    }
+
+    fn zero_delay_timer(ran: std::rc::Rc<Cell<bool>>) {
+        tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| {
+                    ran.set(true);
+                    Ok(())
+                }),
+                0.0,
+            )
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_requested_exit_stops_the_node_loop_before_a_zero_delay_timer() {
+        let timer_ran = std::rc::Rc::new(Cell::new(false));
+        let observed = std::rc::Rc::clone(&timer_ran);
+        let ((), status) = super::run_entry_with_contexts(
+            move || {
+                zero_delay_timer(observed);
+                JsPromise::<i32>::from_fallible_factory(|| async {
+                    Err(tsonic_rust_js::JsValue::from_error(
+                        tsonic_rust_runtime::JsError::error("boom"),
+                    ))
+                })
+                .observe_discarded();
+            },
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(status.exit_requested());
+        assert_eq!(
+            std::process::ExitCode::from(status),
+            std::process::ExitCode::from(1)
+        );
+        assert!(
+            !timer_ran.get(),
+            "no loop work restarts after the exit request"
+        );
+    }
+
+    #[test]
+    fn without_a_discarded_rejection_the_node_loop_runs_the_zero_delay_timer() {
+        let timer_ran = std::rc::Rc::new(Cell::new(false));
+        let observed = std::rc::Rc::clone(&timer_ran);
+        let ((), status) = super::run_entry_with_contexts(
+            move || zero_delay_timer(observed),
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(!status.exit_requested());
+        assert!(timer_ran.get());
     }
 }

@@ -9,6 +9,8 @@ fn in_loop<T>(
 ) -> T {
     crate::block_on_with_contexts(body, prepend(resources, DispatchEnd::<TsonicError>::new()))
         .unwrap()
+        .0
+        .unwrap()
 }
 
 #[test]
