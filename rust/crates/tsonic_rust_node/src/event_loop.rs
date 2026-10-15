@@ -2,7 +2,10 @@ use std::future::Future;
 use std::sync::Arc;
 use std::task::{Wake, Waker};
 
-use tsonic_rust_js::event_loop::{EventLoopDriver, LoopExitStatus, LoopLifecycle};
+use tsonic_rust_js::event_loop::{
+    EventLoopDriver, LoopExitStatus, LoopLifecycle, STOPPED_BEFORE_COMPLETION,
+    STOPPED_ON_REQUESTED_EXIT,
+};
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
 use tsonic_rust_runtime::TsonicResult;
 
@@ -21,19 +24,26 @@ fn has_runtime_work() -> bool {
         || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
 }
 
-const STOPPED_BEFORE_COMPLETION: &str =
-    "The event loop stopped on a requested exit before the awaited future completed.";
-
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
-    run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()).map(|_| ())
+    let status = run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())?;
+    if status.exit_requested() {
+        return Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into());
+    }
+    Ok(())
 }
 
 pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
-    let (output, _) = block_on_with_contexts(
+    let (output, status) = block_on_with_contexts(
         future,
         DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
     )?;
-    output.ok_or_else(|| tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into())
+    match output {
+        Some(_) if status.exit_requested() => {
+            Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into())
+        }
+        Some(output) => Ok(output),
+        None => Err(tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into()),
+    }
 }
 
 pub fn run_with_contexts<TContexts: DispatchContexts>(
@@ -78,7 +88,7 @@ impl<TContexts: DispatchContexts> NodeDriver<TContexts> {
     where
         TContexts::Error: From<TNative::Error>,
     {
-        tsonic_rust_runtime::dispatch::poll_phase(
+        tsonic_rust_js::event_loop::poll_phase_with_jobs(
             &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
             phase,
         )
