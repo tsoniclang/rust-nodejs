@@ -19,7 +19,17 @@ fn discard_rejection(message: &'static str) {
     .observe_discarded();
 }
 
-fn two_due_js_timers(first_requests_exit: bool) -> (bool, bool) {
+fn discard_after_a_settled_reaction() {
+    drop(JsPromise::resolved(0).then(
+        Callable::new(|(value,): (i32,)| {
+            discard_rejection("chained");
+            Ok(value)
+        }),
+        None,
+    ));
+}
+
+fn two_due_js_timers(first: fn()) -> (bool, bool) {
     let second = Rc::new(Cell::new(false));
     let observed = Rc::clone(&second);
     let ((), status) = tsonic_rust_node::run_entry_with_contexts(
@@ -28,9 +38,7 @@ fn two_due_js_timers(first_requests_exit: bool) -> (bool, bool) {
                 tsonic_rust_js::timers::set_timeout_callable(
                     timers,
                     Callable::new(move |()| {
-                        if first_requests_exit {
-                            discard_rejection("first JS timer");
-                        }
+                        first();
                         Ok(())
                     }),
                     0.0,
@@ -55,20 +63,13 @@ fn two_due_js_timers(first_requests_exit: bool) -> (bool, bool) {
     (status.exit_requested(), second.get())
 }
 
-fn two_due_node_timers(first_requests_exit: bool) -> (bool, bool) {
+fn two_due_node_timers(first: fn()) -> (bool, bool) {
     let second = Rc::new(Cell::new(false));
     let observed = Rc::clone(&second);
     let ((), status) = tsonic_rust_node::run_entry_with_contexts(
         move || {
-            tsonic_rust_node::timers::set_timeout(
-                move || {
-                    if first_requests_exit {
-                        discard_rejection("first Node timer");
-                    }
-                },
-                0,
-            )
-            .expect("first Node timer under the owner");
+            tsonic_rust_node::timers::set_timeout(first, 0)
+                .expect("first Node timer under the owner");
             tsonic_rust_node::timers::set_timeout(move || observed.set(true), 0)
                 .expect("second Node timer under the owner");
         },
@@ -80,7 +81,7 @@ fn two_due_node_timers(first_requests_exit: bool) -> (bool, bool) {
 
 #[test]
 fn a_requested_exit_stops_the_node_loop_before_a_second_due_js_timer() {
-    let (exit_requested, second_ran) = two_due_js_timers(true);
+    let (exit_requested, second_ran) = two_due_js_timers(|| discard_rejection("first JS timer"));
     assert!(exit_requested, "the first timer's report requested exit");
     assert!(
         !second_ran,
@@ -89,15 +90,26 @@ fn a_requested_exit_stops_the_node_loop_before_a_second_due_js_timer() {
 }
 
 #[test]
+fn a_report_queued_by_a_reaction_stops_the_node_loop_before_a_second_due_js_timer() {
+    let (exit_requested, second_ran) = two_due_js_timers(discard_after_a_settled_reaction);
+    assert!(exit_requested, "the chained report requested exit");
+    assert!(
+        !second_ran,
+        "the second due JS timer ran before the chained report"
+    );
+}
+
+#[test]
 fn without_a_requested_exit_the_node_loop_runs_both_due_js_timers() {
-    let (exit_requested, second_ran) = two_due_js_timers(false);
+    let (exit_requested, second_ran) = two_due_js_timers(|| {});
     assert!(!exit_requested);
     assert!(second_ran);
 }
 
 #[test]
 fn a_requested_exit_stops_the_node_loop_before_a_second_due_node_timer() {
-    let (exit_requested, second_ran) = two_due_node_timers(true);
+    let (exit_requested, second_ran) =
+        two_due_node_timers(|| discard_rejection("first Node timer"));
     assert!(exit_requested, "the first timer's report requested exit");
     assert!(
         !second_ran,
@@ -106,10 +118,40 @@ fn a_requested_exit_stops_the_node_loop_before_a_second_due_node_timer() {
 }
 
 #[test]
+fn a_report_queued_by_a_reaction_stops_the_node_loop_before_a_second_due_node_timer() {
+    let (exit_requested, second_ran) = two_due_node_timers(discard_after_a_settled_reaction);
+    assert!(exit_requested, "the chained report requested exit");
+    assert!(
+        !second_ran,
+        "the second due Node timer ran before the chained report"
+    );
+}
+
+#[test]
 fn without_a_requested_exit_the_node_loop_runs_both_due_node_timers() {
-    let (exit_requested, second_ran) = two_due_node_timers(false);
+    let (exit_requested, second_ran) = two_due_node_timers(|| {});
     assert!(!exit_requested);
     assert!(second_ran);
+}
+
+#[test]
+fn a_report_queued_by_a_reaction_in_the_entry_stops_the_node_loop_before_a_zero_delay_timer() {
+    let timer_ran = Rc::new(Cell::new(false));
+    let observed = Rc::clone(&timer_ran);
+    let ((), status) = tsonic_rust_node::run_entry_with_contexts(
+        move || {
+            tsonic_rust_node::timers::set_timeout(move || observed.set(true), 0)
+                .expect("Node timer under the owner");
+            discard_after_a_settled_reaction();
+        },
+        no_contexts(),
+    )
+    .unwrap();
+    assert!(status.exit_requested(), "the chained report requested exit");
+    assert!(
+        !timer_ran.get(),
+        "the zero-delay Node timer ran before the chained report"
+    );
 }
 
 #[test]
