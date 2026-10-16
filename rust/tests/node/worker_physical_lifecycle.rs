@@ -12,7 +12,7 @@ use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
-#[path = "../support/allocation_counts.rs"]
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
 mod allocation_counts;
 
 fn main() {
@@ -176,7 +176,7 @@ fn native_termination_without_a_js_owner() {
         first,
         "repeat observation needs no JS owner"
     );
-    let cost = allocation_counts::measure(|| {
+    let cost = allocation_counts::measure_requests(|| {
         for _ in 0..1024 {
             let mut ready = std::pin::pin!(worker.terminate());
             assert!(

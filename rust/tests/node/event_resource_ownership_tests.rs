@@ -12,9 +12,9 @@ use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts};
 use tsonic_rust_runtime::Callable;
 
-#[path = "../support/allocation_counts.rs"]
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
 mod allocation_counts;
-use allocation_counts::measure;
+use allocation_counts::measure_requests;
 
 #[test]
 fn repeated_source_events_reuse_native_keys_and_callbacks_without_allocation() {
@@ -28,7 +28,7 @@ fn repeated_source_events_reuse_native_keys_and_callbacks_without_allocation() {
     });
     emitter.on_callable(&event, &listener).unwrap();
     assert!(emitter.emit_callable(&event).unwrap());
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         for _ in 0..1024 {
             black_box(emitter.clone());
             assert_eq!(emitter.callable_listener_count(&event).unwrap(), 1);
@@ -41,7 +41,7 @@ fn repeated_source_events_reuse_native_keys_and_callbacks_without_allocation() {
 
 #[test]
 fn cold_worker_and_signal_roots_allocate_no_native_storage() {
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         let workers = black_box(WorkerResources::<NodeError>::new());
         let signals = black_box(SignalTasks::<NodeError>::new());
         let servers = black_box(NetServers::<NodeError>::new());
@@ -71,7 +71,7 @@ fn warmed_native_server_frontiers_and_shared_handles_do_not_allocate() {
     let servers = NetServers::<NodeError>::new();
     let server = Server::new(&servers).unwrap();
     assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         for _ in 0..1024 {
             black_box(server.clone());
             assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
@@ -92,7 +92,7 @@ fn warmed_native_watcher_frontiers_and_shared_handles_do_not_allocate() {
     )
     .unwrap();
     assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         for _ in 0..1024 {
             black_box(watcher.clone());
             assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
@@ -112,7 +112,7 @@ fn warmed_native_resource_frontiers_do_not_allocate_snapshot_wrappers() {
             let channel = MessageChannel::new(&workers).unwrap();
             channel.port2.start().unwrap();
             assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-            let cost = measure(|| {
+            let cost = measure_requests(|| {
                 for _ in 0..1024 {
                     black_box(channel.port2.clone());
                     assert!(!poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
@@ -151,7 +151,7 @@ fn warmed_port_delivery_uses_one_queue_without_per_emission_wrappers_or_allocati
                 .unwrap();
             channel.port1.post_message(JsValue::from(1)).unwrap();
             assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
-            let cost = measure(|| {
+            let cost = measure_requests(|| {
                 for _ in 0..1024 {
                     channel.port1.post_message(JsValue::from(1)).unwrap();
                     assert!(poll_phase(&workers, tsonic_rust_node::phases::PORTS).unwrap());
