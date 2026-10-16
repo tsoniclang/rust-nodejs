@@ -143,8 +143,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                     ("error", std::slice::from_ref(&converted))
                 }
                 WorkerSignal::NativeIoError(error) => {
-                    let snapshot = self.state.physical.snapshot();
-                    if snapshot.termination_requested || snapshot.exit_observed {
+                    if self.state.physical.suppresses_native_io() {
                         continue;
                     }
                     converted = JsValue::String(error.to_string());

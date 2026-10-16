@@ -26,8 +26,6 @@ struct PhysicalState {
 pub(super) struct PhysicalSnapshot {
     pub(super) reader_finished: bool,
     pub(super) process_finished: bool,
-    pub(super) termination_requested: bool,
-    pub(super) exit_observed: bool,
     pub(super) change: u64,
 }
 
@@ -61,14 +59,17 @@ impl WorkerPhysical {
         PhysicalSnapshot {
             reader_finished: state.reader_finished,
             process_finished: state.process.is_some(),
-            termination_requested: state.termination_requested,
-            exit_observed: state.process.as_ref().is_some_and(Result::is_ok),
             change: self.change.load(Ordering::Acquire),
         }
     }
 
     pub(super) fn reader_error(&self) -> Option<NodeError> {
         crate::sync::lock(&self.state).reader_error.clone()
+    }
+
+    pub(super) fn suppresses_native_io(&self) -> bool {
+        let state = crate::sync::lock(&self.state);
+        state.termination_requested || state.process.as_ref().is_some_and(Result::is_ok)
     }
 
     pub(super) fn result(&self) -> Option<NodeResult<i32>> {

@@ -122,8 +122,7 @@ impl WorkerDelivery {
                 self.record_failure(NodeError::new("ERR_WORKER_ERROR", message))
             }
             WorkerSignal::NativeIoError(error) => {
-                let snapshot = physical.snapshot();
-                if !snapshot.termination_requested && !snapshot.exit_observed {
+                if !physical.suppresses_native_io() {
                     self.record_failure(error);
                 }
             }

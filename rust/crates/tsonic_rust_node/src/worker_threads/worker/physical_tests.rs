@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Condvar, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
-use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+use tsonic_rust_runtime::dispatch::{prepend, DispatchContexts, DispatchEnd};
 use tsonic_rust_runtime::TsonicError;
 
 #[test]
@@ -113,6 +113,7 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
                 2,
                 "error and exit remain admitted"
             );
+            resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
@@ -158,6 +159,7 @@ fn retirement_keeps_uninvoked_frames_for_a_new_explicit_owner() {
                 .unwrap();
             sender.send(native_message(i64::MAX)).unwrap();
             worker.capture().unwrap();
+            resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
