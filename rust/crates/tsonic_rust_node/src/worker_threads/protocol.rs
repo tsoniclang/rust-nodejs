@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -55,6 +55,41 @@ pub(crate) struct WorkerTransport {
 
 impl WorkerTransport {
     pub fn start(stream: TcpStream) -> NodeResult<(Self, Receiver<TransportEvent>)> {
+        Self::start_reader(
+            stream,
+            TransportEvent::Frame,
+            || {},
+            |sender, error| {
+                if let Some(error) = error {
+                    let _ = sender.send(TransportEvent::Failure(error));
+                }
+                let _ = sender.send(TransportEvent::End);
+            },
+        )
+    }
+
+    pub(super) fn start_observed(
+        stream: TcpStream,
+        published: impl Fn() + Send + 'static,
+        terminal: impl FnOnce(Option<NodeError>) + Send + 'static,
+    ) -> NodeResult<(Self, Receiver<WorkerFrame>)> {
+        Self::start_reader(
+            stream,
+            std::convert::identity,
+            published,
+            move |sender, error| {
+                drop(sender);
+                terminal(error);
+            },
+        )
+    }
+
+    fn start_reader<TEvent: Send + 'static>(
+        stream: TcpStream,
+        frame_event: impl Fn(WorkerFrame) -> TEvent + Send + 'static,
+        published: impl Fn() + Send + 'static,
+        terminal: impl FnOnce(SyncSender<TEvent>, Option<NodeError>) + Send + 'static,
+    ) -> NodeResult<(Self, Receiver<TEvent>)> {
         stream
             .set_write_timeout(Some(Duration::from_secs(30)))
             .map_err(io_error)?;
@@ -68,28 +103,37 @@ impl WorkerTransport {
             .name("tsonic-node-worker-transport".to_string())
             .spawn(move || {
                 let mut reader = reader;
-                loop {
+                let error = loop {
                     match read_frame(&mut reader) {
                         Ok(Some(frame)) => {
-                            let close = frame.kind == WorkerFrameKind::Close;
-                            let sent = sender.send(TransportEvent::Frame(frame));
+                            if frame.kind == WorkerFrameKind::Close {
+                                break None;
+                            }
+                            if !matches!(
+                                frame.kind,
+                                WorkerFrameKind::Message | WorkerFrameKind::Error
+                            ) {
+                                break Some(protocol_error("unexpected worker transport frame"));
+                            }
+                            let sent = sender.send(frame_event(frame));
+                            published();
                             let _ = wake.wake();
-                            if sent.is_err() || close {
-                                break;
+                            if sent.is_err() {
+                                break None;
                             }
                         }
-                        Ok(None) => break,
+                        Ok(None) => break None,
                         Err(error) => {
                             if error.code() != "ERR_WORKER_TRANSPORT"
                                 || !reader_closed.load(Ordering::SeqCst)
                             {
-                                let _ = sender.send(TransportEvent::Failure(error));
+                                break Some(error);
                             }
-                            break;
+                            break None;
                         }
                     }
-                }
-                let _ = sender.send(TransportEvent::End);
+                };
+                terminal(sender, error);
                 let _ = wake.wake();
             })
             .map_err(io_error)?;
