@@ -10,6 +10,7 @@ use std::task::{Context, Poll, Wake, Waker};
 thread_local! {
     static INGESTION_GAP: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
     static OBSERVATION_GAP: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
+    pub(super) static WAKER_PREPARATION: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
 }
 
 pub(super) fn at_ingestion_gap() {
@@ -21,6 +22,13 @@ pub(super) fn at_ingestion_gap() {
 
 pub(super) fn at_observation_gap() {
     let hook = OBSERVATION_GAP.with(|slot| slot.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+pub(super) fn at_waker_preparation() {
+    let hook = WAKER_PREPARATION.with(|slot| slot.borrow_mut().take());
     if let Some(hook) = hook {
         hook();
     }

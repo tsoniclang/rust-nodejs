@@ -395,9 +395,10 @@ fn stale_parent_frontier_cannot_consume_fresh_data_or_retire_a_new_capture() {
             .port1
             .post_message(JsValue::Integer(i64::MIN))
             .unwrap();
-        let owner = tsonic_rust_js::event_loop::dispatch_owner().unwrap();
-        let frontier = resources.prepare(crate::phases::PORTS).unwrap();
-        (owner, frontier)
+        (
+            tsonic_rust_js::event_loop::dispatch_owner().unwrap(),
+            resources.prepare(crate::phases::PORTS).unwrap(),
+        )
     });
     assert_eq!(
         port.receive_message().unwrap(),

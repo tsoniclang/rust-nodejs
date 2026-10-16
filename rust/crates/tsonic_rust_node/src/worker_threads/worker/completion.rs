@@ -17,7 +17,6 @@ pub(super) struct WorkerPhysical {
 
 struct PhysicalState {
     frames: VecDeque<QueuedFrame>,
-    #[cfg(test)]
     capacity_waiters: usize,
     consumer_open: bool,
     reader_finished: bool,
@@ -28,7 +27,8 @@ struct PhysicalState {
     exit_consumed: bool,
     process: Option<NodeResult<i32>>,
     termination_requested: bool,
-    waiters: WorkerCompletionWaiters,
+    native_waiters: WorkerCompletionWaiters,
+    owned_waiters: WorkerCompletionWaiters,
 }
 
 struct QueuedFrame {
@@ -62,7 +62,6 @@ impl WorkerPhysical {
             child,
             state: Mutex::new(PhysicalState {
                 frames: VecDeque::new(),
-                #[cfg(test)]
                 capacity_waiters: 0,
                 consumer_open: true,
                 reader_finished: false,
@@ -73,7 +72,8 @@ impl WorkerPhysical {
                 exit_consumed: false,
                 process: None,
                 termination_requested: false,
-                waiters: WorkerCompletionWaiters::default(),
+                native_waiters: WorkerCompletionWaiters::default(),
+                owned_waiters: WorkerCompletionWaiters::default(),
             }),
             readiness,
             capacity: Condvar::new(),
@@ -83,18 +83,12 @@ impl WorkerPhysical {
     pub(super) fn enqueue_frame(&self, frame: WorkerFrame) -> bool {
         let mut state = crate::sync::lock(&self.state);
         while state.frames.len() == MAXIMUM_QUEUED_SIGNALS && state.consumer_open {
-            #[cfg(test)]
-            {
-                state.capacity_waiters += 1;
-            }
+            state.capacity_waiters += 1;
             state = self
                 .capacity
                 .wait(state)
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            #[cfg(test)]
-            {
-                state.capacity_waiters -= 1;
-            }
+            state.capacity_waiters -= 1;
         }
         if !state.consumer_open || state.reader_finished {
             drop(state);
@@ -105,7 +99,7 @@ impl WorkerPhysical {
             ticket: None,
             frame,
         });
-        let wake = state.waiters.take_wakers();
+        let wake = state.native_waiters.take_wakers();
         drop(state);
         wake.wake_all();
         true
@@ -174,8 +168,11 @@ impl WorkerPhysical {
         } else {
             return None;
         };
+        let notify = state.capacity_waiters != 0;
         drop(state);
-        self.capacity.notify_one();
+        if notify {
+            self.capacity.notify_one();
+        }
         Some(signal)
     }
 
@@ -190,12 +187,17 @@ impl WorkerPhysical {
     }
 
     pub(super) fn close_consumer(&self) {
-        let discarded = {
+        let (discarded, notify) = {
             let mut state = crate::sync::lock(&self.state);
             state.consumer_open = false;
-            std::mem::take(&mut state.frames)
+            (
+                std::mem::take(&mut state.frames),
+                state.capacity_waiters != 0,
+            )
         };
-        self.capacity.notify_all();
+        if notify {
+            self.capacity.notify_all();
+        }
         drop(discarded);
     }
 
@@ -253,8 +255,15 @@ impl WorkerPhysical {
     }
 
     pub(super) fn owner_changed(&self) {
-        let wake = crate::sync::lock(&self.state).waiters.take_wakers();
-        wake.wake_all();
+        let (native, owned) = {
+            let mut state = crate::sync::lock(&self.state);
+            (
+                state.native_waiters.take_wakers(),
+                state.owned_waiters.take_wakers(),
+            )
+        };
+        native.wake_all();
+        owned.wake_all();
     }
 
     pub(super) fn finish_reader(&self, error: Option<NodeError>) {
@@ -262,17 +271,21 @@ impl WorkerPhysical {
             let mut state = crate::sync::lock(&self.state);
             state.reader_finished = true;
             state.reader_error = error;
-            state.waiters.take_wakers()
+            state.native_waiters.take_wakers()
         };
         wake.wake_all();
         let _ = self.readiness.wake();
         let result = self.child.wait().map_err(io_error).and_then(status_code);
-        let wake = {
+        let (native, owned) = {
             let mut state = crate::sync::lock(&self.state);
             state.process = Some(result);
-            state.waiters.take_wakers()
+            (
+                state.native_waiters.take_wakers(),
+                state.owned_waiters.take_wakers(),
+            )
         };
-        wake.wake_all();
+        native.wake_all();
+        owned.wake_all();
         let _ = self.readiness.wake();
     }
 }
@@ -387,7 +400,7 @@ impl CompletionWakes {
 
 pub(super) struct WorkerCompletion<'worker> {
     state: &'worker WorkerState,
-    registration: Option<usize>,
+    registration: Option<(bool, usize)>,
     observed_unowned: bool,
 }
 
@@ -431,31 +444,40 @@ impl Future for WorkerCompletion<'_> {
                 drop(state);
                 continue;
             }
+            let waiters = if owned {
+                &mut state.owned_waiters
+            } else {
+                &mut state.native_waiters
+            };
             let identity = waiting
                 .registration
-                .filter(|identity| state.waiters.get(*identity).is_some());
+                .filter(|(registered_owned, identity)| {
+                    *registered_owned == owned && waiters.get(*identity).is_some()
+                })
+                .map(|(_, identity)| identity);
             let matches = identity.is_some_and(|identity| {
-                state
-                    .waiters
+                waiters
                     .get(identity)
                     .is_some_and(|waker| waker.will_wake(context.waker()))
             });
             if !matches && prepared.is_none() {
                 drop(state);
+                #[cfg(test)]
+                super::completion_tests::at_waker_preparation();
                 prepared = Some(context.waker().clone());
                 continue;
             }
             let previous = if matches {
                 None
             } else if let Some(identity) = identity {
-                Some(state.waiters.replace(
+                Some(waiters.replace(
                     identity,
                     prepared.take().expect("prepared replacement native waker"),
                 ))
             } else {
-                match state.waiters.register(&mut prepared) {
+                match waiters.register(&mut prepared) {
                     Ok(identity) => {
-                        waiting.registration = Some(identity);
+                        waiting.registration = Some((owned, identity));
                         None
                     }
                     Err(error) => {
@@ -475,9 +497,16 @@ impl Future for WorkerCompletion<'_> {
 
 impl Drop for WorkerCompletion<'_> {
     fn drop(&mut self) {
-        if let Some(identity) = self.registration {
+        if let Some((owned, identity)) = self.registration {
             let physical = &self.state.physical;
-            let removed = crate::sync::lock(&physical.state).waiters.remove(identity);
+            let removed = {
+                let mut state = crate::sync::lock(&physical.state);
+                if owned {
+                    state.owned_waiters.remove(identity)
+                } else {
+                    state.native_waiters.remove(identity)
+                }
+            };
             drop(removed);
         }
     }

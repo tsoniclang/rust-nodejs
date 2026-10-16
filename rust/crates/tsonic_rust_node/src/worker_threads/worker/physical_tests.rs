@@ -259,6 +259,92 @@ fn native_readiness_invokes_reentrant_wakers_outside_the_physical_mutex() {
     ));
 }
 
+struct ReentrantDropWake {
+    physical: std::sync::Weak<WorkerPhysical>,
+    dropped: Arc<AtomicUsize>,
+}
+
+impl Wake for ReentrantDropWake {
+    fn wake(self: Arc<Self>) {}
+}
+
+impl Drop for ReentrantDropWake {
+    fn drop(&mut self) {
+        assert_eq!(self.physical.upgrade().unwrap().queued_len(), 0);
+        self.dropped.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+}
+
+#[test]
+fn native_waker_preparation_and_cancelled_registration_drop_reenter_outside_the_fifo_lock() {
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let checked = Rc::new(Cell::new(false));
+    let prepared = Rc::clone(&checked);
+    let physical = Arc::clone(&state.physical);
+    super::completion_tests::WAKER_PREPARATION.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move || {
+            assert_eq!(physical.queued_len(), 0);
+            prepared.set(true);
+        }));
+    });
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let waker = Waker::from(Arc::new(ReentrantDropWake {
+        physical: Arc::downgrade(&state.physical),
+        dropped: Arc::clone(&dropped),
+    }));
+    let mut observer = completion::WorkerCompletion::new(&state);
+    assert!(Pin::new(&mut observer)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    assert!(
+        checked.get(),
+        "native waker preparation can reenter the queue owner"
+    );
+    drop(waker);
+    assert_eq!(dropped.load(AtomicOrdering::Relaxed), 0);
+    drop(observer);
+    assert_eq!(
+        dropped.load(AtomicOrdering::Relaxed),
+        1,
+        "the last cancelled native waker drops outside the queue lock"
+    );
+}
+
+#[test]
+fn owner_bound_native_waiters_register_at_full_capacity_and_ignore_frame_only_progress() {
+    for prefix in [0, MAXIMUM_QUEUED_SIGNALS] {
+        let (state, sender, _peer) = completed_process_with_pending_transport();
+        for index in 0..prefix {
+            sender.send(native_message(index as i64)).unwrap();
+        }
+        let worker = Worker::<TsonicError> {
+            state: Rc::new(state),
+            emitter: EventEmitter::new(),
+        };
+        let resources = WorkerResources::<TsonicError>::new();
+        let wake = Arc::new(ModeWake(AtomicUsize::new(0)));
+        let waker = Waker::from(Arc::clone(&wake));
+        let mut observer = completion::WorkerCompletion::new(&worker.state);
+        crate::block_on_with_contexts(async {
+            resources.register_worker(&worker).unwrap();
+            worker.unref();
+            assert!(Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)).is_pending(),
+                "owner-bound observation registers even while the physical FIFO is full");
+            if prefix == 0 {
+                sender.send(native_message(17)).unwrap();
+                assert_eq!(wake.0.load(AtomicOrdering::Relaxed), 0,
+                    "a frame cannot advance owner-bound physical completion");
+            }
+            worker.state.physical.finish_reader(None);
+            assert_eq!(wake.0.load(AtomicOrdering::Relaxed), 1,
+                "status, not reader-end or per-frame notifications, wakes the owner-bound observer");
+            assert!(matches!(Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)), Poll::Ready(Ok(0))));
+            assert_eq!(worker.state.physical.queued_len(), prefix.max(1),
+                "owner-bound completion has not stolen any callback frame");
+        }, prepend(&resources, DispatchEnd::<TsonicError>::new())).unwrap();
+    }
+}
+
 struct NativeTestWake {
     ready: Mutex<bool>,
     changed: Condvar,
@@ -714,11 +800,13 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
     struct NativeQueue {
         frames: VecDeque<WorkerFrame>,
         waiter: Option<Waker>,
+        waiting_producers: usize,
     }
     let (state, _sender, _peer) = completed_process_with_pending_transport();
     let queue = Mutex::new(NativeQueue {
         frames: VecDeque::with_capacity(1),
         waiter: None,
+        waiting_producers: 0,
     });
     let capacity = Condvar::new();
     let empty = || WorkerFrame {
@@ -733,12 +821,22 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
     let iterations = 50_000;
     let mut actual = Vec::new();
     let mut baseline = Vec::new();
+    let (base_sender, base_receiver) = std::sync::mpsc::sync_channel(MAXIMUM_QUEUED_SIGNALS);
+    let mut base_channel = Vec::new();
     for _ in 0..7 {
+        let start = Instant::now();
+        for _ in 0..iterations {
+            base_sender.send(empty()).unwrap();
+            assert!(base_receiver.try_recv().is_ok());
+        }
+        base_channel.push(start.elapsed().as_nanos());
         let start = Instant::now();
         for _ in 0..iterations {
             let mut pending = queue.lock().unwrap();
             while pending.frames.len() == MAXIMUM_QUEUED_SIGNALS {
+                pending.waiting_producers += 1;
                 pending = capacity.wait(pending).unwrap();
+                pending.waiting_producers -= 1;
             }
             pending.frames.push_back(empty());
             let wake = pending.waiter.take();
@@ -746,8 +844,13 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
             if let Some(waker) = wake {
                 waker.wake();
             }
-            assert!(queue.lock().unwrap().frames.pop_front().is_some());
-            capacity.notify_one();
+            let mut pending = queue.lock().unwrap();
+            assert!(pending.frames.pop_front().is_some());
+            let notify = pending.waiting_producers != 0;
+            drop(pending);
+            if notify {
+                capacity.notify_one();
+            }
         }
         baseline.push(start.elapsed().as_nanos());
         let start = Instant::now();
@@ -762,7 +865,8 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
     }
     actual.sort_unstable();
     baseline.sort_unstable();
-    println!("P05_NATIVE_FIFO_COST iterations={iterations} actual_ns={} handwritten_ns={} ratio={:.6} mutexes_per_rotation=2 publication_rmw=0 flag_load=0 payload_copies=0 extra_queue=0", actual[3], baseline[3], actual[3] as f64 / baseline[3] as f64);
+    base_channel.sort_unstable();
+    println!("P05_NATIVE_FIFO_COST iterations={iterations} actual_ns={} handwritten_ns={} ratio={:.6} base_channel_ns={} base_channel_ratio={:.6} mutexes_per_rotation=2 publication_rmw=0 flag_load=0 idle_capacity_notifications=0 payload_copies=0 extra_queue=0 actual_samples_ns={actual:?} handwritten_samples_ns={baseline:?} base_channel_samples_ns={base_channel:?}", actual[3], baseline[3], actual[3] as f64 / baseline[3] as f64, base_channel[3], actual[3] as f64 / base_channel[3] as f64);
     assert_eq!(state.physical.queued_len(), 0);
 }
 
