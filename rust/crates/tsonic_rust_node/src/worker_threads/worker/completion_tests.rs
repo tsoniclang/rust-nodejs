@@ -286,7 +286,7 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
             .count();
         assert_eq!(
             errors, expected_errors,
-            "observed native process exit suppresses only IO failure"
+            "ordinary error representation excludes native IO; delivery suppression is checked separately"
         );
         if expected_errors != 0 {
             assert!(
@@ -316,6 +316,99 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
         state.pending.back(),
         Some((_, WorkerSignal::Exit(0)))
     ));
+}
+
+#[test]
+fn native_worker_error_delivery_suppresses_observed_exit_io_but_keeps_protocol_and_clone_errors() {
+    use std::cell::Cell;
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::TsonicError;
+
+    for (kind, expected_errors, reason) in [
+        ("io", 0, "exact native IO reason"),
+        ("protocol", 1, "exact native protocol reason"),
+        ("clone", 1, "version is unsupported"),
+    ] {
+        let (state, sender, _peer) = completed_process_with_pending_transport();
+        let worker = Worker::<TsonicError> {
+            state: Rc::new(RefCell::new(state)),
+            emitter: EventEmitter::new(),
+        };
+        let resources = WorkerResources::<TsonicError>::new();
+        let errors = Rc::new(RefCell::new(Vec::new()));
+        let exits = Rc::new(Cell::new(0));
+        let delivered = Rc::clone(&errors);
+        let completed = Rc::clone(&exits);
+        let errors_before_exit = Rc::clone(&errors);
+        let (result, _) = crate::block_on_with_contexts(
+            async {
+                resources.register_worker(&worker).unwrap();
+                worker
+                    .on_callable1(
+                        &JsValue::String("error".to_owned()),
+                        &Callable::new(move |(value,): (JsValue,)| {
+                            let JsValue::String(message) = value else {
+                                panic!("native delivery retains the precise error reason");
+                            };
+                            delivered.borrow_mut().push(message);
+                            Ok::<(), TsonicError>(())
+                        }),
+                    )
+                    .unwrap();
+                worker
+                    .on_callable1(
+                        &JsValue::String("exit".to_owned()),
+                        &Callable::new(move |(value,): (JsValue,)| {
+                            assert!(
+                                matches!(value, JsValue::Int32(0)),
+                                "{kind}: retained native exit status"
+                            );
+                            assert_eq!(
+                                errors_before_exit.borrow().len(),
+                                expected_errors,
+                                "{kind}: actual error delivery precedes exit"
+                            );
+                            completed.set(completed.get() + 1);
+                            Ok::<(), TsonicError>(())
+                        }),
+                    )
+                    .unwrap();
+                let event = if kind == "clone" {
+                    TransportEvent::Frame(super::super::protocol::WorkerFrame {
+                        kind: WorkerFrameKind::Message,
+                        payload: vec![255],
+                    })
+                } else {
+                    TransportEvent::Failure(NodeError::new(
+                        if kind == "io" {
+                            "ERR_WORKER_TRANSPORT"
+                        } else {
+                            "ERR_WORKER_PROTOCOL"
+                        },
+                        reason,
+                    ))
+                };
+                sender.send(event).unwrap();
+                sender.send(TransportEvent::End).unwrap();
+            },
+            prepend(&resources, DispatchEnd::<TsonicError>::new()),
+        )
+        .unwrap();
+        assert!(result.is_some(), "{kind}: selected callback owner drained");
+        assert_eq!(
+            errors.borrow().len(),
+            expected_errors,
+            "{kind}: count comes from the error listener, not an internal signal variant"
+        );
+        if expected_errors != 0 {
+            assert!(
+                errors.borrow()[0].contains(reason),
+                "{kind}: exact protocol/clone reason survives observed process exit"
+            );
+        }
+        assert_eq!(exits.get(), 1, "{kind}: exactly one terminal delivery");
+        assert!(worker.state.borrow().pending.is_empty());
+    }
 }
 
 #[test]
