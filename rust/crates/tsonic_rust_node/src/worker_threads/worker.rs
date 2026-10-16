@@ -29,6 +29,9 @@ use super::{
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAXIMUM_QUEUED_SIGNALS: usize = 1 << 16;
 
+mod completion;
+use completion::WorkerCompletionWaiters;
+
 #[cfg(test)]
 mod completion_tests;
 
@@ -67,6 +70,8 @@ struct WorkerState {
     complete: bool,
     transport_ended: bool,
     exit_code: Option<i32>,
+    termination_requested: bool,
+    completion: WorkerCompletionWaiters,
 }
 
 enum WorkerSignal {
@@ -169,6 +174,8 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                 complete: false,
                 transport_ended: false,
                 exit_code: None,
+                termination_requested: false,
+                completion: WorkerCompletionWaiters::default(),
             })),
             emitter: EventEmitter::new(),
         };
@@ -190,22 +197,6 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         }
         let payload = encode(&ClonedValue::from_js(&value)?)?;
         state.transport.send(WorkerFrameKind::Message, &payload)
-    }
-
-    pub async fn terminate(&self) -> NodeResult<i32> {
-        let exit_code = {
-            let mut state = self.state.borrow_mut();
-            if let Some(exit_code) = state.exit_code {
-                exit_code
-            } else {
-                state.child.kill().map_err(io_error)?;
-                let status = state.child.wait().map_err(io_error)?;
-                let exit_code = status_code(status);
-                state.exit_code = Some(exit_code);
-                exit_code
-            }
-        };
-        Ok(exit_code)
     }
 
     pub fn ref_chain(&self) -> &Self {
@@ -277,12 +268,19 @@ impl<E: From<NodeError> + 'static> Worker<E> {
     }
 
     pub(super) fn capture(&self) -> Result<Option<TaskTicket>, E> {
-        let captured = {
+        let (captured, completion) = {
             let mut state = self.state.borrow_mut();
-            state
+            let captured = state
                 .ingest_signals()
-                .map(|()| state.pending.back().map(|(ticket, _)| *ticket))
+                .map(|()| state.pending.back().map(|(ticket, _)| *ticket));
+            let completion = state
+                .complete
+                .then(|| std::mem::take(&mut state.completion));
+            (captured, completion)
         };
+        if let Some(completion) = completion {
+            completion.wake_all();
+        }
         captured.map_err(E::from)
     }
 
@@ -340,10 +338,14 @@ impl WorkerState {
         while self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
             match self.incoming.try_recv() {
                 Ok(TransportEvent::Frame(frame)) => match frame.kind {
-                    WorkerFrameKind::Message => self.pending.push_back((
-                        super::resources::admit_signal()?,
-                        WorkerSignal::Message(decode(&frame.payload)?),
-                    )),
+                    WorkerFrameKind::Message => {
+                        let signal = match decode(&frame.payload) {
+                            Ok(value) => WorkerSignal::Message(value),
+                            Err(error) => WorkerSignal::Error(error.to_string()),
+                        };
+                        self.pending
+                            .push_back((super::resources::admit_signal()?, signal));
+                    }
                     WorkerFrameKind::Error => {
                         self.pending.push_back((
                             super::resources::admit_signal()?,
@@ -362,10 +364,15 @@ impl WorkerState {
                     )),
                 },
                 Ok(TransportEvent::Failure(error)) => {
-                    self.pending.push_back((
-                        super::resources::admit_signal()?,
-                        WorkerSignal::Error(error),
-                    ));
+                    self.observe_exit()?;
+                    if error.code() != "ERR_WORKER_TRANSPORT"
+                        || (!self.termination_requested && self.exit_code.is_none())
+                    {
+                        self.pending.push_back((
+                            super::resources::admit_signal()?,
+                            WorkerSignal::Error(error.to_string()),
+                        ));
+                    }
                     break;
                 }
                 Ok(TransportEvent::End) | Err(TryRecvError::Disconnected) => {
@@ -375,14 +382,19 @@ impl WorkerState {
                 Err(TryRecvError::Empty) => break,
             }
         }
-        if self.exit_code.is_none() {
-            if let Some(status) = self.child.try_wait().map_err(io_error)? {
-                self.exit_code = Some(status_code(status));
-            }
-        }
+        self.observe_exit()?;
         if !self.complete && self.transport_ended && self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
             if let Some(exit_code) = self.exit_code {
                 self.complete(exit_code)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn observe_exit(&mut self) -> NodeResult<()> {
+        if self.exit_code.is_none() {
+            if let Some(status) = self.child.try_wait().map_err(io_error)? {
+                self.exit_code = Some(status_code(status));
             }
         }
         Ok(())
@@ -581,7 +593,18 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn status_code(status: ExitStatus) -> i32 {
-    status.code().unwrap_or(1)
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        128 + status
+            .signal()
+            .expect("a native Unix exit has a code or signal")
+    }
+    #[cfg(not(unix))]
+    panic!("the native process exit has no code")
 }
 
 static NEXT_THREAD_ID: AtomicI32 = AtomicI32::new(1);

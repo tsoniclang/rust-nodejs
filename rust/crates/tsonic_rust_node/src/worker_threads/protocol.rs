@@ -43,7 +43,7 @@ pub(crate) struct WorkerFrame {
 
 pub(crate) enum TransportEvent {
     Frame(WorkerFrame),
-    Failure(String),
+    Failure(NodeError),
     End,
 }
 
@@ -80,8 +80,10 @@ impl WorkerTransport {
                         }
                         Ok(None) => break,
                         Err(error) => {
-                            if !reader_closed.load(Ordering::SeqCst) {
-                                let _ = sender.send(TransportEvent::Failure(error.to_string()));
+                            if error.code() != "ERR_WORKER_TRANSPORT"
+                                || !reader_closed.load(Ordering::SeqCst)
+                            {
+                                let _ = sender.send(TransportEvent::Failure(error));
                             }
                             break;
                         }
@@ -142,14 +144,19 @@ pub(crate) fn write_frame(
     stream.flush().map_err(io_error)
 }
 
-pub(crate) fn read_frame(stream: &mut TcpStream) -> NodeResult<Option<WorkerFrame>> {
+pub(crate) fn read_frame(stream: &mut impl Read) -> NodeResult<Option<WorkerFrame>> {
     let mut header = [0_u8; 5];
-    match stream.read_exact(&mut header[..1]) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(error) => return Err(io_error(error)),
-    }
-    stream.read_exact(&mut header[1..]).map_err(io_error)?;
+    let received = loop {
+        match stream.read(&mut header) {
+            Ok(0) => return Ok(None),
+            Ok(received) => break received,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(io_error(error)),
+        }
+    };
+    stream
+        .read_exact(&mut header[received..])
+        .map_err(io_error)?;
     let kind = WorkerFrameKind::from_byte(header[0])?;
     let length = usize::try_from(u32::from_be_bytes(
         header[1..].try_into().expect("exact header length"),
@@ -176,7 +183,76 @@ fn protocol_error(message: &str) -> NodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
     use std::net::TcpListener;
+
+    struct CountedReader {
+        source: Cursor<Vec<u8>>,
+        chunk: usize,
+        interrupted: usize,
+        reads: usize,
+    }
+
+    impl Read for CountedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            if self.interrupted != 0 {
+                self.interrupted -= 1;
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
+            let count = buffer.len().min(self.chunk);
+            self.source.read(&mut buffer[..count])
+        }
+    }
+
+    #[test]
+    fn complete_native_header_adds_no_read_over_the_equivalent_exact_read() {
+        for (chunk, expected) in [(5, 2), (2, 4)] {
+            let bytes = vec![WorkerFrameKind::Message as u8, 0, 0, 0, 1, 17];
+            let mut baseline = CountedReader {
+                source: Cursor::new(bytes.clone()),
+                chunk,
+                interrupted: 0,
+                reads: 0,
+            };
+            let mut header = [0; 5];
+            let mut payload = [0; 1];
+            baseline.read_exact(&mut header).unwrap();
+            baseline.read_exact(&mut payload).unwrap();
+            let mut actual = CountedReader {
+                source: Cursor::new(bytes),
+                chunk,
+                interrupted: 0,
+                reads: 0,
+            };
+            let frame = read_frame(&mut actual)
+                .unwrap()
+                .expect("complete native frame");
+            assert_eq!(frame.payload, payload);
+            assert_eq!(actual.reads, expected);
+            assert_eq!(
+                actual.reads, baseline.reads,
+                "no extra full-header native read"
+            );
+        }
+    }
+
+    #[test]
+    fn interrupted_native_initial_read_retries_without_changing_eof_or_payload() {
+        for chunk in [1, 5] {
+            let mut source = CountedReader {
+                source: Cursor::new(vec![WorkerFrameKind::Message as u8, 0, 0, 0, 1, 19]),
+                chunk,
+                interrupted: 2,
+                reads: 0,
+            };
+            let frame = read_frame(&mut source)
+                .unwrap()
+                .expect("interrupted native frame completes");
+            assert_eq!(frame.payload, [19]);
+            assert!(read_frame(&mut source).unwrap().is_none());
+        }
+    }
 
     fn socket_pair() -> (TcpStream, TcpStream) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -186,6 +262,24 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         (sender, receiver)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_worker_sockets_are_close_on_exec_without_a_drain_timeout() {
+        use std::os::fd::AsRawFd;
+        let (sender, receiver) = socket_pair();
+        for socket in [&sender, &receiver] {
+            let flags =
+                std::fs::read_to_string(format!("/proc/self/fdinfo/{}", socket.as_raw_fd()))
+                    .unwrap();
+            let flags = flags
+                .lines()
+                .find_map(|line| line.strip_prefix("flags:\t"))
+                .unwrap();
+            let flags = u32::from_str_radix(flags, 8).unwrap();
+            assert_ne!(flags & 0x80000, 0, "native worker socket is close-on-exec");
+        }
     }
 
     #[test]
@@ -233,6 +327,33 @@ mod tests {
                 ),
                 "truncated native frame remains a failure"
             );
+        }
+    }
+
+    #[test]
+    fn malformed_full_headers_retain_the_protocol_reason_before_one_terminal_end() {
+        for (bytes, expected) in [
+            ([99, 0, 0, 0, 0], "worker frame kind is invalid"),
+            (
+                [WorkerFrameKind::Message as u8, 255, 255, 255, 255],
+                "worker frame length exceeds the finite transport limit",
+            ),
+        ] {
+            let (mut sender, receiver) = socket_pair();
+            let (_transport, incoming) = WorkerTransport::start(receiver).unwrap();
+            sender.write_all(&bytes).unwrap();
+            sender.shutdown(Shutdown::Write).unwrap();
+            let TransportEvent::Failure(error) =
+                incoming.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("malformed native full header has one protocol failure");
+            };
+            assert_eq!(error.code(), "ERR_WORKER_PROTOCOL");
+            assert_eq!(error.message(), expected);
+            assert!(matches!(
+                incoming.recv_timeout(Duration::from_secs(5)).unwrap(),
+                TransportEvent::End
+            ));
         }
     }
 
