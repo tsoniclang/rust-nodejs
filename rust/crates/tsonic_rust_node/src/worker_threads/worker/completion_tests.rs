@@ -491,7 +491,12 @@ fn live_native_termination_and_unread_posts_preserve_the_prefix_without_transpor
         assert_eq!(
             errors.borrow().len(),
             usize::from(mode == "live-failure"),
-            "only failure while the native worker is live emits a transport error"
+            "{mode}: only failure while the native worker is live emits a transport error: {}",
+            errors
+                .borrow()
+                .first()
+                .map(String::as_str)
+                .unwrap_or("none")
         );
         assert_eq!(
             exits.get(),

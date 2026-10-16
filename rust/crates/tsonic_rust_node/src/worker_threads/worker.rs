@@ -77,6 +77,7 @@ struct WorkerState {
 enum WorkerSignal {
     Message(ClonedValue),
     Error(String),
+    NativeIoError(NodeError),
     Exit(i32),
 }
 
@@ -315,6 +316,15 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                     converted = JsValue::String((error).to_owned());
                     ("error", std::slice::from_ref(&converted))
                 }
+                WorkerSignal::NativeIoError(error) => {
+                    let mut state = self.state.borrow_mut();
+                    state.observe_exit().map_err(E::from)?;
+                    if state.termination_requested || state.exit_code.is_some() {
+                        continue;
+                    }
+                    converted = JsValue::String(error.to_string());
+                    ("error", std::slice::from_ref(&converted))
+                }
                 WorkerSignal::Exit(code) => {
                     converted = JsValue::from(*code);
                     ("exit", std::slice::from_ref(&converted))
@@ -365,15 +375,13 @@ impl WorkerState {
                 },
                 Ok(TransportEvent::Failure(error)) => {
                     self.transport_ended = true;
-                    self.observe_exit()?;
-                    if error.code() != "ERR_WORKER_TRANSPORT"
-                        || (!self.termination_requested && self.exit_code.is_none())
-                    {
-                        self.pending.push_back((
-                            super::resources::admit_signal()?,
-                            WorkerSignal::Error(error.to_string()),
-                        ));
-                    }
+                    let signal = if error.code() == "ERR_WORKER_TRANSPORT" {
+                        WorkerSignal::NativeIoError(error)
+                    } else {
+                        WorkerSignal::Error(error.to_string())
+                    };
+                    self.pending
+                        .push_back((super::resources::admit_signal()?, signal));
                     break;
                 }
                 Ok(TransportEvent::End) | Err(TryRecvError::Disconnected) => {
