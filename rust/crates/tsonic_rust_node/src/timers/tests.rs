@@ -24,18 +24,19 @@ fn loop_owner_all_convenience_timer_admissions_fail_exactly_without_a_loop() {
         );
     };
     for operation in operations {
-        let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(options)))
-            .err()
-            .expect("missing loop must panic at timer admission");
+        let Err(failure) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(options)))
+        else {
+            panic!("missing loop must panic at timer admission");
+        };
         assert_no_owner(failure);
     }
     let capture = Rc::new(Cell::new(0));
     let observed = Rc::clone(&capture);
-    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let Err(failure) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         set_timeout(move || observed.set(1), 0)
-    }))
-    .err()
-    .expect("missing loop must panic before retaining the callback");
+    })) else {
+        panic!("missing loop must panic before retaining the callback");
+    };
     assert_no_owner(failure);
     assert_eq!(capture.get(), 0);
     assert_eq!(Rc::strong_count(&capture), 1);
