@@ -208,8 +208,8 @@ fn retained_prefix_with_later_explicit_owner() {
     let exits = Rc::new(Cell::new(0));
     let terminal = Rc::clone(&exits);
     let prefix = Rc::clone(&count);
-    let (result, _) = tsonic_rust_node::block_on_with_contexts(
-        async {
+    let ((), _) = tsonic_rust_node::run_entry_with_contexts(
+        || {
             worker
                 .on_callable1(
                     &JsValue::String("message".to_owned()),
@@ -243,7 +243,6 @@ fn retained_prefix_with_later_explicit_owner() {
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
     .unwrap();
-    assert!(result.is_some());
     assert_eq!(count.get(), (1 << 17) + 17);
     assert_eq!(exits.get(), 1);
 }
@@ -298,10 +297,10 @@ fn child(arguments: &[String]) {
     }
     assert_eq!(arguments[1], "native-burst");
     for value in 0..((1 << 17) + 17) as i64 {
-        let mut payload = [0; 10];
-        payload[0] = 1;
-        payload[1] = 16;
-        payload[2..].copy_from_slice(&value.to_le_bytes());
+        let mut payload = [0; 14];
+        payload[0] = 3;
+        payload[5] = 8;
+        payload[6..].copy_from_slice(&value.to_be_bytes());
         write_frame(&mut stream, 4, &payload);
     }
     stream.shutdown(Shutdown::Write).unwrap();
