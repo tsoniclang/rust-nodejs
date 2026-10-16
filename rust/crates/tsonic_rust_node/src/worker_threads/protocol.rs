@@ -57,14 +57,21 @@ impl WorkerTransport {
     pub fn start(stream: TcpStream) -> NodeResult<(Self, Receiver<TransportEvent>)> {
         let (sender, receiver) = sync_channel(MAXIMUM_PENDING_FRAMES);
         let frames = sender.clone();
+        let wake = crate::readiness::waker()?;
+        let frame_wake = Arc::clone(&wake);
         let transport = Self::start_reader(
             stream,
-            move |frame| frames.send(TransportEvent::Frame(frame)).is_ok(),
+            move |frame| {
+                let sent = frames.send(TransportEvent::Frame(frame)).is_ok();
+                let _ = frame_wake.wake();
+                sent
+            },
             move |error| {
                 if let Some(error) = error {
                     let _ = sender.send(TransportEvent::Failure(error));
                 }
                 let _ = sender.send(TransportEvent::End);
+                let _ = wake.wake();
             },
         )?;
         Ok((transport, receiver))
@@ -90,7 +97,6 @@ impl WorkerTransport {
         let writer = Arc::new(Mutex::new(stream));
         let closed = Arc::new(AtomicBool::new(false));
         let reader_closed = Arc::clone(&closed);
-        let wake = crate::readiness::waker()?;
         thread::Builder::new()
             .name("tsonic-node-worker-transport".to_string())
             .spawn(move || {
@@ -108,7 +114,6 @@ impl WorkerTransport {
                                 break Some(protocol_error("unexpected worker transport frame"));
                             }
                             let sent = frame_event(frame);
-                            let _ = wake.wake();
                             if !sent {
                                 break None;
                             }
@@ -125,7 +130,6 @@ impl WorkerTransport {
                     }
                 };
                 terminal(error);
-                let _ = wake.wake();
             })
             .map_err(io_error)?;
         Ok(Self { writer, closed })
