@@ -2,13 +2,19 @@ use super::*;
 
 impl<E: From<NodeError> + 'static> Worker<E> {
     pub(in crate::worker_threads) fn activate(&self, owner: DispatchOwner) {
-        self.state.delivery.borrow_mut().owner = Some(owner);
+        let previous = self.state.delivery.borrow_mut().owner.replace(owner);
+        if previous != Some(owner) {
+            self.state.physical.published();
+        }
     }
 
     pub(in crate::worker_threads) fn deactivate(&self) {
-        self.state.delivery.borrow_mut().owner = None;
+        let previous = self.state.delivery.borrow_mut().owner.take();
         self.emitter.remove_all_callable_listeners();
         self.emitter.remove_all_listeners(None);
+        if previous.is_some() {
+            self.state.physical.published();
+        }
     }
 
     fn ensure_owner(&self) -> NodeResult<()> {

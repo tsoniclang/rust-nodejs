@@ -236,6 +236,60 @@ struct NativeTestWake {
     changed: Condvar,
 }
 
+struct ModeWake(AtomicUsize);
+
+impl Wake for ModeWake {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+}
+
+#[test]
+fn retiring_callback_ownership_wakes_a_pending_native_observer_without_new_io() {
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let worker = Worker::<TsonicError> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let resources = WorkerResources::<TsonicError>::new();
+    let wake = Arc::new(ModeWake(AtomicUsize::new(0)));
+    let waker = Waker::from(Arc::clone(&wake));
+    let mut observer = completion::WorkerCompletion::new(&worker.state);
+    crate::block_on_with_contexts(
+        async {
+            resources.register_worker(&worker).unwrap();
+            worker.unref();
+            assert!(Pin::new(&mut observer)
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending());
+            assert_eq!(
+                wake.0.load(AtomicOrdering::Relaxed),
+                0,
+                "no premature native readiness"
+            );
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+    assert_eq!(
+        wake.0.load(AtomicOrdering::Relaxed),
+        1,
+        "native progress must learn that callback delivery no longer owns its retained input"
+    );
+    assert!(
+        !worker.state.physical.snapshot().reader_finished,
+        "no transport event manufactured the mode wake"
+    );
+    assert!(Pin::new(&mut observer)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    worker.state.physical.finish_reader(None);
+    assert!(matches!(
+        Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)),
+        Poll::Ready(Ok(0))
+    ));
+}
+
 impl Wake for NativeTestWake {
     fn wake(self: Arc<Self>) {
         *self.ready.lock().unwrap() = true;
