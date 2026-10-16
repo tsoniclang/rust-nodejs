@@ -67,18 +67,18 @@ fn ownerless_errors_preserve_the_first_reason_and_count_every_later_error() {
     else {
         panic!("explicit native observation reports unobserved worker errors after join");
     };
-    assert_eq!(error.code(), "ERR_WORKER_ERROR");
+    assert_eq!(error.first().code(), "ERR_WORKER_ERROR");
     assert!(
-        error.message().starts_with("first native reason"),
+        error.first().message().starts_with("first native reason"),
         "first error retained"
     );
     assert!(
         error.additional_unobserved_errors() == 2,
         "later errors counted"
     );
-    assert_eq!(state.delivery.borrow().native_failure_count, 3);
+    assert_eq!(state.delivery.borrow().native_failure_count(), 3);
     assert_eq!(
-        error.message(),
+        error.first().message(),
         "first native reason",
         "the first message is never replaced by formatted count text"
     );
@@ -88,13 +88,14 @@ fn ownerless_errors_preserve_the_first_reason_and_count_every_later_error() {
         "additional count is a native u64 value"
     );
     assert!(
-        error.source_error().has_same_identity(
+        error.first().source_error().has_same_identity(
             state
                 .delivery
                 .borrow()
                 .native_failure
                 .as_ref()
                 .unwrap()
+                .first()
                 .source_error()
         ),
         "the first underlying JsError/cause identity is retained"
@@ -159,7 +160,7 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
     else {
         panic!("later native observer must consume the retired error");
     };
-    assert!(error.message().contains("retired native reason"));
+    assert!(error.first().message().contains("retired native reason"));
     assert_eq!(worker.state.physical.queued_len(), 0);
     assert!(worker.state.delivery.borrow().terminal_consumed);
 }
@@ -471,9 +472,9 @@ fn ownerless_native_progress_drains_more_than_twice_capacity_without_losing_erro
     });
     let error = native_observe(completion::WorkerCompletion::new(&state)).unwrap_err();
     producer.join().unwrap();
-    assert!(error.message().starts_with("native error at 0"));
+    assert!(error.first().message().starts_with("native error at 0"));
     assert_eq!(
-        state.delivery.borrow().native_failure_count,
+        state.delivery.borrow().native_failure_count(),
         3,
         "errors at every pressure level retained"
     );
@@ -523,7 +524,7 @@ fn reader_eof_before_process_exit_wakes_native_progress_but_is_not_completion() 
     );
     control.write_all(&[1]).unwrap();
     let error = native_observe(observer).unwrap_err();
-    assert_eq!(error.code(), "ERR_WORKER_TRANSPORT");
+    assert_eq!(error.first().code(), "ERR_WORKER_TRANSPORT");
     assert!(
         worker.state.physical.snapshot().process_finished,
         "native process producer wakes final completion"
@@ -634,8 +635,8 @@ fn owner_retirement_wakes_the_existing_observer_and_releases_the_saturated_physi
     .unwrap();
     let error = native_observe(observer).unwrap_err();
     producer.join().unwrap();
-    assert_eq!(error.message(), "retained saturated error");
-    assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
+    assert_eq!(error.first().message(), "retained saturated error");
+    assert_eq!(worker.state.delivery.borrow().native_failure_count(), 1);
     assert_eq!(worker.state.physical.queued_len(), 0);
     assert!(worker.state.delivery.borrow().reader_terminal_seen);
     assert!(worker.state.delivery.borrow().terminal_consumed);
@@ -660,9 +661,9 @@ fn public_terminate_drains_an_actually_saturated_native_reader_without_a_js_owne
     assert!(worker.state.delivery.borrow().owner.is_none());
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
     let error = native_observe(worker.terminate()).unwrap_err();
-    assert_eq!(error.code(), "ERR_WORKER_ERROR");
-    assert_eq!(error.message(), "public saturated native error");
-    assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
+    assert_eq!(error.first().code(), "ERR_WORKER_ERROR");
+    assert_eq!(error.first().message(), "public saturated native error");
+    assert_eq!(worker.state.delivery.borrow().native_failure_count(), 1);
     assert!(worker.state.delivery.borrow().reader_terminal_seen);
     assert!(worker.state.delivery.borrow().terminal_consumed);
     assert_eq!(worker.state.physical.queued_len(), 0);
@@ -698,15 +699,15 @@ fn native_io_consumed_before_observed_exit_remains_the_natural_completion_failur
         "child remains live before consumption"
     );
     assert_eq!(
-        worker.state.delivery.borrow().native_failure_count,
+        worker.state.delivery.borrow().native_failure_count(),
         1,
         "pre-observation IO failure is already counted"
     );
     control.write_all(&[1]).unwrap();
     let error = native_observe(observer).unwrap_err();
-    assert_eq!(error.code(), "ERR_WORKER_TRANSPORT");
+    assert_eq!(error.first().code(), "ERR_WORKER_TRANSPORT");
     assert!(
-        error.message().contains("fill whole buffer"),
+        error.first().message().contains("fill whole buffer"),
         "exact native truncated-read reason retained"
     );
     assert!(
@@ -729,7 +730,7 @@ fn native_io_consumed_after_observed_exit_is_suppressed_without_a_timer() {
         std::thread::yield_now();
     }
     assert_eq!(
-        worker.state.delivery.borrow().native_failure_count,
+        worker.state.delivery.borrow().native_failure_count(),
         0,
         "physical completion is not an observer"
     );
@@ -738,7 +739,7 @@ fn native_io_consumed_after_observed_exit_is_suppressed_without_a_timer() {
         0
     );
     assert_eq!(
-        worker.state.delivery.borrow().native_failure_count,
+        worker.state.delivery.borrow().native_failure_count(),
         0,
         "IO consumed after observed exit is suppressed"
     );
@@ -904,15 +905,17 @@ fn native_observation_error_layout_matches_the_required_handwritten_count_carrie
         first: plain.first.clone(),
         additional: 7,
     };
-    let mut observed = original.clone();
-    observed.set_additional_unobserved_errors(7);
-    assert_eq!(observed.code(), native.code);
-    assert_eq!(observed.message(), native.first.message());
+    let mut observed = WorkerCompletionError::from(original.clone());
+    for _ in 0..7 {
+        observed.record_additional();
+    }
+    assert_eq!(observed.first().code(), native.code);
+    assert_eq!(observed.first().message(), native.first.message());
     assert_eq!(observed.additional_unobserved_errors(), native.additional);
     assert!(
         original
             .source_error()
-            .has_same_identity(observed.source_error()),
+            .has_same_identity(observed.first().source_error()),
         "native count does not replace the cause identity"
     );
     assert_eq!(
@@ -921,14 +924,64 @@ fn native_observation_error_layout_matches_the_required_handwritten_count_carrie
         "same required typed native fields, no wrapper/box"
     );
     assert_eq!(
-        std::mem::size_of::<NodeError>(),
+        std::mem::size_of::<WorkerCompletionError>(),
         std::mem::size_of::<NativeFirstError>() + 8,
-        "actual common error carrier grows by exactly its u64 field"
+        "only the native worker completion adds its required u64 count"
     );
     assert_eq!(
-        std::mem::size_of::<Result<i32, NodeError>>(),
+        std::mem::size_of::<Result<i32, WorkerCompletionError>>(),
         std::mem::size_of::<Result<i32, NativeCountedError>>(),
-        "result ABI remains the equivalent direct native result"
+        "worker completion ABI is the equivalent direct native result"
     );
-    println!("P05_NATIVE_ERROR_LAYOUT first={} counted={} result={} metadata_bytes=8 additional_allocations=0", std::mem::size_of::<NativeFirstError>(), std::mem::size_of::<NodeError>(), std::mem::size_of::<Result<i32, NodeError>>());
+    assert!(
+        observed.clone().into_first() == original,
+        "native count does not change common NodeError equality"
+    );
+    println!("P05_NATIVE_ERROR_LAYOUT common={} counted={} ordinary_result={} worker_result={} metadata_bytes=8 additional_allocations=0", std::mem::size_of::<NodeError>(), std::mem::size_of::<WorkerCompletionError>(), std::mem::size_of::<NodeResult<i32>>(), std::mem::size_of::<Result<i32, WorkerCompletionError>>());
+}
+
+#[test]
+fn common_node_error_layout_and_equality_match_the_unchanged_native_base() {
+    #[derive(PartialEq, Eq)]
+    struct NativeFirstError {
+        code: String,
+        source: tsonic_rust_runtime::JsError,
+    }
+    assert_eq!(
+        std::mem::size_of::<NodeError>(),
+        std::mem::size_of::<NativeFirstError>(),
+        "ordinary NodeError has only its original native fields"
+    );
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(std::mem::size_of::<NodeError>(), 32, "original x64 layout");
+    assert_eq!(
+        std::mem::size_of::<NodeResult<()>>(),
+        std::mem::size_of::<Result<(), NativeFirstError>>(),
+        "ordinary unit result has no Worker metadata cost"
+    );
+    assert_eq!(
+        std::mem::size_of::<NodeResult<i32>>(),
+        std::mem::size_of::<Result<i32, NativeFirstError>>(),
+        "ordinary integer result has no Worker metadata cost"
+    );
+    assert_eq!(
+        std::mem::size_of::<NodeResult<Vec<u8>>>(),
+        std::mem::size_of::<Result<Vec<u8>, NativeFirstError>>(),
+        "ordinary owned payload result has no Worker metadata cost"
+    );
+    let original = NodeError::new("NATIVE_BASE", "unchanged native reason");
+    let equivalent = original.clone();
+    let native_original = NativeFirstError {
+        code: original.code.clone(),
+        source: original.source_error().clone(),
+    };
+    let native_equivalent = NativeFirstError {
+        code: equivalent.code.clone(),
+        source: equivalent.source_error().clone(),
+    };
+    assert_eq!(
+        original == equivalent,
+        native_original == native_equivalent,
+        "common equality depends only on the original code and source"
+    );
 }

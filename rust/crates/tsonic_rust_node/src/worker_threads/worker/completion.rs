@@ -1,5 +1,8 @@
 use super::physical_child::WorkerChild;
-use super::{io_error, status_code, Worker, WorkerFrame, WorkerState, MAXIMUM_QUEUED_SIGNALS};
+use super::{
+    io_error, status_code, Worker, WorkerCompletionError, WorkerFrame, WorkerState,
+    MAXIMUM_QUEUED_SIGNALS,
+};
 use crate::error::{NodeError, NodeResult};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -299,7 +302,7 @@ impl WorkerPhysical {
 }
 
 impl<E: From<NodeError> + 'static> Worker<E> {
-    pub async fn terminate(&self) -> NodeResult<i32> {
+    pub async fn terminate(&self) -> Result<i32, WorkerCompletionError> {
         self.state.physical.request_termination()?;
         WorkerCompletion::new(&self.state).await
     }
@@ -423,7 +426,7 @@ impl<'worker> WorkerCompletion<'worker> {
 }
 
 impl Future for WorkerCompletion<'_> {
-    type Output = NodeResult<i32>;
+    type Output = Result<i32, WorkerCompletionError>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let waiting = self.get_mut();
@@ -491,7 +494,7 @@ impl Future for WorkerCompletion<'_> {
                     Err(error) => {
                         drop(state);
                         drop(prepared);
-                        return Poll::Ready(Err(error));
+                        return Poll::Ready(Err(error.into()));
                     }
                 }
             };

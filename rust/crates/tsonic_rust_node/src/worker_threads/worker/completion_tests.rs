@@ -196,9 +196,9 @@ fn native_ready_after_ingestion_rechecks_the_final_error_and_terminal() {
                 "native Ready must include the final error even when join is published in the gap"
             );
         };
-        assert_eq!(error.code(), "ERR_WORKER_ERROR");
-        assert_eq!(error.message(), "tail failure");
-        assert_eq!(state.delivery.borrow().native_failure_count, 1);
+        assert_eq!(error.first().code(), "ERR_WORKER_ERROR");
+        assert_eq!(error.first().message(), "tail failure");
+        assert_eq!(state.delivery.borrow().native_failure_count(), 1);
         assert!(state.delivery.borrow().reader_terminal_seen);
         assert!(state.delivery.borrow().terminal_consumed);
         assert!(
@@ -257,7 +257,7 @@ fn owner_bound_native_ready_leaves_gap_published_frames_for_actual_callbacks() {
         let mut observer = completion::WorkerCompletion::new(&worker.state);
         assert!(matches!(Pin::new(&mut observer).poll(&mut Context::from_waker(Waker::noop())), Poll::Ready(Ok(0))),
             "owner-bound native observation reports physical status without stealing callback data");
-        assert_eq!(worker.state.delivery.borrow().native_failure_count, 0);
+        assert_eq!(worker.state.delivery.borrow().native_failure_count(), 0);
         assert!(!worker.state.delivery.borrow().terminal_consumed);
     }, prepend(&resources, DispatchEnd::<TsonicError>::new())).unwrap();
     assert_eq!(messages.get(), 1);

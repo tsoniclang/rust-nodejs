@@ -5,7 +5,6 @@ use tsonic_rust_runtime::{JsError, JsErrorKind};
 pub struct NodeError {
     pub code: String,
     source: JsError,
-    additional_unobserved_errors: u64,
 }
 
 impl NodeError {
@@ -13,7 +12,6 @@ impl NodeError {
         Self {
             code: code.into(),
             source: JsError::new(JsErrorKind::Error, message),
-            additional_unobserved_errors: 0,
         }
     }
 
@@ -27,14 +25,6 @@ impl NodeError {
 
     pub fn source_error(&self) -> &JsError {
         &self.source
-    }
-
-    pub fn additional_unobserved_errors(&self) -> u64 {
-        self.additional_unobserved_errors
-    }
-
-    pub(crate) fn set_additional_unobserved_errors(&mut self, count: u64) {
-        self.additional_unobserved_errors = count;
     }
 }
 
@@ -87,7 +77,6 @@ impl From<JsError> for NodeError {
         Self {
             code: "ERR_NODE_EVENT_LOOP".to_owned(),
             source,
-            additional_unobserved_errors: 0,
         }
     }
 }

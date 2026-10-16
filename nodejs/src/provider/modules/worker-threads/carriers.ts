@@ -7,6 +7,8 @@ export const workerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rus
 
 export const workerOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.WorkerOptions" };
 
+export const workerCompletionErrorCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.WorkerCompletionError" };
+
 export const messagePortCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MessagePort", genericArguments: errorArguments };
 
 export const messageChannelCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.MessageChannel", genericArguments: errorArguments };

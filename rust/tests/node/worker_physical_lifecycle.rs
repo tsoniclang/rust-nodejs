@@ -302,10 +302,10 @@ fn native_unobserved_errors_after_physical_join() {
     );
     let _control = accept_ready(&listener);
     let error = native_executor(worker.terminate()).unwrap_err();
-    assert_eq!(error.code(), "ERR_WORKER_ERROR");
-    assert!(error.message().starts_with("first native error"));
+    assert_eq!(error.first().code(), "ERR_WORKER_ERROR");
+    assert!(error.first().message().starts_with("first native error"));
     assert_eq!(
-        error.message(),
+        error.first().message(),
         "first native error",
         "first reason is never formatted into a replacement error"
     );
@@ -314,6 +314,55 @@ fn native_unobserved_errors_after_physical_join() {
         1,
         "public native observation retains the second error as an exact native count"
     );
+    let identity = error.first().source_error().identity_key();
+    let code_pointer = error.first().code().as_ptr();
+    let retained = error.clone();
+    let reference = retained.first().clone();
+    let direct_cost = allocation_counts::measure(move || {
+        let erased = TsonicError::from(error);
+        let TsonicError::Node { code, source } = erased else {
+            panic!("native Worker erasure preserves the existing Node rejection variant");
+        };
+        assert_eq!(
+            source.identity_key(),
+            identity,
+            "first JsError identity moved"
+        );
+        assert_eq!(
+            code.as_ptr(),
+            code_pointer,
+            "first native code moved without cloning"
+        );
+        assert_eq!(source.message(), "first native error");
+    });
+    assert_eq!(
+        direct_cost,
+        (0, 0),
+        "native completion erasure adds no allocation or copy"
+    );
+    let reference_cost = allocation_counts::measure(move || {
+        let erased = tsonic_rust_runtime::RetainedError::from(reference);
+        assert!(
+            erased
+                .source_error()
+                .is_some_and(|source| source.error_identity_key() == identity),
+            "existing retained Node error identity"
+        );
+    });
+    let retained_cost = allocation_counts::measure(move || {
+        let erased = tsonic_rust_runtime::RetainedError::from(retained);
+        assert!(
+            erased
+                .source_error()
+                .is_some_and(|source| source.error_identity_key() == identity),
+            "Worker retained rejection keeps first identity"
+        );
+    });
+    assert_eq!(
+        retained_cost, reference_cost,
+        "Worker count adds no cost to the existing retained conversion"
+    );
+    println!("P05_NATIVE_JS_ERASURE direct_allocations={} direct_bytes={} retained_allocations={} retained_bytes={} reference_retained_allocations={} reference_retained_bytes={}", direct_cost.0, direct_cost.1, retained_cost.0, retained_cost.1, reference_cost.0, reference_cost.1);
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
 }
 
