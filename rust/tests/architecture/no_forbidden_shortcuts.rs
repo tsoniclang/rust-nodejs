@@ -32,7 +32,11 @@ fn no_forbidden_shortcuts_present_in_product_sources() {
 
     for source in sources {
         for forbidden in find_forbidden_patterns(&source.source) {
-            violations.push(format!("{}: contains `{}`", source.path.display(), forbidden));
+            violations.push(format!(
+                "{}: contains `{}`",
+                source.path.display(),
+                forbidden
+            ));
         }
     }
 
@@ -98,4 +102,3 @@ fn locate_workspace_root() -> Option<PathBuf> {
         return None;
     }
 }
-
