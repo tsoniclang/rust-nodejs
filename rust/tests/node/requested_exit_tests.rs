@@ -24,26 +24,43 @@ fn assert_missing_owner(operation: impl FnOnce()) {
         operation();
     }))
     .expect_err("public posting admission must panic synchronously");
-    let message = failure.downcast_ref::<String>().map(String::as_str)
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
         .or_else(|| failure.downcast_ref::<&str>().copied());
-    assert_eq!(message, Some("No JavaScript event loop is running on this thread."));
+    assert_eq!(
+        message,
+        Some("No JavaScript event loop is running on this thread.")
+    );
     assert_eq!(drops.get(), 1);
     assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
 }
 
 #[test]
 fn node_timer_posting_without_an_owner_panics_before_any_callback_is_admitted() {
-    assert_missing_owner(|| { let _ = tsonic_rust_node::timers::set_timeout(|| panic!("unadmitted timeout"), 0); });
-    assert_missing_owner(|| { let _ = tsonic_rust_node::timers::set_interval(|| panic!("unadmitted interval"), 1); });
-    assert_missing_owner(|| { let _ = tsonic_rust_node::timers::set_immediate(|| panic!("unadmitted immediate")); });
+    assert_missing_owner(|| {
+        let _ = tsonic_rust_node::timers::set_timeout(|| panic!("unadmitted timeout"), 0);
+    });
+    assert_missing_owner(|| {
+        let _ = tsonic_rust_node::timers::set_interval(|| panic!("unadmitted interval"), 1);
+    });
+    assert_missing_owner(|| {
+        let _ = tsonic_rust_node::timers::set_immediate(|| panic!("unadmitted immediate"));
+    });
     let timers = tsonic_rust_node::timers::new::<TsonicError>();
     assert_missing_owner(|| {
         let _ = tsonic_rust_node::timers::set_timeout_callable(
-            &timers, Callable::new(|()| panic!("unadmitted callable timeout")), 0);
+            &timers,
+            Callable::new(|()| panic!("unadmitted callable timeout")),
+            0,
+        );
     });
     assert_missing_owner(|| {
         let _ = tsonic_rust_node::timers::set_interval_callable(
-            &timers, Callable::new(|()| panic!("unadmitted callable interval")), 1);
+            &timers,
+            Callable::new(|()| panic!("unadmitted callable interval")),
+            1,
+        );
     });
     assert!(!timers.has_pending_work());
 }
@@ -70,10 +87,13 @@ fn node_background_posting_without_an_owner_panics_before_work_or_completion() {
     let calls = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let captured = std::sync::Arc::clone(&calls);
     assert_missing_owner(|| {
-        let _ = tasks.spawn(move || {
-            captured.store(true, std::sync::atomic::Ordering::SeqCst);
-            Ok(7)
-        }, |_| panic!("unadmitted background completion"));
+        let _ = tasks.spawn(
+            move || {
+                captured.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(7)
+            },
+            |_| panic!("unadmitted background completion"),
+        );
     });
     assert!(!calls.load(std::sync::atomic::Ordering::SeqCst));
     assert_eq!(std::sync::Arc::strong_count(&calls), 1);
