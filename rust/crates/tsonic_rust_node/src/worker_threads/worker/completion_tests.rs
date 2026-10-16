@@ -342,6 +342,9 @@ fn native_worker_process_fixture() {
     control.write_all(&[1]).unwrap();
     let mut released = [0];
     control.read_exact(&mut released).unwrap();
+    if mode == "unread" {
+        std::process::exit(0);
+    }
 }
 
 fn live_native_worker(mode: &str) -> (Worker, TcpStream) {
