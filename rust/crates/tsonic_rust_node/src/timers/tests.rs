@@ -5,27 +5,38 @@ use tsonic_rust_runtime::{ErrorObject, TsonicError};
 #[test]
 fn loop_owner_all_convenience_timer_admissions_fail_exactly_without_a_loop() {
     let options = TimerOptions::default();
-    let results = [
-        set_timeout(|| panic!("unadmitted timeout"), 0),
-        set_timeout_with_options(|| panic!("unadmitted timeout"), 0, options),
-        set_immediate(|| panic!("unadmitted immediate")),
-        set_immediate_with_options(|| panic!("unadmitted immediate"), options),
-        set_interval(|| panic!("unadmitted interval"), 0),
-        set_interval_with_options(|| panic!("unadmitted interval"), 0, options),
+    let operations: [fn(TimerOptions) -> NodeResult<Timeout>; 6] = [
+        |_| set_timeout(|| panic!("unadmitted timeout"), 0),
+        |options| set_timeout_with_options(|| panic!("unadmitted timeout"), 0, options),
+        |_| set_immediate(|| panic!("unadmitted immediate")),
+        |options| set_immediate_with_options(|| panic!("unadmitted immediate"), options),
+        |_| set_interval(|| panic!("unadmitted interval"), 0),
+        |options| set_interval_with_options(|| panic!("unadmitted interval"), 0, options),
     ];
-    for result in results {
-        let error = result
-            .err()
-            .expect("missing loop must reject timer admission");
-        assert_eq!(error.code(), "ERR_NODE_EVENT_LOOP");
+    let assert_no_owner = |failure: Box<dyn std::any::Any + Send>| {
+        let message = failure
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| failure.downcast_ref::<&str>().copied());
         assert_eq!(
-            error.message(),
-            "No JavaScript event loop is running on this thread."
+            message,
+            Some("No JavaScript event loop is running on this thread.")
         );
+    };
+    for operation in operations {
+        let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(options)))
+            .err()
+            .expect("missing loop must panic at timer admission");
+        assert_no_owner(failure);
     }
     let capture = Rc::new(Cell::new(0));
     let observed = Rc::clone(&capture);
-    assert!(set_timeout(move || observed.set(1), 0).is_err());
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        set_timeout(move || observed.set(1), 0)
+    }))
+    .err()
+    .expect("missing loop must panic before retaining the callback");
+    assert_no_owner(failure);
     assert_eq!(capture.get(), 0);
     assert_eq!(Rc::strong_count(&capture), 1);
     assert!(!has_refed_runtime_timers());
