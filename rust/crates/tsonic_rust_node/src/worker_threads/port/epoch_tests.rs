@@ -39,6 +39,129 @@ fn native_channel_construction_and_exact_post_receive_need_no_js_loop() {
 }
 
 #[test]
+fn native_mixed_messages_errors_and_close_replay_their_physical_admission_order() {
+    for pattern in 0_u8..16 {
+        let resources = WorkerResources::<NodeError>::new();
+        let channel = MessageChannel::new(&resources).unwrap();
+        let mut expected = Vec::new();
+        for index in 0..4 {
+            if pattern & (1 << index) == 0 {
+                channel
+                    .port1
+                    .post_message(JsValue::Integer(index))
+                    .unwrap();
+                expected.push(format!("message:{index}"));
+            } else {
+                channel
+                    .port2
+                    .owner
+                    .state
+                    .borrow_mut()
+                    .push_error(index.to_string())
+                    .unwrap();
+                expected.push(format!("error:{index}"));
+            }
+        }
+        channel.port2.close().unwrap();
+        expected.push("close".to_owned());
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        in_loop(&resources, async {
+            for event in ["message", "error"] {
+                let values = Rc::clone(&observed);
+                channel
+                    .port2
+                    .on_callable1(
+                        &JsValue::String(event.to_owned()),
+                        &Callable::new(move |(value,)| {
+                            let text = match value {
+                                JsValue::Integer(value) => value.to_string(),
+                                JsValue::String(value) => value,
+                                _ => panic!("native port signal retains its exact payload carrier"),
+                            };
+                            values.borrow_mut().push(format!("{event}:{text}"));
+                            Ok::<(), NodeError>(())
+                        }),
+                    )
+                    .unwrap();
+            }
+            let values = Rc::clone(&observed);
+            channel
+                .port2
+                .on_callable(
+                    &JsValue::String("close".to_owned()),
+                    &Callable::new(move |()| {
+                        values.borrow_mut().push("close".to_owned());
+                        Ok::<(), NodeError>(())
+                    }),
+                )
+                .unwrap();
+            assert!(observed.borrow().is_empty(), "native callbacks stay deferred");
+            assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
+            assert_eq!(*observed.borrow(), expected, "physical signal order {pattern}");
+            assert!(!poll_phase(&resources, crate::phases::PORTS).unwrap());
+        });
+    }
+}
+
+#[test]
+fn reentrant_errors_and_messages_wait_for_the_next_physical_frontier() {
+    let resources = WorkerResources::<NodeError>::new();
+    let channel = MessageChannel::new(&resources).unwrap();
+    let observed = Rc::new(RefCell::new(Vec::new()));
+    in_loop(&resources, async {
+        let values = Rc::clone(&observed);
+        channel
+            .port2
+            .on_callable1(
+                &JsValue::String("message".to_owned()),
+                &Callable::new(move |(value,)| {
+                    assert_eq!(value, JsValue::Integer(i64::MAX));
+                    values.borrow_mut().push("message".to_owned());
+                    Ok::<(), NodeError>(())
+                }),
+            )
+            .unwrap();
+        let values = Rc::clone(&observed);
+        let receiver = channel.port2.clone();
+        let sender = channel.port1.clone();
+        channel
+            .port2
+            .on_callable1(
+                &JsValue::String("error".to_owned()),
+                &Callable::new(move |(value,)| {
+                    let JsValue::String(error) = value else {
+                        panic!("native port error retains its exact string carrier");
+                    };
+                    values.borrow_mut().push(error.clone());
+                    if error == "first" {
+                        sender.post_message(JsValue::Integer(i64::MAX))?;
+                        receiver
+                            .owner
+                            .state
+                            .borrow_mut()
+                            .push_error("reentrant".to_owned())?;
+                    }
+                    Ok::<(), NodeError>(())
+                }),
+            )
+            .unwrap();
+        channel
+            .port2
+            .owner
+            .state
+            .borrow_mut()
+            .push_error("first".to_owned())
+            .unwrap();
+        assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
+        assert_eq!(observed.borrow().as_slice(), ["first"]);
+        assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
+        assert_eq!(observed.borrow().as_slice(), ["first", "message", "reentrant"]);
+        assert!(!poll_phase(&resources, crate::phases::PORTS).unwrap());
+        channel.port2.unref();
+    });
+}
+
+#[test]
 fn local_callback_captures_retire_while_physical_channel_survives() {
     let resources = WorkerResources::<NodeError>::new();
     let captured = Rc::new(Cell::new(0));
