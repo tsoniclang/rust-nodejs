@@ -318,7 +318,7 @@ fn native_unobserved_errors_after_physical_join() {
     let code_pointer = error.first().code().as_ptr();
     let retained = error.clone();
     let reference = retained.first().clone();
-    let direct_cost = allocation_counts::measure(move || {
+    let direct_cost = allocation_counts::measure_requests(move || {
         let erased = TsonicError::from(error);
         let TsonicError::Node { code, source } = erased else {
             panic!("native Worker erasure preserves the existing Node rejection variant");
@@ -340,7 +340,7 @@ fn native_unobserved_errors_after_physical_join() {
         (0, 0),
         "native completion erasure adds no allocation or copy"
     );
-    let reference_cost = allocation_counts::measure(move || {
+    let reference_cost = allocation_counts::measure_requests(move || {
         let erased = tsonic_rust_runtime::RetainedError::from(reference);
         assert!(
             erased
@@ -349,7 +349,7 @@ fn native_unobserved_errors_after_physical_join() {
             "existing retained Node error identity"
         );
     });
-    let retained_cost = allocation_counts::measure(move || {
+    let retained_cost = allocation_counts::measure_requests(move || {
         let erased = tsonic_rust_runtime::RetainedError::from(retained);
         assert!(
             erased
