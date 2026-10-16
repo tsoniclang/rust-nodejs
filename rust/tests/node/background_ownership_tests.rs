@@ -8,9 +8,9 @@ use tsonic_rust_node::background::BackgroundTasks;
 use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::TsonicError;
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
-use allocation_counts::measure;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+use allocation_counts::measure_requests;
 
 struct Failure(TsonicError);
 
@@ -40,7 +40,7 @@ struct NativeRegistry<TError> {
 
 #[test]
 fn cold_background_queries_have_no_allocation_or_native_root_initialization() {
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         let root = black_box(BackgroundTasks::<Failure>::new());
         for _ in 0..1024 {
             assert!(!black_box(root.has_pending_work()));
@@ -56,10 +56,10 @@ fn cold_background_queries_have_no_allocation_or_native_root_initialization() {
 #[test]
 fn demanded_background_registry_matches_one_idiomatic_native_weak_owner() {
     let root = BackgroundTasks::<Failure>::new();
-    let actual = measure(|| {
+    let actual = measure_requests(|| {
         black_box(root.handle());
     });
-    let expected = measure(|| {
+    let expected = measure_requests(|| {
         let (sender, receiver) = std::sync::mpsc::sync_channel(16 * 1024);
         let root = Rc::new(RefCell::new(NativeRegistry::<Failure> {
             _sender: sender,
@@ -78,7 +78,7 @@ fn demanded_background_registry_matches_one_idiomatic_native_weak_owner() {
 fn warmed_background_queries_and_weak_handle_clones_allocate_nothing() {
     let root = BackgroundTasks::<Failure>::new();
     let handle = root.handle();
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         for _ in 0..1024 {
             black_box(handle.clone());
             black_box(root.handle());
@@ -103,7 +103,7 @@ fn composed_background_dispatch_queries_allocate_nothing() {
         &first,
         tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         for _ in 0..1024 {
             let frontier = contexts
                 .prepare(tsonic_rust_node::phases::BACKGROUND)

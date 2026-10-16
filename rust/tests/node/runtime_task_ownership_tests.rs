@@ -4,13 +4,13 @@ use tsonic_rust_node::runtime_tasks::RuntimeTasks;
 use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
-use allocation_counts::measure;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+use allocation_counts::measure_requests;
 
 #[test]
 fn cold_runtime_queries_do_not_allocate_or_initialize_native_storage() {
-    let actual = measure(|| {
+    let actual = measure_requests(|| {
         let root = black_box(RuntimeTasks::<()>::new());
         for _ in 0..1024 {
             assert!(!black_box(root.has_pending_work()));
@@ -30,11 +30,11 @@ fn demanded_runtime_registry_matches_one_idiomatic_native_weak_queue() {
     black_box(warm.handle());
     drop(warm);
     let root = RuntimeTasks::<()>::new();
-    let actual = measure(|| {
+    let actual = measure_requests(|| {
         black_box(root.handle());
     });
     let budget = TaskBudget::new(NonZeroUsize::new(1024).unwrap());
-    let expected = measure(|| {
+    let expected = measure_requests(|| {
         let queue = TaskQueue::<()>::new(budget.clone());
         black_box(queue.handle());
         black_box(queue);
@@ -49,7 +49,7 @@ fn warmed_composed_runtime_dispatch_and_weak_handles_allocate_nothing() {
     assert_eq!(root.poll(), Ok(true));
     let handle = root.handle();
     let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<()>::new());
-    let actual = measure(|| {
+    let actual = measure_requests(|| {
         for _ in 0..1024 {
             black_box(handle.clone());
             let frontier = contexts

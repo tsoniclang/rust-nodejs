@@ -72,12 +72,12 @@ test("authored incoming metadata views compile and execute without read allocati
   const contains = source.slice(source.indexOf("pub fn contains("), source.indexOf("pub fn categories("));
   assert.doesNotMatch(contains, /String::from|\.clone\(|\.to_owned\(/u);
   const root = writeGeneratedProject("borrowed-http-metadata", result.artifacts);
-  const allocationSupport = fileURLToPath(new URL("../../../rust/tests/support/allocation_counts.rs", import.meta.url));
+  const allocationSupport = fileURLToPath(new URL("../../../../rust-runtime/tests/helpers/allocation_counts.rs", import.meta.url));
   mkdirSync(join(root, "tests"), { recursive: true });
   const nativeTestPath = join(root, "tests", "http_metadata.rs");
   writeFileSync(nativeTestPath, `
 #[path = ${JSON.stringify(allocationSupport)}]
-mod allocation_counts;
+pub mod allocation_counts;
 
 use borrowed_http_metadata::index;
 use tsonic_rust_node::http::IncomingMessage;
@@ -87,7 +87,7 @@ use tsonic_rust_runtime::TsonicError;
 fn generated_metadata_reads_and_borrowed_string_arguments_do_not_allocate() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let message = IncomingMessage::<TsonicError>::new(readable_tasks.handle(), "POST", "/native-resource", Vec::new());
-    let cost = allocation_counts::measure(|| {
+    let cost = allocation_counts::measure_requests(|| {
         for _ in 0..10_000 {
             assert!(std::hint::black_box(index::inspect(message.clone())));
             assert!(std::hint::black_box(index::contains(message.clone())));
@@ -109,10 +109,10 @@ fn generated_owned_results_and_retained_callbacks_outlive_their_message_argument
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let message = IncomingMessage::<TsonicError>::new(readable_tasks.handle(), "POST", "/native-resource", Vec::new());
     let mut version = String::new();
-    let version_cost = allocation_counts::measure(|| version = index::version(message.clone()));
+    let version_cost = allocation_counts::measure_requests(|| version = index::version(message.clone()));
     assert_eq!(version_cost, (1, 3));
     let mut method = None;
-    let method_cost = allocation_counts::measure(|| method = index::method(message.clone()));
+    let method_cost = allocation_counts::measure_requests(|| method = index::method(message.clone()));
     assert_eq!(method_cost, (1, 4));
     let callback = index::retained(message.clone());
     drop(message);

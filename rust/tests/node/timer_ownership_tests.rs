@@ -5,9 +5,9 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
-use allocation_counts::measure;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
+use allocation_counts::measure_requests;
 
 struct DropProbe(Rc<Cell<usize>>);
 
@@ -44,7 +44,7 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
         let observed = Rc::new(Cell::new(0_usize));
         let mut handles = Vec::with_capacity(count);
         let delay = Duration::from_secs(60);
-        let actual = measure(|| {
+        let actual = measure_requests(|| {
             for initial in 0..count {
                 let observed = Rc::clone(&observed);
                 let mut current = initial;
@@ -60,7 +60,7 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
                 );
             }
         });
-        let expected = measure(|| {
+        let expected = measure_requests(|| {
             for initial in 0..count {
                 let reservation = budget
                     .get_or_init(|| TaskBudget::new(NonZeroUsize::new(1 << 20).unwrap()))
@@ -125,7 +125,7 @@ fn retained_mutable_timer_allocations_match_one_native_callback_owner() {
 fn aborted_callbacks_allocate_nothing_and_drop_once() {
     let drops = Rc::new(Cell::new(0));
     let probe = DropProbe(Rc::clone(&drops));
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         let timer = timers::set_timeout_with_options(
             move || {
                 black_box(&probe);
@@ -148,7 +148,7 @@ fn aborted_callbacks_allocate_nothing_and_drop_once() {
 #[test]
 fn selected_timer_queries_and_empty_dispatch_allocate_nothing() {
     let timers = timers::new::<tsonic_rust_runtime::TsonicError>();
-    let cost = measure(|| {
+    let cost = measure_requests(|| {
         assert!(!timers.has_pending_work());
         assert!(!timers.poll().unwrap());
         let contexts = tsonic_rust_runtime::dispatch::prepend(

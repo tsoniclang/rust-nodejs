@@ -12,8 +12,8 @@ use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
 
 fn main() {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
@@ -221,7 +221,7 @@ fn native_termination_without_a_js_owner(selected: Option<&str>) {
     if selected.is_some() && selected != Some("ready-cost") {
         return;
     }
-    let cost = allocation_counts::measure(|| {
+    let cost = allocation_counts::measure_requests(|| {
         for _ in 0..1024 {
             let mut ready = std::pin::pin!(worker.terminate());
             assert!(

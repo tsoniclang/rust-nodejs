@@ -3,8 +3,8 @@ use std::hint::black_box;
 use tsonic_rust_node::http::IncomingMessage;
 use tsonic_rust_node::NodeError;
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
 
 #[test]
 fn repeated_incoming_metadata_queries_allocate_nothing_and_borrow_the_same_data() {
@@ -20,7 +20,7 @@ fn repeated_incoming_metadata_queries_allocate_nothing_and_borrow_the_same_data(
     let url = message.url().unwrap();
     let version = message.http_version();
     let headers = message.headers();
-    let cost = allocation_counts::measure(|| {
+    let cost = allocation_counts::measure_requests(|| {
         for _ in 0..10_000 {
             assert!(std::ptr::eq(
                 method.as_ptr(),
