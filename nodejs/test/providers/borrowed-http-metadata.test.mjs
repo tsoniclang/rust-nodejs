@@ -77,7 +77,7 @@ test("authored incoming metadata views compile and execute without read allocati
   const nativeTestPath = join(root, "tests", "http_metadata.rs");
   writeFileSync(nativeTestPath, `
 #[path = ${JSON.stringify(allocationSupport)}]
-mod allocation_counts;
+pub mod allocation_counts;
 
 use borrowed_http_metadata::index;
 use tsonic_rust_node::http::IncomingMessage;
