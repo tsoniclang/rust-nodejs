@@ -24,7 +24,8 @@ fn loop_owner_all_convenience_timer_admissions_fail_exactly_without_a_loop() {
         );
     };
     for operation in operations {
-        let Err(failure) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(options)))
+        let Err(failure) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(options)))
         else {
             panic!("missing loop must panic at timer admission");
         };
