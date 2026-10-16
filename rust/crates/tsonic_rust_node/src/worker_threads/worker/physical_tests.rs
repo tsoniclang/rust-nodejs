@@ -803,19 +803,22 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
         waiting_producers: usize,
     }
     let (state, _sender, _peer) = completed_process_with_pending_transport();
-    let queue = Mutex::new(NativeQueue {
+    let queue = std::hint::black_box(Arc::new(Mutex::new(NativeQueue {
         frames: VecDeque::with_capacity(1),
         waiter: None,
         waiting_producers: 0,
-    });
-    let capacity = Condvar::new();
-    let empty = || WorkerFrame {
-        kind: WorkerFrameKind::Message,
-        payload: Vec::new(),
+    })));
+    let physical = std::hint::black_box(Arc::clone(&state.physical));
+    let capacity = std::hint::black_box(Condvar::new());
+    let empty = || {
+        std::hint::black_box(WorkerFrame {
+            kind: WorkerFrameKind::Message,
+            payload: Vec::new(),
+        })
     };
-    assert!(state.physical.enqueue_frame(empty()));
+    assert!(physical.enqueue_frame(empty()));
     assert!(matches!(
-        state.physical.take_signal(None, false),
+        physical.take_signal(None, false),
         Some(PhysicalSignal::Frame(_))
     ));
     let iterations = 50_000;
@@ -855,9 +858,9 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
         baseline.push(start.elapsed().as_nanos());
         let start = Instant::now();
         for _ in 0..iterations {
-            assert!(state.physical.enqueue_frame(empty()));
+            assert!(physical.enqueue_frame(empty()));
             assert!(matches!(
-                state.physical.take_signal(None, false),
+                physical.take_signal(None, false),
                 Some(PhysicalSignal::Frame(_))
             ));
         }
