@@ -572,7 +572,10 @@ fn frames_preserve_idle_storage_after_all_concurrent_native_observers_cancel() {
         .native_waiters
         .additional
         .capacity();
-    assert!(capacity >= 3, "real concurrent observers reserved native storage");
+    assert!(
+        capacity >= 3,
+        "real concurrent observers reserved native storage"
+    );
     assert!(state
         .physical
         .enqueue_frame(super::completion_tests::native_message(1)));
