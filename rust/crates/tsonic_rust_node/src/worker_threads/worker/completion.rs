@@ -107,9 +107,17 @@ impl WorkerPhysical {
             frame,
         });
         let notify_callbacks = state.callback_active;
-        let wake = state.native_waiters.take_wakers();
+        let wake = if state.native_waiters.first.is_some()
+            || !state.native_waiters.additional.is_empty()
+        {
+            Some(state.native_waiters.take_wakers())
+        } else {
+            None
+        };
         drop(state);
-        wake.wake_all();
+        if let Some(wake) = wake {
+            wake.wake_all();
+        }
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -541,4 +549,39 @@ impl Drop for WorkerCompletion<'_> {
             drop(removed);
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn frames_preserve_idle_storage_after_all_concurrent_native_observers_cancel() {
+    let (state, _sender, _peer) =
+        super::completion_tests::completed_process_with_pending_transport();
+    let mut observers = [
+        WorkerCompletion::new(&state),
+        WorkerCompletion::new(&state),
+        WorkerCompletion::new(&state),
+        WorkerCompletion::new(&state),
+    ];
+    for observer in &mut observers {
+        assert!(Pin::new(observer)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+    }
+    drop(observers);
+    let capacity = crate::sync::lock(&state.physical.state)
+        .native_waiters
+        .additional
+        .capacity();
+    assert!(capacity >= 3, "real concurrent observers reserved native storage");
+    assert!(state
+        .physical
+        .enqueue_frame(super::completion_tests::native_message(1)));
+    assert_eq!(
+        crate::sync::lock(&state.physical.state)
+            .native_waiters
+            .additional
+            .capacity(),
+        capacity,
+        "a frame without observers must not discard their reusable native storage"
+    );
 }
