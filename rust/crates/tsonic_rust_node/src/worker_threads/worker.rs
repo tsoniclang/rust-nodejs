@@ -364,6 +364,7 @@ impl WorkerState {
                     )),
                 },
                 Ok(TransportEvent::Failure(error)) => {
+                    self.transport_ended = true;
                     self.observe_exit()?;
                     if error.code() != "ERR_WORKER_TRANSPORT"
                         || (!self.termination_requested && self.exit_code.is_none())

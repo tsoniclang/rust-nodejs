@@ -274,6 +274,10 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
             .unwrap();
         sender.send(TransportEvent::End).unwrap();
         state.ingest_signals().unwrap();
+        assert!(
+            state.complete,
+            "the terminal native failure is the reader boundary without awaiting a redundant End"
+        );
         state.ingest_signals().unwrap();
         let errors = state
             .pending
