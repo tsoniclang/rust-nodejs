@@ -1,4 +1,4 @@
-import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
+import type { RustTargetTypeRef, RustTargetTraitRef, RustNamedTypeTraitContract } from "@tsonic/target-rust/provider";
 import { nodeErrorCarrier } from "./carriers.js";
 
 export const trueArgument = { kind: "boolean", value: true } as const;
@@ -25,16 +25,16 @@ export const sourceCallbackFallibility = {
 
 export function nativeTrait(
   path: string,
-  genericArguments: Extract<RustTargetTypeRef, { readonly kind: "trait-ref" }>["genericArguments"] = [],
-): Extract<RustTargetTypeRef, { readonly kind: "trait-ref" }> {
+  genericArguments: RustTargetTraitRef["genericArguments"] = [],
+): RustTargetTraitRef {
   return { kind: "trait-ref", id: path, path, genericArguments, associatedConstraints: [] };
 }
 
-export const cloneOnlyCarrierTraits = {
+export const cloneOnlyCarrierTraits: RustNamedTypeTraitContract = {
   implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [] }],
 } as const;
 
-export const closedJsValueCarrierTraits = {
+export const closedJsValueCarrierTraits: RustNamedTypeTraitContract = {
   implementations: [
     { trait: nativeTrait("core::clone::Clone"), requirements: [] },
     {
@@ -44,7 +44,7 @@ export const closedJsValueCarrierTraits = {
   ],
 } as const;
 
-export const copyDefaultCarrierTraits = {
+export const copyDefaultCarrierTraits: RustNamedTypeTraitContract = {
   implementations: [
     { trait: nativeTrait("core::clone::Clone"), requirements: [] },
     { trait: nativeTrait("core::default::Default"), requirements: [] },
@@ -52,7 +52,7 @@ export const copyDefaultCarrierTraits = {
   ],
 } as const;
 
-export const cloneDefaultCarrierTraits = {
+export const cloneDefaultCarrierTraits: RustNamedTypeTraitContract = {
   implementations: [
     { trait: nativeTrait("core::clone::Clone"), requirements: [] },
     { trait: nativeTrait("core::default::Default"), requirements: [] },
