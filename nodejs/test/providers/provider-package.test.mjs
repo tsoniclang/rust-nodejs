@@ -326,6 +326,7 @@ test("provider type relations carry exact closed target carriers", () => {
           { kind: "lifetime", lifetime: { kind: "static" } },
           { kind: "type", type: { kind: "tuple", elements: [] } },
           { kind: "type", type: { kind: "tuple", elements: [] } },
+          { kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } } },
         ],
       } }],
     }],
