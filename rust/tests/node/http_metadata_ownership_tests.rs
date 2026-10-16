@@ -4,7 +4,7 @@ use tsonic_rust_node::http::IncomingMessage;
 use tsonic_rust_node::NodeError;
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 
 #[test]
 fn repeated_incoming_metadata_queries_allocate_nothing_and_borrow_the_same_data() {
