@@ -41,7 +41,7 @@ impl<TError> RuntimeTasks<TError> {
         &self,
         callback: impl FnOnce() -> Result<(), TError> + 'static,
     ) -> NodeResult<()> {
-        let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+        let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
         if self.owner.get() != Some(owner) {
             return Err(NodeError::new(
                 "ERR_NODE_RUNTIME_TASK_CLOSED",
