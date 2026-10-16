@@ -170,8 +170,8 @@ fn retirement_keeps_uninvoked_frames_for_a_new_explicit_owner() {
     );
     let new_calls = Rc::new(Cell::new(0));
     let observed = Rc::clone(&new_calls);
-    crate::run_entry_with_contexts(
-        || {
+    crate::block_on_with_contexts(
+        async {
             worker.ref_chain();
             worker
                 .on_callable1(
