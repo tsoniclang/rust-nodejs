@@ -81,6 +81,9 @@ impl WorkerChild {
 fn wait_without_reaping(process: u32) -> io::Result<()> {
     loop {
         let mut information = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        // SAFETY: process is the private Child's unreaped PID. information is
+        // writable, aligned siginfo storage live through this call. WNOWAIT
+        // leaves reaping to the Child owner, which serializes it with kill.
         let result = unsafe {
             libc::waitid(
                 libc::P_PID,
@@ -105,6 +108,9 @@ fn wait_without_reaping(handle: *mut std::ffi::c_void) -> io::Result<()> {
     extern "system" {
         fn WaitForSingleObject(handle: *mut std::ffi::c_void, milliseconds: u32) -> u32;
     }
+    // SAFETY: handle belongs to the Child kept alive by the physical reader's
+    // Arc; no method closes or replaces it during this wait. The system ABI
+    // and INFINITE argument match the Windows process-handle API.
     match unsafe { WaitForSingleObject(handle, u32::MAX) } {
         0 => Ok(()),
         u32::MAX => Err(io::Error::last_os_error()),
