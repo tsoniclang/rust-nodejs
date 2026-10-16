@@ -138,6 +138,11 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
                 1,
                 "error frame remains retained while exit is inline"
             );
+            assert!(
+                !worker.state.physical.has_callback_admission(),
+                "native completion does not admit callback tickets"
+            );
+            worker.capture().unwrap();
             assert!(worker.state.physical.exit_admitted());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
