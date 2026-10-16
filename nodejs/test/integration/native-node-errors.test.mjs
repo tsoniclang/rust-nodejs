@@ -94,7 +94,7 @@ test("last-use native errors move without allocation and retain later control-fl
   assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-node-error-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
-  writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport}
+  writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport(root)}
 use native_node_error_cost::{index, program};
 use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime as rt;
@@ -173,7 +173,7 @@ test("native error union dispatch preserves owned payloads without allocation", 
   assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-node-error-union-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
-  writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport}
+  writeFileSync(join(root, "tests/ownership.rs"), `${nativeOwnershipCostSupport(root)}
 use native_node_error_union_cost::index;
 use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime as rt;

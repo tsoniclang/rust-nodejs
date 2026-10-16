@@ -3,10 +3,10 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { rustBorrowedStrTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
 import { runCargo, writeGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
+import { nativeAllocationSupport } from "../../../../tsonic-rust/test/helpers/native-ownership-cost.mjs";
 import { createTsonicPlugin } from "../../../dist/index.js";
 
 test("HTTP metadata operation carriers expose their exact native receiver borrows", () => {
@@ -72,12 +72,10 @@ test("authored incoming metadata views compile and execute without read allocati
   const contains = source.slice(source.indexOf("pub fn contains("), source.indexOf("pub fn categories("));
   assert.doesNotMatch(contains, /String::from|\.clone\(|\.to_owned\(/u);
   const root = writeGeneratedProject("borrowed-http-metadata", result.artifacts);
-  const allocationSupport = fileURLToPath(new URL("../../../../rust-runtime/tests/helpers/allocation_counts.rs", import.meta.url));
   mkdirSync(join(root, "tests"), { recursive: true });
   const nativeTestPath = join(root, "tests", "http_metadata.rs");
   writeFileSync(nativeTestPath, `
-#[path = ${JSON.stringify(allocationSupport)}]
-pub mod allocation_counts;
+${nativeAllocationSupport(root)}
 
 use borrowed_http_metadata::index;
 use tsonic_rust_node::http::IncomingMessage;

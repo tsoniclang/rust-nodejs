@@ -28,7 +28,7 @@ mod native_borrow_effects {
     use super::program::TsonicError;
     use tsonic_rust_node::http::ServerResponse;
     use tsonic_rust_runtime::{Callable, ErrorObject, MutableJsError, WritableErrorObject};
-    ${nativeOwnershipCostSupport}
+    ${nativeOwnershipCostSupport(directory)}
 
     fn handwritten(response: ServerResponse<TsonicError>) -> Result<String, TsonicError> {
         let failure = MutableJsError::error("before");
