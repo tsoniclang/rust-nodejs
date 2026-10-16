@@ -3,7 +3,7 @@ use tsonic_rust_node::runtime_tasks::RuntimeTasks;
 use tsonic_rust_node::zlib::{self, Zlib, ZlibMode};
 use tsonic_rust_node::NodeError;
 
-#[path = "../support/allocation_counts.rs"]
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
 mod allocation_counts;
 
 #[test]
@@ -22,14 +22,14 @@ fn selected_codec_storage_does_not_add_an_owner_allocation() {
         let tasks = RuntimeTasks::<NodeError>::new();
         let handle = tasks.handle();
         let mut codec = None;
-        let allocations = allocation_counts::measure(|| {
+        let allocations = allocation_counts::measure_requests(|| {
             codec = Some(Zlib::<NodeError>::new(handle, mode, None));
         });
         assert_eq!(allocations.0, expected_allocations, "{mode:?}");
         let codec = codec.unwrap();
         let mut alias = None;
         assert_eq!(
-            allocation_counts::measure(|| alias = Some(codec.clone())),
+            allocation_counts::measure_requests(|| alias = Some(codec.clone())),
             (0, 0),
             "{mode:?}",
         );
