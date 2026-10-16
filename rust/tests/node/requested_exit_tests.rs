@@ -8,6 +8,39 @@ use tsonic_rust_runtime::{Callable, JsError, TsonicError};
 
 const STOPPED_ON_REQUESTED_EXIT: &str = "The event loop stopped on a requested exit.";
 
+struct ReportingRoot;
+
+impl std::future::Future for ReportingRoot {
+    type Output = i32;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<i32> {
+        std::task::Poll::Ready(19)
+    }
+}
+
+impl Drop for ReportingRoot {
+    fn drop(&mut self) {
+        JsPromise::<i32>::rejected(JsValue::String(String::from("Node root closing")))
+            .observe_discarded();
+    }
+}
+
+#[test]
+fn a_node_root_drop_rejection_returns_exit_status_without_terminating_the_library() {
+    let (output, status) =
+        tsonic_rust_node::block_on_with_contexts(ReportingRoot, no_contexts()).unwrap();
+    assert_eq!(output, Some(19));
+    assert!(status.exit_requested());
+    assert_eq!(
+        std::process::ExitCode::from(status),
+        std::process::ExitCode::from(1)
+    );
+    assert!(tsonic_rust_js::event_loop::ensure_running().is_err());
+}
+
 fn no_contexts() -> DispatchEnd<TsonicError> {
     DispatchEnd::<TsonicError>::new()
 }
