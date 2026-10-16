@@ -30,9 +30,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAXIMUM_QUEUED_SIGNALS: usize = 1 << 16;
 
 mod completion;
+mod completion_error;
 mod dispatch;
 mod physical_child;
 use completion::{PhysicalSignal, WorkerPhysical};
+pub use completion_error::WorkerCompletionError;
 pub(super) use dispatch::RuntimeWorker;
 use physical_child::WorkerChild;
 
@@ -78,8 +80,7 @@ struct WorkerDelivery {
     owner: Option<DispatchOwner>,
     reader_terminal_seen: bool,
     terminal_consumed: bool,
-    native_failure: Option<NodeError>,
-    native_failure_count: u64,
+    native_failure: Option<WorkerCompletionError>,
 }
 
 impl WorkerDelivery {
@@ -90,22 +91,24 @@ impl WorkerDelivery {
             reader_terminal_seen: false,
             terminal_consumed: false,
             native_failure: None,
-            native_failure_count: 0,
         }
     }
 
     fn record_failure(&mut self, error: NodeError) {
-        if self.native_failure.is_none() {
-            self.native_failure = Some(error);
+        match &mut self.native_failure {
+            Some(first) => first.record_additional(),
+            None => self.native_failure = Some(error.into()),
         }
-        self.native_failure_count = self
-            .native_failure_count
-            .checked_add(1)
-            .expect("finite killed-worker input fits the native error counter");
-        self.native_failure
-            .as_mut()
-            .expect("first native failure retained")
-            .set_additional_unobserved_errors(self.native_failure_count - 1);
+    }
+
+    #[cfg(test)]
+    fn native_failure_count(&self) -> u64 {
+        self.native_failure.as_ref().map_or(0, |error| {
+            error
+                .additional_unobserved_errors()
+                .checked_add(1)
+                .expect("finite native test error count")
+        })
     }
 
     fn consume_native(&mut self, signal: WorkerSignal, physical: &WorkerPhysical) {
@@ -333,12 +336,16 @@ impl WorkerState {
             }));
         }
     }
-    fn finish_native_observation(&self, observed_unowned: bool) -> NodeResult<i32> {
+    fn finish_native_observation(
+        &self,
+        observed_unowned: bool,
+    ) -> Result<i32, WorkerCompletionError> {
         let mut delivery = self.delivery.borrow_mut();
         let process = self
             .physical
             .result()
-            .expect("native process result is published before observation");
+            .expect("native process result is published before observation")
+            .map_err(WorkerCompletionError::from);
         if delivery.owner.is_none() {
             delivery.terminal_consumed = true;
             self.physical.consume_exit();
