@@ -217,6 +217,14 @@ impl WorkerPhysical {
         state.exit_ticket.is_some() && !state.exit_consumed
     }
 
+    #[cfg(test)]
+    pub(super) fn has_callback_admission(&self) -> bool {
+        let state = crate::sync::lock(&self.state);
+        state.frames.iter().any(|frame| frame.ticket.is_some())
+            || state.reader_ticket.is_some()
+            || state.exit_ticket.is_some()
+    }
+
     pub(super) fn snapshot(&self) -> PhysicalSnapshot {
         let state = crate::sync::lock(&self.state);
         PhysicalSnapshot {

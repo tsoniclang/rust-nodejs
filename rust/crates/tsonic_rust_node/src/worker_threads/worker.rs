@@ -276,10 +276,13 @@ impl<E: From<NodeError> + 'static> Worker<E> {
 
 impl WorkerState {
     fn ingest_signals(&self, native_observation: bool) -> NodeResult<()> {
-        if !native_observation || self.delivery.borrow().owner.is_some() {
+        if !native_observation {
             self.physical.admit_frames()?;
             #[cfg(test)]
             completion_tests::at_ingestion_gap();
+            return Ok(());
+        }
+        if self.delivery.borrow().owner.is_some() {
             return Ok(());
         }
         while let Some(signal) = self.next_signal(None, false)? {

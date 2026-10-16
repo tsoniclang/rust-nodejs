@@ -330,6 +330,8 @@ fn owner_bound_native_waiters_register_at_full_capacity_and_ignore_frame_only_pr
             worker.unref();
             assert!(Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)).is_pending(),
                 "owner-bound observation registers even while the physical FIFO is full");
+            assert!(!worker.state.physical.has_callback_admission(),
+                "native status observation cannot assign or consume callback tickets");
             if prefix == 0 {
                 sender.send(native_message(17)).unwrap();
                 assert_eq!(wake.0.load(AtomicOrdering::Relaxed), 0,
@@ -339,6 +341,8 @@ fn owner_bound_native_waiters_register_at_full_capacity_and_ignore_frame_only_pr
             assert_eq!(wake.0.load(AtomicOrdering::Relaxed), 1,
                 "status, not reader-end or per-frame notifications, wakes the owner-bound observer");
             assert!(matches!(Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)), Poll::Ready(Ok(0))));
+            assert!(!worker.state.physical.has_callback_admission(),
+                "only actual callback capture admits the retained prefix and terminal");
             assert_eq!(worker.state.physical.queued_len(), prefix.max(1),
                 "owner-bound completion has not stolen any callback frame");
         }, prepend(&resources, DispatchEnd::<TsonicError>::new())).unwrap();
