@@ -21,7 +21,7 @@ test("selected native file offsets retain width through nullish utilities and al
   assert.doesNotMatch(output, /f64|f32|Option<Option/u);
   const root = writeGeneratedProject("native-file-offsets", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
-  writeFileSync(join(root, "tests/offsets.rs"), `${nativeOwnershipCostSupport}
+  writeFileSync(join(root, "tests/offsets.rs"), `${nativeOwnershipCostSupport(root)}
 use native_file_offsets::index;
 
 #[test]

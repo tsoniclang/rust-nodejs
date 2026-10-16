@@ -36,7 +36,7 @@ test("default UTF-8 file writes retain borrowed strings and handwritten native c
   assert.doesNotMatch(output, /\.clone\(|\.to_owned\(|\.to_string\(|String::|Vec::|Box::/u);
   const root = writeGeneratedProject("native-file-write-default", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
-  writeFileSync(join(root, "tests/writes.rs"), `${nativeOwnershipCostSupport}
+  writeFileSync(join(root, "tests/writes.rs"), `${nativeOwnershipCostSupport(root)}
 use native_file_write_default::index;
 use tsonic_rust_node::{buffer::Buffer, fs};
 use tsonic_rust_runtime::ErrorObject;
