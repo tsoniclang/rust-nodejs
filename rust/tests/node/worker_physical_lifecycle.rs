@@ -309,6 +309,11 @@ fn native_unobserved_errors_after_physical_join() {
         "first native error",
         "first reason is never formatted into a replacement error"
     );
+    assert_eq!(
+        error.additional_unobserved_errors(),
+        1,
+        "public native observation retains the second error as an exact native count"
+    );
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
 }
 
