@@ -488,12 +488,12 @@ fn status_code(status: ExitStatus) -> NodeResult<i32> {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        return status.signal().map(|signal| 128 + signal).ok_or_else(|| {
+        status.signal().map(|signal| 128 + signal).ok_or_else(|| {
             NodeError::new(
                 "ERR_WORKER_EXIT_STATUS",
                 "native Unix process status has neither an exit code nor a signal",
             )
-        });
+        })
     }
     #[cfg(not(unix))]
     Err(NodeError::new(
