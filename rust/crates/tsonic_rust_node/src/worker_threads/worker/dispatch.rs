@@ -2,13 +2,19 @@ use super::*;
 
 impl<E: From<NodeError> + 'static> Worker<E> {
     pub(in crate::worker_threads) fn activate(&self, owner: DispatchOwner) {
-        self.state.delivery.borrow_mut().owner = Some(owner);
+        let previous = self.state.delivery.borrow_mut().owner.replace(owner);
+        if previous != Some(owner) {
+            self.state.physical.owner_changed();
+        }
     }
 
     pub(in crate::worker_threads) fn deactivate(&self) {
-        self.state.delivery.borrow_mut().owner = None;
+        let previous = self.state.delivery.borrow_mut().owner.take();
         self.emitter.remove_all_callable_listeners();
         self.emitter.remove_all_listeners(None);
+        if previous.is_some() {
+            self.state.physical.owner_changed();
+        }
     }
 
     fn ensure_owner(&self) -> NodeResult<()> {
@@ -86,14 +92,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         if self.state.delivery.borrow().owner.is_none() {
             return Ok(None);
         }
-        self.state.ingest_signals(false).map_err(E::from)?;
-        Ok(self
-            .state
-            .delivery
-            .borrow()
-            .pending
-            .back()
-            .map(|(ticket, _)| *ticket))
+        self.state.physical.admit_frames().map_err(E::from)
     }
 
     pub(in crate::worker_threads) fn poll(&self, boundary: Option<TaskTicket>) -> Result<bool, E> {
@@ -106,18 +105,12 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         let mut dispatched = false;
         loop {
             let signal = {
-                let mut delivery = self.state.delivery.borrow_mut();
-                if delivery.owner != Some(selected_owner) {
+                if self.state.delivery.borrow().owner != Some(selected_owner) {
                     break;
                 }
-                if !delivery
-                    .pending
-                    .front()
-                    .is_some_and(|(ticket, _)| *ticket <= boundary)
-                {
-                    break;
-                }
-                delivery.pending.pop_front().map(|(_, signal)| signal)
+                self.state
+                    .next_signal(Some(boundary), true)
+                    .map_err(E::from)?
             };
             let Some(signal) = signal else {
                 break;
@@ -137,8 +130,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                     ("error", std::slice::from_ref(&converted))
                 }
                 WorkerSignal::NativeIoError(error) => {
-                    let snapshot = self.state.physical.snapshot();
-                    if snapshot.termination_requested || snapshot.exit_observed {
+                    if self.state.physical.suppresses_native_io() {
                         continue;
                     }
                     converted = JsValue::String(error.to_string());
@@ -160,9 +152,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
 
     pub(in crate::worker_threads) fn is_refed_active(&self) -> bool {
         let delivery = self.state.delivery.borrow();
-        delivery.owner.is_some()
-            && delivery.refed
-            && (!delivery.pending.is_empty() || !delivery.terminal_consumed)
+        delivery.owner.is_some() && delivery.refed && !delivery.terminal_consumed
     }
 }
 

@@ -20,7 +20,7 @@ use protocol::{io_error, read_frame, write_frame, WorkerFrameKind, WorkerTranspo
 pub use clone::ClonedValue as StructuredCloneValue;
 pub use port::{MessageChannel, MessagePort};
 pub use resources::WorkerResources;
-pub use worker::{Worker, WorkerOptions};
+pub use worker::{Worker, WorkerCompletionError, WorkerOptions};
 
 pub(crate) const WORKER_ARGUMENT_MARKER: &str = "--tsonic-node-worker-v1";
 pub(crate) const WORKER_ARGUMENT_DELIMITER: &str = "--";

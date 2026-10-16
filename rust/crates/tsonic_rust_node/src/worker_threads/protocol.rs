@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -55,48 +55,40 @@ pub(crate) struct WorkerTransport {
 
 impl WorkerTransport {
     pub fn start(stream: TcpStream) -> NodeResult<(Self, Receiver<TransportEvent>)> {
-        Self::start_reader(
+        let (sender, receiver) = sync_channel(MAXIMUM_PENDING_FRAMES);
+        let frames = sender.clone();
+        let transport = Self::start_reader(
             stream,
-            TransportEvent::Frame,
-            || {},
-            |sender, error| {
+            move |frame| frames.send(TransportEvent::Frame(frame)).is_ok(),
+            move |error| {
                 if let Some(error) = error {
                     let _ = sender.send(TransportEvent::Failure(error));
                 }
                 let _ = sender.send(TransportEvent::End);
             },
-        )
+        )?;
+        Ok((transport, receiver))
     }
 
     pub(super) fn start_observed(
         stream: TcpStream,
-        published: impl Fn() + Send + 'static,
+        frame: impl Fn(WorkerFrame) -> bool + Send + 'static,
         terminal: impl FnOnce(Option<NodeError>) + Send + 'static,
-    ) -> NodeResult<(Self, Receiver<WorkerFrame>)> {
-        Self::start_reader(
-            stream,
-            std::convert::identity,
-            published,
-            move |sender, error| {
-                drop(sender);
-                terminal(error);
-            },
-        )
+    ) -> NodeResult<Self> {
+        Self::start_reader(stream, frame, terminal)
     }
 
-    fn start_reader<TEvent: Send + 'static>(
+    fn start_reader(
         stream: TcpStream,
-        frame_event: impl Fn(WorkerFrame) -> TEvent + Send + 'static,
-        published: impl Fn() + Send + 'static,
-        terminal: impl FnOnce(SyncSender<TEvent>, Option<NodeError>) + Send + 'static,
-    ) -> NodeResult<(Self, Receiver<TEvent>)> {
+        frame_event: impl Fn(WorkerFrame) -> bool + Send + 'static,
+        terminal: impl FnOnce(Option<NodeError>) + Send + 'static,
+    ) -> NodeResult<Self> {
         stream
             .set_write_timeout(Some(Duration::from_secs(30)))
             .map_err(io_error)?;
         let reader = stream.try_clone().map_err(io_error)?;
         let writer = Arc::new(Mutex::new(stream));
         let closed = Arc::new(AtomicBool::new(false));
-        let (sender, receiver) = sync_channel(MAXIMUM_PENDING_FRAMES);
         let reader_closed = Arc::clone(&closed);
         let wake = crate::readiness::waker()?;
         thread::Builder::new()
@@ -115,10 +107,9 @@ impl WorkerTransport {
                             ) {
                                 break Some(protocol_error("unexpected worker transport frame"));
                             }
-                            let sent = sender.send(frame_event(frame));
-                            published();
+                            let sent = frame_event(frame);
                             let _ = wake.wake();
-                            if sent.is_err() {
+                            if !sent {
                                 break None;
                             }
                         }
@@ -133,11 +124,11 @@ impl WorkerTransport {
                         }
                     }
                 };
-                terminal(sender, error);
+                terminal(error);
                 let _ = wake.wake();
             })
             .map_err(io_error)?;
-        Ok((Self { writer, closed }, receiver))
+        Ok(Self { writer, closed })
     }
 
     pub fn send(&self, kind: WorkerFrameKind, payload: &[u8]) -> NodeResult<()> {
