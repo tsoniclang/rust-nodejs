@@ -107,3 +107,8 @@ path = "../../tests/node_api_inventory_tests.rs"
 [[test]]
 name = "node_full_api_inventory_tests"
 path = "../../tests/node_full_api_inventory_tests.rs"
+
+[[test]]
+name = "worker_physical_lifecycle"
+path = "../../tests/node/worker_physical_lifecycle.rs"
+harness = false
