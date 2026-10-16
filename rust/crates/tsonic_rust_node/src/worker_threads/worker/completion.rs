@@ -22,6 +22,7 @@ struct PhysicalState {
     frames: VecDeque<QueuedFrame>,
     capacity_waiters: usize,
     consumer_open: bool,
+    callback_active: bool,
     reader_finished: bool,
     reader_error: Option<NodeError>,
     reader_ticket: Option<TaskTicket>,
@@ -67,6 +68,7 @@ impl WorkerPhysical {
                 frames: VecDeque::new(),
                 capacity_waiters: 0,
                 consumer_open: true,
+                callback_active: false,
                 reader_finished: false,
                 reader_error: None,
                 reader_ticket: None,
@@ -102,9 +104,13 @@ impl WorkerPhysical {
             ticket: None,
             frame,
         });
+        let notify_callbacks = state.callback_active;
         let wake = state.native_waiters.take_wakers();
         drop(state);
         wake.wake_all();
+        if notify_callbacks {
+            let _ = self.readiness.wake();
+        }
         true
     }
 
@@ -265,9 +271,10 @@ impl WorkerPhysical {
         Ok(())
     }
 
-    pub(super) fn owner_changed(&self) {
+    pub(super) fn owner_changed(&self, active: bool) {
         let (native, owned) = {
             let mut state = crate::sync::lock(&self.state);
+            state.callback_active = active;
             (
                 state.native_waiters.take_wakers(),
                 state.owned_waiters.take_wakers(),
@@ -275,29 +282,37 @@ impl WorkerPhysical {
         };
         native.wake_all();
         owned.wake_all();
+        if active {
+            let _ = self.readiness.wake();
+        }
     }
 
     pub(super) fn finish_reader(&self, error: Option<NodeError>) {
-        let wake = {
+        let (wake, notify_callbacks) = {
             let mut state = crate::sync::lock(&self.state);
             state.reader_finished = true;
             state.reader_error = error;
-            state.native_waiters.take_wakers()
+            (state.native_waiters.take_wakers(), state.callback_active)
         };
         wake.wake_all();
-        let _ = self.readiness.wake();
+        if notify_callbacks {
+            let _ = self.readiness.wake();
+        }
         let result = self.child.wait().map_err(io_error).and_then(status_code);
-        let (native, owned) = {
+        let (native, owned, notify_callbacks) = {
             let mut state = crate::sync::lock(&self.state);
             state.process = Some(result);
             (
                 state.native_waiters.take_wakers(),
                 state.owned_waiters.take_wakers(),
+                state.callback_active,
             )
         };
         native.wake_all();
         owned.wake_all();
-        let _ = self.readiness.wake();
+        if notify_callbacks {
+            let _ = self.readiness.wake();
+        }
     }
 }
 
