@@ -27,6 +27,8 @@ fn loop_owner_precaptured_handles_bind_once_and_retired_handles_never_reenter() 
         },
         prepend(&tasks, DispatchEnd::<TsonicError>::new()),
     )
+    .unwrap()
+    .0
     .unwrap();
     let calls = Rc::new(Cell::new(0));
     for _ in 0..128 {

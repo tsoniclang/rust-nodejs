@@ -13,6 +13,8 @@ where
 {
     crate::block_on_with_contexts(async { operation() }, contexts)
         .unwrap_or_else(|_| panic!("owning native event loop failed"))
+        .0
+        .expect("the owning native event loop completes its root")
 }
 
 #[test]

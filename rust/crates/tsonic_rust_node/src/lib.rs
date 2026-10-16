@@ -53,4 +53,6 @@ pub mod worker_threads;
 pub mod zlib;
 
 pub use error::{NodeError, NodeResult};
-pub use event_loop::{block_on, block_on_with_contexts, run_event_loop, run_with_contexts};
+pub use event_loop::{
+    block_on, block_on_with_contexts, run_entry_with_contexts, run_event_loop, run_with_contexts,
+};
