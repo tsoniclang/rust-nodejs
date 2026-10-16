@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRustProviderPackage } from "@tsonic/target-rust/provider";
+import { createRustProviderPackage, rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
 import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
 import { nodejsProviderModules } from "./assembly/modules.js";
 import { nodejsProviderModuleSpecifiers } from "./declarations/specifiers.js";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
-import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
+import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits, nativeTrait } from "./model/operations.js";
 import { hashCarrier, hmacCarrier, cryptoCarrier } from "./modules/crypto/carriers.js";
 import {
   httpAddressInfoCarrier,
@@ -342,8 +342,8 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.Stats": cloneOnlyCarrierTraits,
       "rust.node.StatOptions": copyDefaultCarrierTraits,
       "rust.node.BufferDirectoryOptions": cloneDefaultCarrierTraits,
-      "rust.node.FsConstants": { implementations: [{ traitPath: "core::clone::Clone", requirements: [] }, { traitPath: "core::marker::Copy", requirements: [] }] },
-      "rust.node.Dirent": { implementations: [{ traitPath: "core::clone::Clone", requirements: [{ typeArgumentIndex: 0, traitPath: "core::clone::Clone" }] }] },
+      "rust.node.FsConstants": { implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [] }, { trait: nativeTrait("core::marker::Copy"), requirements: [] }] },
+      "rust.node.Dirent": { implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [{ typeArgumentIndex: 0, trait: nativeTrait("core::clone::Clone") }] }] },
       "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
       "rust.node.RmOptions": copyDefaultCarrierTraits,
       "rust.node.Buffer": closedJsValueCarrierTraits,
@@ -374,9 +374,10 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.TextEncoder": copyDefaultCarrierTraits,
       "rust.node.Crypto": copyDefaultCarrierTraits,
       "rust.node.NodeError": { implementations: [...cloneOnlyCarrierTraits.implementations,
-        { traitPath: "tsonic_rust_runtime::ErrorObject", requirements: [] },
-        { traitPath: "tsonic_rust_runtime::ErrorStack", requirements: [] },
-        { traitPath: "tsonic_rust_runtime::ToSourceString", requirements: [] },
+        { trait: nativeTrait("core::convert::Into", [{ kind: "type", type: rustRetainedErrorTargetType() }]), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ErrorObject"), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ErrorStack"), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ToSourceString"), requirements: [] },
       ] },
       "rust.node.Stream": cloneOnlyCarrierTraits,
       "rust.node.Readable": cloneOnlyCarrierTraits,

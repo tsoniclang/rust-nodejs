@@ -11,6 +11,7 @@ import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnion
 import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/errors.js";
+import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
 
 test("Node callbacks retain native errors and exact optional error storage", { timeout: 300_000 }, () => {
   const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
@@ -41,8 +42,12 @@ test("native callback throwing requires exact operand, carrier and registration"
   assert.equal(fact.error.expression, Node_Expression(ast, statement));
   assert.deepEqual(fact.error.conversion.source, { kind: "target-specific", target: "rust", name: "named-type", value: {
     id: "rust.node.NodeError", path: "tsonic_rust_node::NodeError",
-    traits: { implementations: ["core::clone::Clone", "tsonic_rust_runtime::ErrorObject",
-      "tsonic_rust_runtime::ErrorStack", "tsonic_rust_runtime::ToSourceString"].map(traitPath => ({ traitPath, requirements: [] })) },
+    traits: { implementations: [
+      { trait: { kind: "trait-ref", id: "core::clone::Clone", path: "core::clone::Clone", genericArguments: [], associatedConstraints: [] }, requirements: [] },
+      { trait: { kind: "trait-ref", id: "core::convert::Into", path: "core::convert::Into", genericArguments: [{ kind: "type", type: rustRetainedErrorTargetType() }], associatedConstraints: [] }, requirements: [] },
+      ...["tsonic_rust_runtime::ErrorObject", "tsonic_rust_runtime::ErrorStack", "tsonic_rust_runtime::ToSourceString"]
+        .map(path => ({ trait: { kind: "trait-ref", id: path, path, genericArguments: [], associatedConstraints: [] }, requirements: [] })),
+    ] },
     genericArguments: [], genericDefaults: [], upcasts: [],
   } });
   assert.deepEqual(program.providerErrorCarriers, [fact.error.conversion.source]);

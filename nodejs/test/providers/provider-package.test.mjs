@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createTsonicPlugin } from "../../../dist/index.js";
+import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
 
 const expectedModules = [
   "node:assert",
@@ -56,6 +57,15 @@ const expectedModules = [
   "util",
   "url",
 ];
+
+test("NodeError declares its exact native blanket Into<RetainedError> evidence", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const traits = contribution.definition.carrierTraits["rust.node.NodeError"];
+  const conversion = traits.implementations.find(row => row.trait.path === "core::convert::Into");
+  assert.deepEqual(conversion, { trait: { kind: "trait-ref", id: "core::convert::Into", path: "core::convert::Into",
+    genericArguments: [{ kind: "type", type: rustRetainedErrorTargetType() }], associatedConstraints: [] }, requirements: [] });
+  assert.equal(traits.implementations.some(row => Object.hasOwn(row, "traitPath")), false);
+});
 
 function expectedDispatchGroup(targetArgumentIndex) {
   return {
@@ -274,7 +284,7 @@ test("provider type relations carry exact closed target carriers", () => {
     assert.deepEqual(carrier.value.traits, { implementations:
       relation.exportId === "node:zlib::ZlibTransform"
         ? ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
-          .map(traitPath => ({ traitPath, requirements: [] }))
+          .map(path => ({ trait: { kind: "trait-ref", id: path, path, genericArguments: [], associatedConstraints: [] }, requirements: [] }))
         : [],
     });
     return { ...relation, targetCarrier: { kind: "target-named", id: carrier.value.id } };
@@ -398,11 +408,11 @@ test("provider type relations carry exact closed target carriers", () => {
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.Buffer"], {
     implementations: [
       {
-        traitPath: "core::clone::Clone",
+        trait: { kind: "trait-ref", id: "core::clone::Clone", path: "core::clone::Clone", genericArguments: [], associatedConstraints: [] },
         requirements: [],
       },
       {
-        traitPath: "tsonic_rust_js::value::JsClosedValueCarrier",
+        trait: { kind: "trait-ref", id: "tsonic_rust_js::value::JsClosedValueCarrier", path: "tsonic_rust_js::value::JsClosedValueCarrier", genericArguments: [], associatedConstraints: [] },
         requirements: [],
       },
     ],
@@ -796,7 +806,7 @@ test("provider package closes process identity, timing, and memory contracts", (
     contribution.definition.carrierTraits["rust.node.MemoryUsage"],
     {
       implementations: [{
-        traitPath: "core::clone::Clone",
+        trait: { kind: "trait-ref", id: "core::clone::Clone", path: "core::clone::Clone", genericArguments: [], associatedConstraints: [] },
         requirements: [],
       }],
     },

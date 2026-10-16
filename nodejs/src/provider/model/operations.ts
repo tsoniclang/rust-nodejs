@@ -23,15 +23,22 @@ export const sourceCallbackFallibility = {
   nativeErrorCarriers: [nodeErrorCarrier],
 } as const;
 
+export function nativeTrait(
+  path: string,
+  genericArguments: Extract<RustTargetTypeRef, { readonly kind: "trait-ref" }>["genericArguments"] = [],
+): Extract<RustTargetTypeRef, { readonly kind: "trait-ref" }> {
+  return { kind: "trait-ref", id: path, path, genericArguments, associatedConstraints: [] };
+}
+
 export const cloneOnlyCarrierTraits = {
-  implementations: [{ traitPath: "core::clone::Clone", requirements: [] }],
+  implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [] }],
 } as const;
 
 export const closedJsValueCarrierTraits = {
   implementations: [
-    { traitPath: "core::clone::Clone", requirements: [] },
+    { trait: nativeTrait("core::clone::Clone"), requirements: [] },
     {
-      traitPath: "tsonic_rust_js::value::JsClosedValueCarrier",
+      trait: nativeTrait("tsonic_rust_js::value::JsClosedValueCarrier"),
       requirements: [],
     },
   ],
@@ -39,15 +46,15 @@ export const closedJsValueCarrierTraits = {
 
 export const copyDefaultCarrierTraits = {
   implementations: [
-    { traitPath: "core::clone::Clone", requirements: [] },
-    { traitPath: "core::default::Default", requirements: [] },
-    { traitPath: "core::marker::Copy", requirements: [] },
+    { trait: nativeTrait("core::clone::Clone"), requirements: [] },
+    { trait: nativeTrait("core::default::Default"), requirements: [] },
+    { trait: nativeTrait("core::marker::Copy"), requirements: [] },
   ],
 } as const;
 
 export const cloneDefaultCarrierTraits = {
   implementations: [
-    { traitPath: "core::clone::Clone", requirements: [] },
-    { traitPath: "core::default::Default", requirements: [] },
+    { trait: nativeTrait("core::clone::Clone"), requirements: [] },
+    { trait: nativeTrait("core::default::Default"), requirements: [] },
   ],
 } as const;
