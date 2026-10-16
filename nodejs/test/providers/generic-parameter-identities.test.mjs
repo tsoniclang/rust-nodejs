@@ -43,7 +43,7 @@ test("Readable pipe preserves its destination binding through parameters, result
 test("Zlib native equality traits agree at the binding and operation producers", () => {
   const [contribution] = createTsonicPlugin().createTargetContributions({});
   const traits = { implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
-    .map(traitPath => ({ traitPath, requirements: [] })) };
+    .map(path => ({ trait: { kind: "trait-ref", id: path, path, genericArguments: [], associatedConstraints: [] }, requirements: [] })) };
   assert.deepEqual(contribution.definition.carrierTraits["rust.node.ZlibTransform"], traits);
   const binding = contribution.definition.types.find(row => row.exportId === "node:zlib::ZlibTransform");
   assert.ok(binding);

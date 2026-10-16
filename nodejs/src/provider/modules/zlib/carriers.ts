@@ -2,6 +2,7 @@ import { rustCallableTargetType, rustNamedTargetType, rustOptionTargetType } fro
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "../buffer/carriers.js";
 import { nodeErrorCarrier, unitCarrier, nodeProgramErrorArguments } from "../../model/carriers.js";
+import { nativeTrait } from "../../model/operations.js";
 import { duplexCarrier, readableCarrier, streamCarrier, transformCarrier, writableCarrier } from "../stream/carriers.js";
 
 export const zlibOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ZlibOptions" };
@@ -10,7 +11,7 @@ export const brotliOptionsCarrier: RustTargetTypeRef = { kind: "target-named", i
 
 export const zlibTransformTraits = {
   implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
-    .map(traitPath => ({ traitPath, requirements: [] })),
+    .map(path => ({ trait: nativeTrait(path), requirements: [] })),
 };
 
 export const zlibTransformCarrier: RustTargetTypeRef = rustNamedTargetType(

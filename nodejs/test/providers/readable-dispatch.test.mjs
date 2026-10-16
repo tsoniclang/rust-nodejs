@@ -36,7 +36,7 @@ test("every advertised readable factory retains the exact owning typed task hand
     assert.equal(readOptions.signatures[0].parameters.length, 1, "no authored scheduler argument");
     for (const carrier of ["Readable", "Duplex", "Transform", "ReadlineOptions"]) {
       assert.equal(definition.carrierTraits[`rust.node.${carrier}`].implementations
-        .some(row => row.traitPath === "core::default::Default"), false, carrier);
+        .some(row => row.trait.path === "core::default::Default"), false, carrier);
     }
   }
 });
