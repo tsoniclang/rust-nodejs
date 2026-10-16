@@ -13,7 +13,7 @@ use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
 use tsonic_rust_runtime::{Callable, TsonicError};
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 
 fn main() {
     let arguments: Vec<_> = std::env::args().skip(1).collect();

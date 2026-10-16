@@ -13,7 +13,7 @@ use tsonic_rust_runtime::dispatch::{poll_phase, DispatchContexts};
 use tsonic_rust_runtime::Callable;
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 use allocation_counts::measure_requests;
 
 #[test]

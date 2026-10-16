@@ -4,7 +4,7 @@ use tsonic_rust_node::zlib::{self, Zlib, ZlibMode};
 use tsonic_rust_node::NodeError;
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 
 #[test]
 fn selected_codec_storage_does_not_add_an_owner_allocation() {

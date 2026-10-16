@@ -9,7 +9,7 @@ use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 use tsonic_rust_runtime::TsonicError;
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 use allocation_counts::measure_requests;
 
 struct Failure(TsonicError);

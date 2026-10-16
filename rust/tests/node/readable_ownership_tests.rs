@@ -10,7 +10,7 @@ use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 use tsonic_rust_runtime::Callable;
 
 #[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
-mod allocation_counts;
+pub mod allocation_counts;
 
 #[test]
 fn final_chunk_returns_before_exactly_once_end_and_close() {
