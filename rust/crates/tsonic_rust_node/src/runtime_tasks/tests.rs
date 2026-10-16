@@ -64,29 +64,32 @@ fn loop_owner_precaptured_handles_bind_once_and_retired_handles_never_reenter() 
 #[test]
 fn loop_owner_unwind_cancels_native_captures_once_outside_the_queue_borrow() {
     use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::dispatch_queue::TaskQueueError;
     struct Reenter {
         tasks: Rc<RuntimeTasks<TsonicError>>,
+        queue: TaskHandle<TsonicError>,
         drops: Rc<Cell<usize>>,
     }
     impl Drop for Reenter {
         fn drop(&mut self) {
-            let error = self.tasks.enqueue(|| Ok(())).unwrap_err();
             assert_eq!(
-                error.message(),
-                "No JavaScript event loop is running on this thread."
+                self.queue.enqueue(|| Ok(())).unwrap_err(),
+                TaskQueueError::Closed
             );
+            assert!(!self.tasks.has_pending_work());
             self.drops.set(self.drops.get() + 1);
         }
     }
     let tasks = Rc::new(RuntimeTasks::<TsonicError>::new());
     let drops = Rc::new(Cell::new(0));
-    let capture = Reenter {
-        tasks: Rc::clone(&tasks),
-        drops: Rc::clone(&drops),
-    };
     let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         crate::block_on_with_contexts(
             async {
+                let capture = Reenter {
+                    tasks: Rc::clone(&tasks),
+                    queue: tasks.handle(),
+                    drops: Rc::clone(&drops),
+                };
                 tasks
                     .enqueue(move || {
                         drop(capture);
