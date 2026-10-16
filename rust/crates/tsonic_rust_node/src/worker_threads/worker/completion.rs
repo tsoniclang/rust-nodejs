@@ -49,6 +49,8 @@ pub(super) enum PhysicalSignal {
 pub(super) struct PhysicalSnapshot {
     #[cfg(test)]
     pub(super) reader_finished: bool,
+    #[cfg(test)]
+    pub(super) callback_active: bool,
     pub(super) process_finished: bool,
 }
 
@@ -199,6 +201,7 @@ impl WorkerPhysical {
         let (discarded, notify) = {
             let mut state = crate::sync::lock(&self.state);
             state.consumer_open = false;
+            state.callback_active = false;
             (
                 std::mem::take(&mut state.frames),
                 state.capacity_waiters != 0,
@@ -239,6 +242,8 @@ impl WorkerPhysical {
         PhysicalSnapshot {
             #[cfg(test)]
             reader_finished: state.reader_finished,
+            #[cfg(test)]
+            callback_active: state.callback_active,
             process_finished: state.process.is_some(),
         }
     }

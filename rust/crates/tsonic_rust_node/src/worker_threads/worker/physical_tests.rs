@@ -941,6 +941,34 @@ fn native_observation_error_layout_matches_the_required_handwritten_count_carrie
 }
 
 #[test]
+fn dropping_the_physical_consumer_retires_its_callback_notification_availability() {
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let physical = Arc::clone(&state.physical);
+    let worker = Worker::<TsonicError> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let resources = WorkerResources::<TsonicError>::new();
+    crate::block_on_with_contexts(
+        async {
+            resources.register_worker(&worker).unwrap();
+            worker.unref();
+            assert!(
+                physical.snapshot().callback_active,
+                "the selected real owner published callback availability"
+            );
+            drop(worker);
+            assert!(
+                !physical.snapshot().callback_active,
+                "actual consumer drop retires callback availability before late reader completion"
+            );
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+}
+
+#[test]
 fn common_node_error_layout_and_equality_match_the_unchanged_native_base() {
     #[derive(PartialEq, Eq)]
     struct NativeFirstError {
