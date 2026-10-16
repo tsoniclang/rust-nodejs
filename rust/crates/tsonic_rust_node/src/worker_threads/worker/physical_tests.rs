@@ -551,7 +551,7 @@ fn owner_retirement_wakes_the_existing_observer_and_releases_the_saturated_physi
 fn public_terminate_drains_an_actually_saturated_native_reader_without_a_js_owner() {
     let (worker, _control) = super::completion_tests::live_native_worker("saturated");
     let deadline = Instant::now() + Duration::from_secs(10);
-    while worker.state.physical.snapshot().change < MAXIMUM_QUEUED_SIGNALS as u64 {
+    while worker.state.physical.queued_len() < MAXIMUM_QUEUED_SIGNALS {
         assert!(
             Instant::now() < deadline,
             "native reader must fill its actual bounded channel"
@@ -711,12 +711,16 @@ fn physical_consumer_drop_releases_an_actually_blocked_reader() {
 #[test]
 fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() {
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU64};
+    struct NativeQueue {
+        frames: VecDeque<WorkerFrame>,
+        waiter: Option<Waker>,
+    }
     let (state, _sender, _peer) = completed_process_with_pending_transport();
-    let queue = Mutex::new(VecDeque::with_capacity(1));
+    let queue = Mutex::new(NativeQueue {
+        frames: VecDeque::with_capacity(1),
+        waiter: None,
+    });
     let capacity = Condvar::new();
-    let revision = AtomicU64::new(0);
-    let waiting = AtomicBool::new(false);
     let empty = || WorkerFrame {
         kind: WorkerFrameKind::Message,
         payload: Vec::new(),
@@ -733,14 +737,16 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
         let start = Instant::now();
         for _ in 0..iterations {
             let mut pending = queue.lock().unwrap();
-            while pending.len() == MAXIMUM_QUEUED_SIGNALS {
+            while pending.frames.len() == MAXIMUM_QUEUED_SIGNALS {
                 pending = capacity.wait(pending).unwrap();
             }
-            pending.push_back(empty());
+            pending.frames.push_back(empty());
+            let wake = pending.waiter.take();
             drop(pending);
-            revision.fetch_add(1, AtomicOrdering::SeqCst);
-            assert!(!waiting.load(AtomicOrdering::SeqCst));
-            assert!(queue.lock().unwrap().pop_front().is_some());
+            if let Some(waker) = wake {
+                waker.wake();
+            }
+            assert!(queue.lock().unwrap().frames.pop_front().is_some());
             capacity.notify_one();
         }
         baseline.push(start.elapsed().as_nanos());
@@ -756,9 +762,8 @@ fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() 
     }
     actual.sort_unstable();
     baseline.sort_unstable();
-    println!("P05_NATIVE_FIFO_COST iterations={iterations} actual_ns={} handwritten_ns={} ratio={:.6} mutexes_per_rotation=2 publication_rmw=1 flag_load=1 payload_copies=0 extra_queue=0", actual[3], baseline[3], actual[3] as f64 / baseline[3] as f64);
+    println!("P05_NATIVE_FIFO_COST iterations={iterations} actual_ns={} handwritten_ns={} ratio={:.6} mutexes_per_rotation=2 publication_rmw=0 flag_load=0 payload_copies=0 extra_queue=0", actual[3], baseline[3], actual[3] as f64 / baseline[3] as f64);
     assert_eq!(state.physical.queued_len(), 0);
-    assert_eq!(revision.load(AtomicOrdering::SeqCst), iterations * 7);
 }
 
 #[test]

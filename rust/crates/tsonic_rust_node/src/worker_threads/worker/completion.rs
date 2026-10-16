@@ -4,7 +4,6 @@ use crate::error::{NodeError, NodeResult};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, Waker};
 use tsonic_rust_runtime::dispatch_queue::TaskTicket;
@@ -12,8 +11,6 @@ use tsonic_rust_runtime::dispatch_queue::TaskTicket;
 pub(super) struct WorkerPhysical {
     pub(super) child: WorkerChild,
     state: Mutex<PhysicalState>,
-    change: AtomicU64,
-    waiting: AtomicBool,
     readiness: Arc<mio::Waker>,
     capacity: Condvar,
 }
@@ -49,7 +46,6 @@ pub(super) struct PhysicalSnapshot {
     #[cfg(test)]
     pub(super) reader_finished: bool,
     pub(super) process_finished: bool,
-    pub(super) change: u64,
 }
 
 impl WorkerPhysical {
@@ -79,8 +75,6 @@ impl WorkerPhysical {
                 termination_requested: false,
                 waiters: WorkerCompletionWaiters::default(),
             }),
-            change: AtomicU64::new(0),
-            waiting: AtomicBool::new(false),
             readiness,
             capacity: Condvar::new(),
         })
@@ -111,8 +105,9 @@ impl WorkerPhysical {
             ticket: None,
             frame,
         });
+        let wake = state.waiters.take_wakers();
         drop(state);
-        self.published();
+        wake.wake_all();
         true
     }
 
@@ -184,6 +179,7 @@ impl WorkerPhysical {
         Some(signal)
     }
 
+    #[cfg(test)]
     pub(super) fn native_drained(&self) -> bool {
         let state = crate::sync::lock(&self.state);
         state.frames.is_empty() && state.reader_consumed
@@ -225,7 +221,6 @@ impl WorkerPhysical {
             #[cfg(test)]
             reader_finished: state.reader_finished,
             process_finished: state.process.is_some(),
-            change: self.change.load(Ordering::SeqCst),
         }
     }
 
@@ -257,30 +252,27 @@ impl WorkerPhysical {
         Ok(())
     }
 
-    pub(super) fn published(&self) {
-        self.change.fetch_add(1, Ordering::SeqCst);
-        if self.waiting.load(Ordering::SeqCst) {
-            let wake = {
-                let mut state = crate::sync::lock(&self.state);
-                let wake = state.waiters.take_wakers();
-                self.waiting.store(false, Ordering::SeqCst);
-                wake
-            };
-            wake.wake_all();
-        }
+    pub(super) fn owner_changed(&self) {
+        let wake = crate::sync::lock(&self.state).waiters.take_wakers();
+        wake.wake_all();
     }
 
     pub(super) fn finish_reader(&self, error: Option<NodeError>) {
-        {
+        let wake = {
             let mut state = crate::sync::lock(&self.state);
             state.reader_finished = true;
             state.reader_error = error;
-        }
-        self.published();
+            state.waiters.take_wakers()
+        };
+        wake.wake_all();
         let _ = self.readiness.wake();
         let result = self.child.wait().map_err(io_error).and_then(status_code);
-        crate::sync::lock(&self.state).process = Some(result);
-        self.published();
+        let wake = {
+            let mut state = crate::sync::lock(&self.state);
+            state.process = Some(result);
+            state.waiters.take_wakers()
+        };
+        wake.wake_all();
         let _ = self.readiness.wake();
     }
 }
@@ -415,71 +407,68 @@ impl Future for WorkerCompletion<'_> {
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let waiting = self.get_mut();
         let physical = &waiting.state.physical;
+        let mut prepared = None;
         loop {
-            let before = physical.snapshot().change;
-            {
-                waiting.observed_unowned |= waiting.state.delivery.borrow().owner.is_none();
-                waiting.state.ingest_signals(true)?;
-                #[cfg(test)]
-                super::completion_tests::at_observation_gap();
-                let delivery_ready = {
-                    let delivery = waiting.state.delivery.borrow();
-                    delivery.owner.is_some() || physical.native_drained()
-                };
-                if physical.snapshot().process_finished && delivery_ready {
-                    let result = waiting
-                        .state
-                        .finish_native_observation(waiting.observed_unowned);
-                    return Poll::Ready(result);
-                }
-            }
-            let mut prepared = None;
-            let changed = loop {
-                let mut state = crate::sync::lock(&physical.state);
-                let identity = waiting
-                    .registration
-                    .filter(|identity| state.waiters.get(*identity).is_some());
-                let matches = identity.is_some_and(|identity| {
-                    state
-                        .waiters
-                        .get(identity)
-                        .is_some_and(|waker| waker.will_wake(context.waker()))
-                });
-                if !matches && prepared.is_none() {
-                    drop(state);
-                    prepared = Some(context.waker().clone());
-                    continue;
-                }
-                let previous = if matches {
-                    None
-                } else if let Some(identity) = identity {
-                    Some(state.waiters.replace(
-                        identity,
-                        prepared.take().expect("prepared replacement native waker"),
-                    ))
-                } else {
-                    match state.waiters.register(&mut prepared) {
-                        Ok(identity) => {
-                            waiting.registration = Some(identity);
-                            None
-                        }
-                        Err(error) => {
-                            drop(state);
-                            return Poll::Ready(Err(error));
-                        }
-                    }
-                };
-                physical.waiting.store(true, Ordering::SeqCst);
-                let changed =
-                    before != physical.change.load(Ordering::SeqCst) || state.process.is_some();
+            waiting.observed_unowned |= waiting.state.delivery.borrow().owner.is_none();
+            waiting.state.ingest_signals(true)?;
+            #[cfg(test)]
+            super::completion_tests::at_observation_gap();
+            let owned = waiting.state.delivery.borrow().owner.is_some();
+            let mut state = crate::sync::lock(&physical.state);
+            let drained = state.frames.is_empty() && state.reader_consumed;
+            if state.process.is_some() && (owned || drained) {
                 drop(state);
-                drop(previous);
                 drop(prepared);
-                break changed;
-            };
-            if !changed {
-                return Poll::Pending;
+                return Poll::Ready(
+                    waiting
+                        .state
+                        .finish_native_observation(waiting.observed_unowned),
+                );
             }
+            if !owned
+                && (!state.frames.is_empty() || (state.reader_finished && !state.reader_consumed))
+            {
+                drop(state);
+                continue;
+            }
+            let identity = waiting
+                .registration
+                .filter(|identity| state.waiters.get(*identity).is_some());
+            let matches = identity.is_some_and(|identity| {
+                state
+                    .waiters
+                    .get(identity)
+                    .is_some_and(|waker| waker.will_wake(context.waker()))
+            });
+            if !matches && prepared.is_none() {
+                drop(state);
+                prepared = Some(context.waker().clone());
+                continue;
+            }
+            let previous = if matches {
+                None
+            } else if let Some(identity) = identity {
+                Some(state.waiters.replace(
+                    identity,
+                    prepared.take().expect("prepared replacement native waker"),
+                ))
+            } else {
+                match state.waiters.register(&mut prepared) {
+                    Ok(identity) => {
+                        waiting.registration = Some(identity);
+                        None
+                    }
+                    Err(error) => {
+                        drop(state);
+                        drop(prepared);
+                        return Poll::Ready(Err(error));
+                    }
+                }
+            };
+            drop(state);
+            drop(previous);
+            drop(prepared);
+            return Poll::Pending;
         }
     }
 }
@@ -491,44 +480,5 @@ impl Drop for WorkerCompletion<'_> {
             let removed = crate::sync::lock(&physical.state).waiters.remove(identity);
             drop(removed);
         }
-    }
-}
-
-#[cfg(test)]
-mod ordering_tests {
-    #[test]
-    fn sequentially_consistent_registration_and_publication_cannot_both_miss() {
-        let mut schedules = 0;
-        for register in 0..4 {
-            for recheck in register + 1..4 {
-                let mut publisher = (0..4).filter(|step| *step != register && *step != recheck);
-                let publication = publisher.next().unwrap();
-                let inspect = publisher.next().unwrap();
-                let mut waiting = false;
-                let mut change = false;
-                let mut changed = false;
-                let mut notified = false;
-                for step in 0..4 {
-                    if step == register {
-                        waiting = true;
-                    } else if step == recheck {
-                        changed = change;
-                    } else if step == publication {
-                        change = true;
-                    } else if step == inspect {
-                        notified = waiting;
-                    }
-                }
-                assert!(
-                    changed || notified,
-                    "SC recheck or SC publisher observes the other side"
-                );
-                schedules += 1;
-            }
-        }
-        assert_eq!(
-            schedules, 6,
-            "every program-order-preserving SC interleaving"
-        );
     }
 }

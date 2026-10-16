@@ -160,15 +160,17 @@ fn native_termination_without_a_js_owner(selected: Option<&str>) {
         &resources,
     );
     let _control = accept_ready(&listener);
-    assert!(
-        worker
-            .on_callable(
-                &JsValue::String("message".to_owned()),
-                &Callable::new(|()| Ok::<(), TsonicError>(()))
-            )
-            .is_err(),
-        "callback admission still requires explicit owner"
-    );
+    if selected.is_none() || selected == Some("construction") {
+        assert!(
+            worker
+                .on_callable(
+                    &JsValue::String("message".to_owned()),
+                    &Callable::new(|()| Ok::<(), TsonicError>(()))
+                )
+                .is_err(),
+            "callback admission still requires explicit owner"
+        );
+    }
     if selected.is_none() || selected == Some("cancellation") {
         let mut cancelled = std::pin::pin!(worker.terminate());
         let _ = cancelled

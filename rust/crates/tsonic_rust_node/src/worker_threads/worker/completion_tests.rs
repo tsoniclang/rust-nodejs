@@ -397,6 +397,49 @@ fn observed_waker(identity: usize, invoked: &Arc<Mutex<Vec<usize>>>) -> Waker {
 }
 
 #[test]
+fn publication_before_native_registration_is_consumed_before_waiting_for_the_next_frame() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    let invoked = Arc::new(Mutex::new(Vec::new()));
+    let waker = observed_waker(1, &invoked);
+    let first = Arc::clone(&state.physical);
+    OBSERVATION_GAP.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move || {
+            assert!(first.enqueue_frame(native_message(17)));
+        }));
+    });
+    let mut observer = completion::WorkerCompletion::new(&state);
+    assert!(Pin::new(&mut observer)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    assert_eq!(
+        state.physical.queued_len(),
+        0,
+        "the publication before registration is observed under the queue mutex"
+    );
+    assert!(
+        invoked.lock().unwrap().is_empty(),
+        "catch-up consumption needs no artificial self-wake"
+    );
+    sender.send(native_message(18)).unwrap();
+    assert_eq!(
+        *invoked.lock().unwrap(),
+        [1],
+        "the next publication sees the registration under the same queue mutex"
+    );
+    assert!(Pin::new(&mut observer)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    assert_eq!(state.physical.queued_len(), 0);
+    assert!(!state.physical.snapshot().reader_finished);
+    drop(sender);
+    state.physical.finish_reader(None);
+    assert!(matches!(
+        Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)),
+        Poll::Ready(Ok(0))
+    ));
+}
+
+#[test]
 fn native_completion_cancels_replaces_and_wakes_concurrent_waiters_once() {
     let (state, sender, _peer) = completed_process_with_pending_transport();
     let invoked = Arc::new(Mutex::new(Vec::new()));
