@@ -36,6 +36,10 @@ command-fds = "=0.3.3"
 signal-hook = "=0.3.18"
 nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal", "user", "fs", "term"] }
 
+[dev-dependencies]
+syn = { version = "2.0.118", features = ["full", "visit"] }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+
 [[test]]
 name = "no_forbidden_shortcuts"
 path = "../../tests/architecture/no_forbidden_shortcuts.rs"
