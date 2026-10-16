@@ -46,10 +46,7 @@ fn native_mixed_messages_errors_and_close_replay_their_physical_admission_order(
         let mut expected = Vec::new();
         for index in 0..4 {
             if pattern & (1 << index) == 0 {
-                channel
-                    .port1
-                    .post_message(JsValue::Integer(index))
-                    .unwrap();
+                channel.port1.post_message(JsValue::Integer(index)).unwrap();
                 expected.push(format!("message:{index}"));
             } else {
                 channel
@@ -95,9 +92,16 @@ fn native_mixed_messages_errors_and_close_replay_their_physical_admission_order(
                     }),
                 )
                 .unwrap();
-            assert!(observed.borrow().is_empty(), "native callbacks stay deferred");
+            assert!(
+                observed.borrow().is_empty(),
+                "native callbacks stay deferred"
+            );
             assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
-            assert_eq!(*observed.borrow(), expected, "physical signal order {pattern}");
+            assert_eq!(
+                *observed.borrow(),
+                expected,
+                "physical signal order {pattern}"
+            );
             assert!(!poll_phase(&resources, crate::phases::PORTS).unwrap());
         });
     }
@@ -155,7 +159,10 @@ fn reentrant_errors_and_messages_wait_for_the_next_physical_frontier() {
         assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
         assert_eq!(observed.borrow().as_slice(), ["first"]);
         assert!(poll_phase(&resources, crate::phases::PORTS).unwrap());
-        assert_eq!(observed.borrow().as_slice(), ["first", "message", "reentrant"]);
+        assert_eq!(
+            observed.borrow().as_slice(),
+            ["first", "message", "reentrant"]
+        );
         assert!(!poll_phase(&resources, crate::phases::PORTS).unwrap());
         channel.port2.unref();
     });

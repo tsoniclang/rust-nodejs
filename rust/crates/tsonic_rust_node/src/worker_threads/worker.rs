@@ -29,6 +29,9 @@ use super::{
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAXIMUM_QUEUED_SIGNALS: usize = 1 << 16;
 
+#[cfg(test)]
+mod completion_tests;
+
 #[derive(Clone)]
 pub struct WorkerOptions {
     pub name: Option<String>,
@@ -132,7 +135,12 @@ impl<E: From<NodeError> + 'static> Worker<E> {
             &listener,
             startup.child.as_mut().expect("starting native worker"),
         )?;
-        let authentication = read_frame(&mut stream)?;
+        let authentication = read_frame(&mut stream)?.ok_or_else(|| {
+            NodeError::new(
+                "ERR_WORKER_AUTHENTICATION",
+                "worker transport ended before authentication",
+            )
+        })?;
         if authentication.kind != WorkerFrameKind::Authenticate
             || !constant_time_equal(&authentication.payload, &token)
         {
@@ -193,7 +201,7 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                 state.child.kill().map_err(io_error)?;
                 let status = state.child.wait().map_err(io_error)?;
                 let exit_code = status_code(status);
-                state.complete(exit_code)?;
+                state.exit_code = Some(exit_code);
                 exit_code
             }
         };
@@ -344,7 +352,10 @@ impl WorkerState {
                             ),
                         ));
                     }
-                    WorkerFrameKind::Close => break,
+                    WorkerFrameKind::Close => {
+                        self.transport_ended = true;
+                        break;
+                    }
                     _ => self.pending.push_back((
                         super::resources::admit_signal()?,
                         WorkerSignal::Error("unexpected worker transport frame".to_string()),
@@ -364,10 +375,14 @@ impl WorkerState {
                 Err(TryRecvError::Empty) => break,
             }
         }
-        if !self.complete && self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
+        if self.exit_code.is_none() {
             if let Some(status) = self.child.try_wait().map_err(io_error)? {
-                let code = status_code(status);
-                self.complete(code)?;
+                self.exit_code = Some(status_code(status));
+            }
+        }
+        if !self.complete && self.transport_ended && self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
+            if let Some(exit_code) = self.exit_code {
+                self.complete(exit_code)?;
             }
         }
         Ok(())
