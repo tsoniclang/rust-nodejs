@@ -202,7 +202,7 @@ fn schedule_callable<'environment, TError>(
     delay_ms: u64,
     interval: bool,
 ) -> NodeResult<Timeout<Callable<'environment, (), Result<(), TError>>>> {
-    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+    let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
     if !timers.belongs_to(owner) {
         return Err(NodeError::new(
             "ERR_NODE_TIMER_CLOSED",
@@ -252,7 +252,7 @@ fn schedule(
     interval: bool,
     options: TimerOptions,
 ) -> NodeResult<Timeout> {
-    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(NodeError::from)?;
+    let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
     with_default(|timers| {
         if !timers.belongs_to(owner) {
             return Err(NodeError::new(

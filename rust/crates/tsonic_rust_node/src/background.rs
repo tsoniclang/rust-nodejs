@@ -190,7 +190,7 @@ impl<TError: From<crate::NodeError>> BackgroundHandle<TError> {
 }
 
 fn reserve_background_task() -> crate::NodeResult<TaskReservation> {
-    tsonic_rust_js::event_loop::ensure_running().map_err(crate::NodeError::from)?;
+    tsonic_rust_js::event_loop::require_dispatch_owner();
     background_task_budget()
         .reserve()
         .map_err(|error| crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string()))
@@ -205,8 +205,8 @@ fn spawn_on_source<TResult, TError: From<crate::NodeError>>(
 where
     TResult: Send + 'static,
 {
+    let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
     let wake = tsonic_rust_js::event_loop::dispatch_handle().map_err(crate::NodeError::from)?;
-    let owner = tsonic_rust_js::event_loop::dispatch_owner().map_err(crate::NodeError::from)?;
     let id = reservation.ticket();
     let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
     let completion_sender = {
