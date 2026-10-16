@@ -290,12 +290,13 @@ impl WorkerState {
                 delivery.consume_native(signal, &self.physical);
             }
         }
-        let mut exhausted = false;
+        let mut disconnected = false;
         while native || delivery.pending.len() < MAXIMUM_QUEUED_SIGNALS {
             let frame = match self.incoming.try_recv() {
                 Ok(frame) => frame,
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => {
-                    exhausted = true;
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    disconnected = true;
                     break;
                 }
             };
@@ -320,8 +321,10 @@ impl WorkerState {
                     .push_back((super::resources::admit_signal()?, signal));
             }
         }
+        #[cfg(test)]
+        completion_tests::at_ingestion_gap();
         let snapshot = self.physical.snapshot();
-        if exhausted
+        if disconnected
             && snapshot.reader_finished
             && !delivery.reader_terminal_seen
             && (native || delivery.pending.len() < MAXIMUM_QUEUED_SIGNALS)
@@ -342,7 +345,7 @@ impl WorkerState {
             }
             delivery.reader_terminal_seen = true;
         }
-        if exhausted
+        if disconnected
             && delivery.reader_terminal_seen
             && snapshot.process_finished
             && !delivery.exit_queued

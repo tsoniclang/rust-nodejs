@@ -29,6 +29,7 @@ fn main() {
     }
     retained_prefix_with_later_explicit_owner();
     native_unobserved_errors_after_physical_join();
+    default_ref_without_listeners_reaches_real_physical_completion();
     println!("P05 public native lifecycle: native executor, cancellation, concurrent waiters, retained FIFO, unobserved errors passed");
 }
 
@@ -260,6 +261,40 @@ fn native_unobserved_errors_after_physical_join() {
     assert_eq!(error.code(), "ERR_WORKER_ERROR");
     assert!(error.message().starts_with("first native error"));
     assert!(error.message().contains("1 additional"));
+    assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
+}
+
+fn default_ref_without_listeners_reaches_real_physical_completion() {
+    let listener = control();
+    let resources = WorkerResources::<TsonicError>::new();
+    let mut retained = None;
+    let ((), _) = tsonic_rust_node::run_entry_with_contexts(
+        || {
+            retained = Some(
+                Worker::spawn_with_options(
+                    "native-pending",
+                    WorkerOptions {
+                        argv: Some(JsArray::from_dense(vec![listener
+                            .local_addr()
+                            .unwrap()
+                            .port()
+                            .to_string()])),
+                        ..WorkerOptions::default()
+                    },
+                    &resources,
+                )
+                .unwrap(),
+            );
+            let mut control = accept_ready(&listener);
+            control.write_all(&[1]).unwrap();
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+    let worker = retained.unwrap();
+    let mut completion = std::pin::pin!(worker.terminate());
+    assert!(matches!(completion.as_mut().poll(&mut Context::from_waker(Waker::noop())), Poll::Ready(Ok(0))),
+        "default-ref without any listeners keeps the actual reader and process alive through physical completion");
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
 }
 

@@ -19,6 +19,7 @@ fn no_owner_retains_a_full_prefix_until_explicit_native_observation() {
         state.delivery.borrow().pending.is_empty(),
         "construction does not consume physical frames"
     );
+    drop(sender);
     state.physical.finish_reader(None);
     assert!(
         !state.delivery.borrow().terminal_consumed,
@@ -58,6 +59,7 @@ fn ownerless_errors_preserve_the_first_reason_and_count_every_later_error() {
             })
             .unwrap();
     }
+    drop(sender);
     state.physical.finish_reader(None);
     let mut observer = completion::WorkerCompletion::new(&state);
     let Poll::Ready(Err(error)) =
@@ -99,6 +101,7 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
                     payload: b"retired native reason".to_vec(),
                 })
                 .unwrap();
+            drop(sender);
             worker.state.physical.finish_reader(None);
             let mut observer = completion::WorkerCompletion::new(&worker.state);
             assert!(
@@ -185,6 +188,7 @@ fn retirement_keeps_uninvoked_frames_for_a_new_explicit_owner() {
                     }),
                 )
                 .unwrap();
+            drop(sender);
             worker.state.physical.finish_reader(None);
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
@@ -215,7 +219,7 @@ impl Wake for ReentrantWake {
 
 #[test]
 fn native_readiness_invokes_reentrant_wakers_outside_the_physical_mutex() {
-    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let (state, sender, _peer) = completed_process_with_pending_transport();
     let wake = Arc::new(ReentrantWake {
         physical: Arc::downgrade(&state.physical),
         calls: AtomicUsize::new(0),
@@ -225,6 +229,7 @@ fn native_readiness_invokes_reentrant_wakers_outside_the_physical_mutex() {
     assert!(Pin::new(&mut observer)
         .poll(&mut Context::from_waker(&waker))
         .is_pending());
+    drop(sender);
     state.physical.finish_reader(None);
     assert_eq!(wake.calls.load(AtomicOrdering::Relaxed), 1);
     assert!(matches!(
@@ -248,7 +253,7 @@ impl Wake for ModeWake {
 
 #[test]
 fn retiring_callback_ownership_wakes_a_pending_native_observer_without_new_io() {
-    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let (state, sender, _peer) = completed_process_with_pending_transport();
     let worker = Worker::<TsonicError> {
         state: Rc::new(state),
         emitter: EventEmitter::new(),
@@ -285,6 +290,7 @@ fn retiring_callback_ownership_wakes_a_pending_native_observer_without_new_io() 
     assert!(Pin::new(&mut observer)
         .poll(&mut Context::from_waker(&waker))
         .is_pending());
+    drop(sender);
     worker.state.physical.finish_reader(None);
     assert!(matches!(
         Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)),
@@ -345,6 +351,7 @@ fn ownerless_native_progress_drains_more_than_twice_capacity_without_losing_erro
             sender.send(native_message(index as i64)).unwrap();
             physical.published();
         }
+        drop(sender);
         physical.finish_reader(None);
     });
     let error = native_observe(completion::WorkerCompletion::new(&state)).unwrap_err();
@@ -405,5 +412,163 @@ fn reader_eof_before_process_exit_wakes_native_progress_but_is_not_completion() 
     assert!(
         worker.state.physical.snapshot().process_finished,
         "native process producer wakes final completion"
+    );
+}
+
+#[test]
+fn frame_publication_wakes_registered_native_waiters_without_a_later_terminal_event() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    let wake = Arc::new(NativeTestWake {
+        ready: Mutex::new(false),
+        changed: Condvar::new(),
+    });
+    let waker = Waker::from(Arc::clone(&wake));
+    let mut observer = completion::WorkerCompletion::new(&state);
+    for index in 0..64 {
+        *wake.ready.lock().unwrap() = false;
+        assert!(Pin::new(&mut observer)
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        let physical = Arc::clone(&state.physical);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                sender.send(native_message(index)).unwrap();
+                physical.published();
+            });
+            let ready = wake.ready.lock().unwrap();
+            let (ready, timeout) = wake
+                .changed
+                .wait_timeout_while(ready, Duration::from_secs(10), |ready| !*ready)
+                .unwrap();
+            assert!(
+                *ready && !timeout.timed_out(),
+                "the frame itself wakes its actual native observer"
+            );
+        });
+        assert!(
+            !state.physical.snapshot().reader_finished,
+            "no compensating EOF or process event exists"
+        );
+    }
+    drop(sender);
+    state.physical.finish_reader(None);
+    assert!(matches!(
+        Pin::new(&mut observer).poll(&mut Context::from_waker(&waker)),
+        Poll::Ready(Ok(0))
+    ));
+}
+
+#[test]
+fn owner_retirement_wakes_the_existing_observer_and_releases_two_saturated_queues() {
+    use std::sync::mpsc::{channel, TrySendError};
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    for index in 0..MAXIMUM_QUEUED_SIGNALS {
+        sender.send(native_message(index as i64)).unwrap();
+    }
+    state.ingest_signals(false).unwrap();
+    assert_eq!(
+        state.delivery.borrow().pending.len(),
+        MAXIMUM_QUEUED_SIGNALS
+    );
+    for index in 0..MAXIMUM_QUEUED_SIGNALS {
+        sender.send(native_message(index as i64)).unwrap();
+    }
+    let physical = Arc::clone(&state.physical);
+    let (blocked, confirmed) = channel();
+    let producer = std::thread::spawn(move || {
+        let error = WorkerFrame {
+            kind: WorkerFrameKind::Error,
+            payload: b"retained saturated error".to_vec(),
+        };
+        let Err(TrySendError::Full(error)) = sender.try_send(error) else {
+            panic!("raw queue must also exert actual native backpressure");
+        };
+        blocked.send(()).unwrap();
+        sender.send(error).unwrap();
+        physical.published();
+        drop(sender);
+        physical.finish_reader(None);
+    });
+    confirmed.recv_timeout(Duration::from_secs(10)).unwrap();
+    let worker = Worker::<TsonicError> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let resources = WorkerResources::<TsonicError>::new();
+    let wake = Arc::new(NativeTestWake {
+        ready: Mutex::new(false),
+        changed: Condvar::new(),
+    });
+    let waker = Waker::from(Arc::clone(&wake));
+    let mut observer = completion::WorkerCompletion::new(&worker.state);
+    crate::block_on_with_contexts(
+        async {
+            resources.register_worker(&worker).unwrap();
+            assert!(Pin::new(&mut observer)
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending());
+            assert_eq!(
+                worker.state.delivery.borrow().pending.len(),
+                MAXIMUM_QUEUED_SIGNALS,
+                "native observer does not steal callback-owned input"
+            );
+            assert!(
+                !*wake.ready.lock().unwrap(),
+                "blocked producer has published no later event"
+            );
+            resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
+            assert!(
+                *wake.ready.lock().unwrap(),
+                "retirement itself wakes the already pending native observer"
+            );
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+    let error = native_observe(observer).unwrap_err();
+    producer.join().unwrap();
+    assert_eq!(error.message(), "retained saturated error");
+    assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
+    assert!(worker.state.delivery.borrow().pending.is_empty());
+    assert!(worker.state.delivery.borrow().reader_terminal_seen);
+    assert!(worker.state.delivery.borrow().terminal_consumed);
+    assert!(matches!(
+        worker.state.incoming.try_recv(),
+        Err(TryRecvError::Disconnected)
+    ));
+}
+
+#[test]
+fn public_terminate_drains_an_actually_saturated_native_reader_without_a_js_owner() {
+    let (worker, _control) = super::completion_tests::live_native_worker("saturated");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while worker.state.physical.snapshot().change < MAXIMUM_QUEUED_SIGNALS as u64 {
+        assert!(
+            Instant::now() < deadline,
+            "native reader must fill its actual bounded channel"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        !worker.state.physical.snapshot().reader_finished,
+        "saturated reader cannot publish its terminal yet"
+    );
+    assert!(worker.state.delivery.borrow().owner.is_none());
+    assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
+    let error = native_observe(worker.terminate()).unwrap_err();
+    assert_eq!(error.code(), "ERR_WORKER_ERROR");
+    assert_eq!(error.message(), "public saturated native error");
+    assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
+    assert!(worker.state.delivery.borrow().reader_terminal_seen);
+    assert!(worker.state.delivery.borrow().terminal_consumed);
+    assert!(worker.state.delivery.borrow().pending.is_empty());
+    assert!(matches!(
+        worker.state.incoming.try_recv(),
+        Err(TryRecvError::Disconnected)
+    ));
+    #[cfg(unix)]
+    assert!(
+        matches!(worker.state.physical.result(), Some(Ok(137))),
+        "real native SIGKILL status follows actual reader drain"
     );
 }

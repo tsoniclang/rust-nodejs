@@ -59,7 +59,7 @@ impl WorkerPhysical {
         PhysicalSnapshot {
             reader_finished: state.reader_finished,
             process_finished: state.process.is_some(),
-            change: self.change.load(Ordering::Acquire),
+            change: self.change.load(Ordering::SeqCst),
         }
     }
 
@@ -96,12 +96,12 @@ impl WorkerPhysical {
     }
 
     pub(super) fn published(&self) {
-        self.change.fetch_add(1, Ordering::Release);
-        if self.waiting.load(Ordering::Acquire) {
+        self.change.fetch_add(1, Ordering::SeqCst);
+        if self.waiting.load(Ordering::SeqCst) {
             let wake = {
                 let mut state = crate::sync::lock(&self.state);
                 let wake = state.waiters.take_wakers();
-                self.waiting.store(false, Ordering::Release);
+                self.waiting.store(false, Ordering::SeqCst);
                 wake
             };
             wake.wake_all();
@@ -258,7 +258,13 @@ impl Future for WorkerCompletion<'_> {
             {
                 waiting.observed_unowned |= waiting.state.delivery.borrow().owner.is_none();
                 waiting.state.ingest_signals(true)?;
-                if physical.snapshot().process_finished {
+                #[cfg(test)]
+                super::completion_tests::at_observation_gap();
+                let delivery_ready = {
+                    let delivery = waiting.state.delivery.borrow();
+                    delivery.owner.is_some() || delivery.reader_terminal_seen
+                };
+                if physical.snapshot().process_finished && delivery_ready {
                     let result = waiting
                         .state
                         .finish_native_observation(waiting.observed_unowned);
@@ -301,9 +307,9 @@ impl Future for WorkerCompletion<'_> {
                         }
                     }
                 };
-                physical.waiting.store(true, Ordering::Release);
+                physical.waiting.store(true, Ordering::SeqCst);
                 let changed =
-                    before != physical.change.load(Ordering::Acquire) || state.process.is_some();
+                    before != physical.change.load(Ordering::SeqCst) || state.process.is_some();
                 drop(state);
                 drop(previous);
                 drop(prepared);
@@ -323,5 +329,44 @@ impl Drop for WorkerCompletion<'_> {
             let removed = crate::sync::lock(&physical.state).waiters.remove(identity);
             drop(removed);
         }
+    }
+}
+
+#[cfg(test)]
+mod ordering_tests {
+    #[test]
+    fn sequentially_consistent_registration_and_publication_cannot_both_miss() {
+        let mut schedules = 0;
+        for register in 0..4 {
+            for recheck in register + 1..4 {
+                let mut publisher = (0..4).filter(|step| *step != register && *step != recheck);
+                let publication = publisher.next().unwrap();
+                let inspect = publisher.next().unwrap();
+                let mut waiting = false;
+                let mut change = false;
+                let mut changed = false;
+                let mut notified = false;
+                for step in 0..4 {
+                    if step == register {
+                        waiting = true;
+                    } else if step == recheck {
+                        changed = change;
+                    } else if step == publication {
+                        change = true;
+                    } else if step == inspect {
+                        notified = waiting;
+                    }
+                }
+                assert!(
+                    changed || notified,
+                    "SC recheck or SC publisher observes the other side"
+                );
+                schedules += 1;
+            }
+        }
+        assert_eq!(
+            schedules, 6,
+            "every program-order-preserving SC interleaving"
+        );
     }
 }
