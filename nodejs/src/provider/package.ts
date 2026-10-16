@@ -412,7 +412,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       requiredCrate: "tsonic_rust_node",
     }, {
       id: "node-async-executor",
-      phase: "async-execution",
+      phase: "async-entry-execution",
       path: "tsonic_rust_node::block_on_with_contexts",
       dispatchGroups: [nodeDispatchGroup(1, typedArrays)],
       requiredCrate: "tsonic_rust_node",
@@ -420,9 +420,9 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       errorBoundary: "source-program",
     }, {
       id: "node-event-loop",
-      phase: "after-entry",
-      path: "tsonic_rust_node::run_with_contexts",
-      dispatchGroups: [nodeDispatchGroup(0, typedArrays)],
+      phase: "entry-execution",
+      path: "tsonic_rust_node::run_entry_with_contexts",
+      dispatchGroups: [nodeDispatchGroup(1, typedArrays)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",

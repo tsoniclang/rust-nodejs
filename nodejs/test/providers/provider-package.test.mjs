@@ -1047,7 +1047,7 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
     },
     {
       id: "node-async-executor",
-      phase: "async-execution",
+      phase: "async-entry-execution",
       path: "tsonic_rust_node::block_on_with_contexts",
       dispatchGroups: [expectedDispatchGroup(1)],
       requiredCrate: "tsonic_rust_node",
@@ -1056,9 +1056,9 @@ test("provider package maps HTTP server mutation and lifecycle contracts exactly
     },
     {
       id: "node-event-loop",
-      phase: "after-entry",
-      path: "tsonic_rust_node::run_with_contexts",
-      dispatchGroups: [expectedDispatchGroup(0)],
+      phase: "entry-execution",
+      path: "tsonic_rust_node::run_entry_with_contexts",
+      dispatchGroups: [expectedDispatchGroup(1)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",
