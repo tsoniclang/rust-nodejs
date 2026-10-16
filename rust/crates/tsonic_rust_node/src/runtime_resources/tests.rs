@@ -31,7 +31,8 @@ fn with_loop<T>(resources: &RuntimeResources<Resource>, operation: impl FnOnce()
         tsonic_rust_runtime::dispatch::DispatchEnd::<LoopFailure>::new(),
     );
     match crate::block_on_with_contexts(async { operation() }, contexts) {
-        Ok(value) => value,
+        Ok((Some(value), _)) => value,
+        Ok((None, _)) => panic!("the test loop stopped on a requested exit"),
         Err(LoopFailure::Source(error)) => {
             panic!("unhandled native test source failure: {}", error.0.get())
         }
@@ -551,7 +552,7 @@ fn loop_owner_stale_native_frontiers_never_select_a_reopened_source() {
             DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
         ),
     );
-    let stale = stale.ok().unwrap();
+    let stale = stale.ok().unwrap().0.unwrap();
     for _ in 0..128 {
         crate::block_on_with_contexts(
             async {

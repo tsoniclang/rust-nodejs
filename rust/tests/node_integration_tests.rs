@@ -48,6 +48,8 @@ mod process_signal_tests;
 mod process_tests;
 #[path = "node/readline_worker_tests.rs"]
 mod readline_worker_tests;
+#[path = "node/requested_exit_tests.rs"]
+mod requested_exit_tests;
 #[path = "node/timers_stream_dns_tests.rs"]
 mod timers_stream_dns_tests;
 #[path = "node/url_tests.rs"]

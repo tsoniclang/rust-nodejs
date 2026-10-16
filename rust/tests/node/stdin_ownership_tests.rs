@@ -452,7 +452,7 @@ fn check_failure_identity() {
         Err(Failure::Original(returned)) => assert!(Rc::ptr_eq(&returned, &original)),
         Err(Failure::Native(error)) => panic!("native failure instead of original: {error}"),
         Err(Failure::Runtime(error)) => panic!("runtime failure instead of original: {error}"),
-        Ok(()) => panic!("original callback failure was lost"),
+        Ok(_) => panic!("original callback failure was lost"),
     }
     stream.destroy().unwrap();
     tasks.poll().unwrap();
