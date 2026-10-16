@@ -397,7 +397,6 @@ fn stale_parent_frontier_cannot_consume_fresh_data_or_retire_a_new_capture() {
             .unwrap();
         let owner = tsonic_rust_js::event_loop::dispatch_owner().unwrap();
         let frontier = resources.prepare(crate::phases::PORTS).unwrap();
-        resources.close(owner);
         (owner, frontier)
     });
     assert_eq!(
@@ -762,7 +761,6 @@ fn physical_frontier_generation_exhaustion_fails_before_native_queue_mutation() 
         assert!(port.owner.state.borrow().capture_owner.is_none());
         assert_eq!(port.owner.state.borrow().messages.len(), 1);
         port.owner.state.borrow_mut().capture_epoch = original;
-        resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
     });
     assert_eq!(
         port.receive_message().unwrap(),

@@ -1,11 +1,13 @@
 use super::physical_child::WorkerChild;
-use super::{io_error, status_code, Worker, WorkerState};
+use super::{io_error, status_code, Worker, WorkerFrame, WorkerState, MAXIMUM_QUEUED_SIGNALS};
 use crate::error::{NodeError, NodeResult};
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, Waker};
+use tsonic_rust_runtime::dispatch_queue::TaskTicket;
 
 pub(super) struct WorkerPhysical {
     pub(super) child: WorkerChild,
@@ -13,17 +15,38 @@ pub(super) struct WorkerPhysical {
     change: AtomicU64,
     waiting: AtomicBool,
     readiness: Arc<mio::Waker>,
+    capacity: Condvar,
 }
 
 struct PhysicalState {
+    frames: VecDeque<QueuedFrame>,
+    #[cfg(test)]
+    capacity_waiters: usize,
+    consumer_open: bool,
     reader_finished: bool,
     reader_error: Option<NodeError>,
+    reader_ticket: Option<TaskTicket>,
+    reader_consumed: bool,
+    exit_ticket: Option<TaskTicket>,
+    exit_consumed: bool,
     process: Option<NodeResult<i32>>,
     termination_requested: bool,
     waiters: WorkerCompletionWaiters,
 }
 
+struct QueuedFrame {
+    ticket: Option<TaskTicket>,
+    frame: WorkerFrame,
+}
+
+pub(super) enum PhysicalSignal {
+    Frame(WorkerFrame),
+    ReaderEnd(Option<NodeError>),
+    Exit(NodeResult<i32>),
+}
+
 pub(super) struct PhysicalSnapshot {
+    #[cfg(test)]
     pub(super) reader_finished: bool,
     pub(super) process_finished: bool,
     pub(super) change: u64,
@@ -42,8 +65,16 @@ impl WorkerPhysical {
         Ok(Self {
             child,
             state: Mutex::new(PhysicalState {
+                frames: VecDeque::new(),
+                #[cfg(test)]
+                capacity_waiters: 0,
+                consumer_open: true,
                 reader_finished: false,
                 reader_error: None,
+                reader_ticket: None,
+                reader_consumed: false,
+                exit_ticket: None,
+                exit_consumed: false,
                 process: None,
                 termination_requested: false,
                 waiters: WorkerCompletionWaiters::default(),
@@ -51,20 +82,151 @@ impl WorkerPhysical {
             change: AtomicU64::new(0),
             waiting: AtomicBool::new(false),
             readiness,
+            capacity: Condvar::new(),
         })
+    }
+
+    pub(super) fn enqueue_frame(&self, frame: WorkerFrame) -> bool {
+        let mut state = crate::sync::lock(&self.state);
+        while state.frames.len() == MAXIMUM_QUEUED_SIGNALS && state.consumer_open {
+            #[cfg(test)]
+            {
+                state.capacity_waiters += 1;
+            }
+            state = self
+                .capacity
+                .wait(state)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            #[cfg(test)]
+            {
+                state.capacity_waiters -= 1;
+            }
+        }
+        if !state.consumer_open || state.reader_finished {
+            drop(state);
+            drop(frame);
+            return false;
+        }
+        state.frames.push_back(QueuedFrame {
+            ticket: None,
+            frame,
+        });
+        drop(state);
+        self.published();
+        true
+    }
+
+    pub(super) fn admit_frames(&self) -> NodeResult<Option<TaskTicket>> {
+        let mut state = crate::sync::lock(&self.state);
+        let unadmitted = state
+            .frames
+            .iter()
+            .rev()
+            .take_while(|queued| queued.ticket.is_none())
+            .count();
+        let first = state.frames.len() - unadmitted;
+        for queued in state.frames.range_mut(first..) {
+            if queued.ticket.is_none() {
+                queued.ticket = Some(super::super::resources::admit_signal()?);
+            }
+        }
+        if state.reader_finished && !state.reader_consumed && state.reader_ticket.is_none() {
+            state.reader_ticket = Some(super::super::resources::admit_signal()?);
+        }
+        if state.process.is_some() && !state.exit_consumed && state.exit_ticket.is_none() {
+            state.exit_ticket = Some(super::super::resources::admit_signal()?);
+        }
+        Ok(state
+            .exit_ticket
+            .filter(|_| !state.exit_consumed)
+            .or(state.reader_ticket.filter(|_| !state.reader_consumed))
+            .or_else(|| state.frames.back().and_then(|frame| frame.ticket)))
+    }
+
+    pub(super) fn take_signal(
+        &self,
+        boundary: Option<TaskTicket>,
+        include_exit: bool,
+    ) -> Option<PhysicalSignal> {
+        let mut state = crate::sync::lock(&self.state);
+        let admitted = |ticket: Option<TaskTicket>| {
+            boundary.is_none_or(|boundary| ticket.is_some_and(|ticket| ticket <= boundary))
+        };
+        let signal = if let Some(front) = state.frames.front() {
+            if !admitted(front.ticket) {
+                return None;
+            }
+            PhysicalSignal::Frame(
+                state
+                    .frames
+                    .pop_front()
+                    .expect("checked native FIFO head")
+                    .frame,
+            )
+        } else if state.reader_finished && !state.reader_consumed {
+            if !admitted(state.reader_ticket) {
+                return None;
+            }
+            state.reader_consumed = true;
+            PhysicalSignal::ReaderEnd(state.reader_error.take())
+        } else if include_exit && state.reader_consumed && !state.exit_consumed {
+            if !admitted(state.exit_ticket) {
+                return None;
+            }
+            let result = state.process.clone()?;
+            state.exit_consumed = true;
+            PhysicalSignal::Exit(result)
+        } else {
+            return None;
+        };
+        drop(state);
+        self.capacity.notify_one();
+        Some(signal)
+    }
+
+    pub(super) fn native_drained(&self) -> bool {
+        let state = crate::sync::lock(&self.state);
+        state.frames.is_empty() && state.reader_consumed
+    }
+
+    pub(super) fn consume_exit(&self) {
+        crate::sync::lock(&self.state).exit_consumed = true;
+    }
+
+    pub(super) fn close_consumer(&self) {
+        let discarded = {
+            let mut state = crate::sync::lock(&self.state);
+            state.consumer_open = false;
+            std::mem::take(&mut state.frames)
+        };
+        self.capacity.notify_all();
+        drop(discarded);
+    }
+
+    #[cfg(test)]
+    pub(super) fn queued_len(&self) -> usize {
+        crate::sync::lock(&self.state).frames.len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn capacity_waiters(&self) -> usize {
+        crate::sync::lock(&self.state).capacity_waiters
+    }
+
+    #[cfg(test)]
+    pub(super) fn exit_admitted(&self) -> bool {
+        let state = crate::sync::lock(&self.state);
+        state.exit_ticket.is_some() && !state.exit_consumed
     }
 
     pub(super) fn snapshot(&self) -> PhysicalSnapshot {
         let state = crate::sync::lock(&self.state);
         PhysicalSnapshot {
+            #[cfg(test)]
             reader_finished: state.reader_finished,
             process_finished: state.process.is_some(),
             change: self.change.load(Ordering::SeqCst),
         }
-    }
-
-    pub(super) fn reader_error(&self) -> Option<NodeError> {
-        crate::sync::lock(&self.state).reader_error.clone()
     }
 
     pub(super) fn suppresses_native_io(&self) -> bool {
@@ -262,7 +424,7 @@ impl Future for WorkerCompletion<'_> {
                 super::completion_tests::at_observation_gap();
                 let delivery_ready = {
                     let delivery = waiting.state.delivery.borrow();
-                    delivery.owner.is_some() || delivery.reader_terminal_seen
+                    delivery.owner.is_some() || physical.native_drained()
                 };
                 if physical.snapshot().process_finished && delivery_ready {
                     let result = waiting

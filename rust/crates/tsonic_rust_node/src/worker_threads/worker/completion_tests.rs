@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 
@@ -27,8 +26,16 @@ pub(super) fn at_observation_gap() {
     }
 }
 
+pub(super) struct NativeFrameProducer(Arc<WorkerPhysical>);
+
+impl NativeFrameProducer {
+    pub(super) fn send(&self, frame: WorkerFrame) -> Result<(), ()> {
+        self.0.enqueue_frame(frame).then_some(()).ok_or(())
+    }
+}
+
 pub(super) fn completed_process_with_pending_transport(
-) -> (WorkerState, SyncSender<WorkerFrame>, TcpStream) {
+) -> (WorkerState, NativeFrameProducer, TcpStream) {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .arg("--help")
         .stdout(Stdio::null())
@@ -42,13 +49,13 @@ pub(super) fn completed_process_with_pending_transport(
     let (socket, _) = listener.accept().unwrap();
     let (transport, unused) = WorkerTransport::start(socket).unwrap();
     drop(unused);
-    let (sender, incoming) = sync_channel(MAXIMUM_QUEUED_SIGNALS);
+    let physical = Arc::new(WorkerPhysical::new(WorkerChild::finished(child, status)).unwrap());
+    let sender = NativeFrameProducer(Arc::clone(&physical));
     (
         WorkerState {
             reservation: super::super::resources::reserve_resource().unwrap(),
-            physical: Arc::new(WorkerPhysical::new(WorkerChild::finished(child, status)).unwrap()),
+            physical,
             transport,
-            incoming,
             thread_id: 1,
             delivery: RefCell::new(WorkerDelivery::new()),
         },
@@ -64,6 +71,11 @@ pub(super) fn native_message(value: i64) -> WorkerFrame {
     }
 }
 
+fn take_admitted(state: &WorkerState) -> Option<WorkerSignal> {
+    let boundary = state.physical.admit_frames().unwrap()?;
+    state.next_signal(Some(boundary), true).unwrap()
+}
+
 #[test]
 fn terminal_publication_after_empty_never_overtakes_the_final_frame() {
     for prefix in [0, MAXIMUM_QUEUED_SIGNALS - 1, MAXIMUM_QUEUED_SIGNALS] {
@@ -73,43 +85,61 @@ fn terminal_publication_after_empty_never_overtakes_the_final_frame() {
                 sender.send(native_message(index as i64)).unwrap();
             }
             let physical = Arc::clone(&state.physical);
+            let joined = Rc::new(RefCell::new(None));
+            let producer_join = Rc::clone(&joined);
             INGESTION_GAP.with(|slot| {
                 *slot.borrow_mut() = Some(Box::new(move || {
-                    sender
-                        .send(if error {
-                            WorkerFrame {
-                                kind: WorkerFrameKind::Error,
-                                payload: b"final precise error".to_vec(),
-                            }
-                        } else {
-                            native_message(prefix as i64)
-                        })
-                        .unwrap();
-                    drop(sender);
-                    physical.finish_reader(None);
+                    let tail = if error {
+                        WorkerFrame {
+                            kind: WorkerFrameKind::Error,
+                            payload: b"final precise error".to_vec(),
+                        }
+                    } else {
+                        native_message(prefix as i64)
+                    };
+                    if prefix == MAXIMUM_QUEUED_SIGNALS {
+                        let waiting = Arc::clone(&physical);
+                        *producer_join.borrow_mut() = Some(std::thread::spawn(move || {
+                            sender.send(tail).unwrap();
+                            drop(sender);
+                            physical.finish_reader(None);
+                        }));
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        while waiting.capacity_waiters() == 0 {
+                            assert!(
+                                Instant::now() < deadline,
+                                "capacity-plus-one waits on the one native FIFO"
+                            );
+                            std::thread::yield_now();
+                        }
+                    } else {
+                        sender.send(tail).unwrap();
+                        drop(sender);
+                        physical.finish_reader(None);
+                    }
                 }));
             });
             state.ingest_signals(false).unwrap();
             assert!(
-                !state.delivery.borrow().exit_queued,
+                !state.physical.exit_admitted(),
                 "temporary Empty or full is not terminal"
             );
             let mut received = 0;
             let mut errors = 0;
             let mut exits = 0;
             loop {
-                let next = state.delivery.borrow_mut().pending.pop_front();
+                let next = take_admitted(&state);
                 match next {
-                    Some((_, WorkerSignal::Message(value))) => {
+                    Some(WorkerSignal::Message(value)) => {
                         assert_eq!(value.to_js(), JsValue::Integer(received));
                         received += 1;
                     }
-                    Some((_, WorkerSignal::RemoteError(reason))) => {
+                    Some(WorkerSignal::RemoteError(reason)) => {
                         assert_eq!(received, prefix as i64, "full prefix precedes final error");
                         assert_eq!(reason, "final precise error");
                         errors += 1;
                     }
-                    Some((_, WorkerSignal::Exit(code))) => {
+                    Some(WorkerSignal::Exit(code)) => {
                         assert_eq!(code, 0);
                         assert_eq!(received, (prefix + usize::from(!error)) as i64);
                         assert_eq!(errors, usize::from(error));
@@ -120,6 +150,9 @@ fn terminal_publication_after_empty_never_overtakes_the_final_frame() {
                     None => {}
                 }
                 state.ingest_signals(false).unwrap();
+            }
+            if let Some(producer) = joined.borrow_mut().take() {
+                producer.join().unwrap();
             }
             assert_eq!(exits, 1, "one terminal after the complete prefix");
         }
@@ -160,10 +193,10 @@ fn native_ready_after_ingestion_rechecks_the_final_error_and_terminal() {
         assert_eq!(state.delivery.borrow().native_failure_count, 1);
         assert!(state.delivery.borrow().reader_terminal_seen);
         assert!(state.delivery.borrow().terminal_consumed);
-        assert!(matches!(
-            state.incoming.try_recv(),
-            Err(TryRecvError::Disconnected)
-        ));
+        assert!(
+            state.physical.native_drained(),
+            "the single physical owner proves drained terminal"
+        );
     }
 }
 
@@ -229,46 +262,42 @@ fn process_exit_waits_for_every_tail_frame_and_the_reader_terminal_boundary() {
     let (state, sender, _peer) = completed_process_with_pending_transport();
     state.ingest_signals(false).unwrap();
     assert!(
-        !state.delivery.borrow().exit_queued,
+        !state.physical.exit_admitted(),
         "process status alone cannot close an undrained native transport"
     );
     assert!(
-        state.delivery.borrow().pending.is_empty(),
+        state.physical.queued_len() == 0,
         "no premature exit callback"
     );
     for index in 0..64 {
         sender.send(native_message(index)).unwrap();
         state.ingest_signals(false).unwrap();
         assert!(
-            !state.delivery.borrow().exit_queued,
+            !state.physical.exit_admitted(),
             "native reader has not reached its terminal boundary"
         );
     }
     drop(sender);
     state.physical.finish_reader(None);
     state.ingest_signals(false).unwrap();
-    let mut delivery = state.delivery.borrow_mut();
     assert!(
-        delivery.exit_queued,
+        state.physical.exit_admitted(),
         "joined native process and transport complete once"
     );
-    assert_eq!(delivery.pending.len(), 65);
+    assert_eq!(
+        state.physical.queued_len(),
+        64,
+        "64 physical frames plus inline exit"
+    );
     for index in 0..64 {
-        let (_, WorkerSignal::Message(value)) = delivery.pending.pop_front().unwrap() else {
+        let WorkerSignal::Message(value) = take_admitted(&state).unwrap() else {
             panic!("every final message precedes the exit callback");
         };
         assert_eq!(value.to_js(), JsValue::Integer(index));
     }
-    assert!(matches!(
-        delivery.pending.pop_front(),
-        Some((_, WorkerSignal::Exit(0)))
-    ));
-    drop(delivery);
+    assert!(matches!(take_admitted(&state), Some(WorkerSignal::Exit(0))));
     state.ingest_signals(false).unwrap();
-    assert!(
-        state.delivery.borrow().pending.is_empty(),
-        "one exit callback only"
-    );
+    assert!(take_admitted(&state).is_none(), "one exit callback only");
 }
 
 #[test]
@@ -280,27 +309,25 @@ fn full_native_signal_queue_drains_before_admitting_the_one_exit_callback() {
     drop(sender);
     state.physical.finish_reader(None);
     state.ingest_signals(false).unwrap();
-    let mut delivery = state.delivery.borrow_mut();
-    assert_eq!(delivery.pending.len(), MAXIMUM_QUEUED_SIGNALS);
+    assert_eq!(state.physical.queued_len(), MAXIMUM_QUEUED_SIGNALS);
     assert!(
-        !delivery.exit_queued,
-        "full signal queue cannot admit or bypass exit"
+        !state.delivery.borrow().terminal_consumed,
+        "inline exit cannot bypass the full physical prefix"
     );
     for index in 0..MAXIMUM_QUEUED_SIGNALS {
-        let (_, WorkerSignal::Message(value)) = delivery.pending.pop_front().unwrap() else {
+        let WorkerSignal::Message(value) = take_admitted(&state).unwrap() else {
             panic!("bounded native messages are retained in full");
         };
         assert_eq!(value.to_js(), JsValue::Integer(index as i64));
     }
-    drop(delivery);
     state.ingest_signals(false).unwrap();
-    let mut delivery = state.delivery.borrow_mut();
-    assert!(delivery.exit_queued);
-    assert_eq!(delivery.pending.len(), 1);
-    assert!(matches!(
-        delivery.pending.pop_front(),
-        Some((_, WorkerSignal::Exit(0)))
-    ));
+    assert!(state.physical.exit_admitted());
+    assert_eq!(
+        state.physical.queued_len(),
+        0,
+        "one terminal does not consume another frame slot"
+    );
+    assert!(matches!(take_admitted(&state), Some(WorkerSignal::Exit(0))));
 }
 
 #[test]
@@ -335,16 +362,15 @@ fn explicit_termination_does_not_bypass_final_transport_admission() {
                     .poll(&mut Context::from_waker(Waker::noop())),
                 Poll::Ready(Ok(0))
             ));
-            let mut delivery = worker.state.delivery.borrow_mut();
-            let (_, WorkerSignal::Message(value)) = delivery.pending.pop_front().unwrap() else {
+            let WorkerSignal::Message(value) = take_admitted(&worker.state).unwrap() else {
                 panic!("owner-bound termination retains final native message");
             };
             assert_eq!(value.to_js(), JsValue::Integer(i64::MAX));
             assert!(matches!(
-                delivery.pending.pop_front(),
-                Some((_, WorkerSignal::Exit(0)))
+                take_admitted(&worker.state),
+                Some(WorkerSignal::Exit(0))
             ));
-            assert!(delivery.pending.is_empty());
+            assert!(take_admitted(&worker.state).is_none());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
@@ -457,22 +483,21 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
             .finish_reader(Some(NodeError::new(code, "exact native reason")));
         state.ingest_signals(false).unwrap();
         state.ingest_signals(false).unwrap();
-        let delivery = state.delivery.borrow();
         assert!(
-            delivery.exit_queued,
+            state.physical.exit_admitted(),
             "reader failure never strands native completion"
         );
-        let errors = delivery
-            .pending
+        let signals: Vec<_> = std::iter::from_fn(|| take_admitted(&state)).collect();
+        let errors = signals
             .iter()
-            .filter(|(_, signal)| matches!(signal, WorkerSignal::Error(_)))
+            .filter(|signal| matches!(signal, WorkerSignal::Error(_)))
             .count();
         assert_eq!(
             errors, expected_errors,
             "ordinary representation excludes native IO; delivery tested separately"
         );
         if expected_errors != 0 {
-            assert!(matches!(&delivery.pending.front().unwrap().1,
+            assert!(matches!(signals.first().unwrap(),
                 WorkerSignal::Error(error) if error.message().ends_with("exact native reason")));
         }
     }
@@ -486,17 +511,14 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
     drop(sender);
     state.physical.finish_reader(None);
     state.ingest_signals(false).unwrap();
-    let delivery = state.delivery.borrow();
-    assert!(delivery.exit_queued);
+    assert!(state.physical.exit_admitted());
+    let signals: Vec<_> = std::iter::from_fn(|| take_admitted(&state)).collect();
     assert!(
-        matches!(&delivery.pending.front().unwrap().1,
+        matches!(signals.first().unwrap(),
         WorkerSignal::Error(error) if error.message().contains("version is unsupported")),
         "malformed clone is an error signal, not a loop failure"
     );
-    assert!(matches!(
-        delivery.pending.back(),
-        Some((_, WorkerSignal::Exit(0)))
-    ));
+    assert!(matches!(signals.last(), Some(WorkerSignal::Exit(0))));
 }
 
 #[test]
@@ -590,7 +612,7 @@ fn native_worker_error_delivery_suppresses_observed_exit_io_but_keeps_protocol_a
             );
         }
         assert_eq!(exits.get(), 1, "{kind}: one terminal delivery");
-        assert!(worker.state.delivery.borrow().pending.is_empty());
+        assert_eq!(worker.state.physical.queued_len(), 0);
     }
 }
 
@@ -674,11 +696,11 @@ pub(super) fn live_native_worker(mode: &str) -> (Worker, TcpStream) {
     .unwrap();
     let physical = Arc::new(WorkerPhysical::new(child).unwrap());
     let (socket, _) = listener.accept().unwrap();
-    let published = Arc::clone(&physical);
+    let frames = Arc::clone(&physical);
     let terminal = Arc::clone(&physical);
-    let (transport, incoming) = WorkerTransport::start_observed(
+    let transport = WorkerTransport::start_observed(
         socket,
-        move || published.published(),
+        move |frame| frames.enqueue_frame(frame),
         move |error| terminal.finish_reader(error),
     )
     .unwrap();
@@ -699,7 +721,6 @@ pub(super) fn live_native_worker(mode: &str) -> (Worker, TcpStream) {
                 reservation: super::super::resources::reserve_resource().unwrap(),
                 physical,
                 transport,
-                incoming,
                 thread_id: 1,
                 delivery: RefCell::new(WorkerDelivery::new()),
             }),

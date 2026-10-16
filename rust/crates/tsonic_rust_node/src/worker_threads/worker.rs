@@ -1,11 +1,9 @@
 use super::WorkerResources;
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::process::{Command, ExitStatus};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tsonic_rust_runtime::dispatch::DispatchOwner;
@@ -34,7 +32,7 @@ const MAXIMUM_QUEUED_SIGNALS: usize = 1 << 16;
 mod completion;
 mod dispatch;
 mod physical_child;
-use completion::WorkerPhysical;
+use completion::{PhysicalSignal, WorkerPhysical};
 pub(super) use dispatch::RuntimeWorker;
 use physical_child::WorkerChild;
 
@@ -71,40 +69,32 @@ struct WorkerState {
     reservation: TaskReservation,
     physical: Arc<WorkerPhysical>,
     transport: WorkerTransport,
-    incoming: Receiver<WorkerFrame>,
     thread_id: i32,
     delivery: RefCell<WorkerDelivery>,
 }
 
 struct WorkerDelivery {
-    pending: VecDeque<(TaskTicket, WorkerSignal)>,
     refed: bool,
     owner: Option<DispatchOwner>,
     reader_terminal_seen: bool,
-    exit_queued: bool,
     terminal_consumed: bool,
     native_failure: Option<NodeError>,
     native_failure_count: u64,
-    native_summary: Option<NodeError>,
 }
 
 impl WorkerDelivery {
     fn new() -> Self {
         Self {
-            pending: VecDeque::new(),
             refed: true,
             owner: None,
             reader_terminal_seen: false,
-            exit_queued: false,
             terminal_consumed: false,
             native_failure: None,
             native_failure_count: 0,
-            native_summary: None,
         }
     }
 
     fn record_failure(&mut self, error: NodeError) {
-        self.native_summary = None;
         if self.native_failure.is_none() {
             self.native_failure = Some(error);
         }
@@ -112,6 +102,10 @@ impl WorkerDelivery {
             .native_failure_count
             .checked_add(1)
             .expect("finite killed-worker input fits the native error counter");
+        self.native_failure
+            .as_mut()
+            .expect("first native failure retained")
+            .set_additional_unobserved_errors(self.native_failure_count - 1);
     }
 
     fn consume_native(&mut self, signal: WorkerSignal, physical: &WorkerPhysical) {
@@ -224,11 +218,11 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         let physical = Arc::new(WorkerPhysical::new(
             startup.child.take().expect("authenticated native worker"),
         )?);
-        let published = Arc::clone(&physical);
+        let frames = Arc::clone(&physical);
         let terminal = Arc::clone(&physical);
-        let (transport, incoming) = match WorkerTransport::start_observed(
+        let transport = match WorkerTransport::start_observed(
             stream,
-            move || published.published(),
+            move |frame| frames.enqueue_frame(frame),
             move |error| terminal.finish_reader(error),
         ) {
             Ok(started) => started,
@@ -243,7 +237,6 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                 reservation,
                 physical,
                 transport,
-                incoming,
                 thread_id,
                 delivery: RefCell::new(WorkerDelivery::new()),
             }),
@@ -283,88 +276,60 @@ impl<E: From<NodeError> + 'static> Worker<E> {
 
 impl WorkerState {
     fn ingest_signals(&self, native_observation: bool) -> NodeResult<()> {
-        let mut delivery = self.delivery.borrow_mut();
-        let native = native_observation && delivery.owner.is_none();
-        if native {
-            while let Some((_, signal)) = delivery.pending.pop_front() {
-                delivery.consume_native(signal, &self.physical);
-            }
+        if !native_observation || self.delivery.borrow().owner.is_some() {
+            self.physical.admit_frames()?;
+            #[cfg(test)]
+            completion_tests::at_ingestion_gap();
+            return Ok(());
         }
-        let mut disconnected = false;
-        while native || delivery.pending.len() < MAXIMUM_QUEUED_SIGNALS {
-            let frame = match self.incoming.try_recv() {
-                Ok(frame) => frame,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
-                }
-            };
-            let signal = match frame.kind {
-                WorkerFrameKind::Message => match decode(&frame.payload) {
-                    Ok(value) => WorkerSignal::Message(value),
-                    Err(error) => WorkerSignal::Error(error),
-                },
-                WorkerFrameKind::Error => {
-                    WorkerSignal::RemoteError(String::from_utf8_lossy(&frame.payload).into_owned())
-                }
-                _ => WorkerSignal::Error(NodeError::new(
-                    "ERR_WORKER_PROTOCOL",
-                    "unexpected worker transport frame",
-                )),
-            };
-            if native {
-                delivery.consume_native(signal, &self.physical);
-            } else {
-                delivery
-                    .pending
-                    .push_back((super::resources::admit_signal()?, signal));
-            }
+        while let Some(signal) = self.next_signal(None, false)? {
+            self.delivery
+                .borrow_mut()
+                .consume_native(signal, &self.physical);
         }
         #[cfg(test)]
         completion_tests::at_ingestion_gap();
-        let snapshot = self.physical.snapshot();
-        if disconnected
-            && snapshot.reader_finished
-            && !delivery.reader_terminal_seen
-            && (native || delivery.pending.len() < MAXIMUM_QUEUED_SIGNALS)
-        {
-            if let Some(error) = self.physical.reader_error() {
-                let signal = if error.code() == "ERR_WORKER_TRANSPORT" {
-                    WorkerSignal::NativeIoError(error)
-                } else {
-                    WorkerSignal::Error(error)
-                };
-                if native {
-                    delivery.consume_native(signal, &self.physical);
-                } else {
-                    delivery
-                        .pending
-                        .push_back((super::resources::admit_signal()?, signal));
-                }
-            }
-            delivery.reader_terminal_seen = true;
-        }
-        if disconnected
-            && delivery.reader_terminal_seen
-            && snapshot.process_finished
-            && !delivery.exit_queued
-            && !delivery.terminal_consumed
-            && !native
-            && delivery.pending.len() < MAXIMUM_QUEUED_SIGNALS
-        {
-            let code = self
-                .physical
-                .result()
-                .expect("native producer published its result")?;
-            delivery
-                .pending
-                .push_back((super::resources::admit_signal()?, WorkerSignal::Exit(code)));
-            delivery.exit_queued = true;
-        }
         Ok(())
     }
 
+    fn next_signal(
+        &self,
+        boundary: Option<TaskTicket>,
+        include_exit: bool,
+    ) -> NodeResult<Option<WorkerSignal>> {
+        loop {
+            let Some(signal) = self.physical.take_signal(boundary, include_exit) else {
+                return Ok(None);
+            };
+            return Ok(Some(match signal {
+                PhysicalSignal::Frame(frame) => match frame.kind {
+                    WorkerFrameKind::Message => match decode(&frame.payload) {
+                        Ok(value) => WorkerSignal::Message(value),
+                        Err(error) => WorkerSignal::Error(error),
+                    },
+                    WorkerFrameKind::Error => WorkerSignal::RemoteError(
+                        String::from_utf8_lossy(&frame.payload).into_owned(),
+                    ),
+                    _ => WorkerSignal::Error(NodeError::new(
+                        "ERR_WORKER_PROTOCOL",
+                        "unexpected worker transport frame",
+                    )),
+                },
+                PhysicalSignal::ReaderEnd(error) => {
+                    self.delivery.borrow_mut().reader_terminal_seen = true;
+                    let Some(error) = error else {
+                        continue;
+                    };
+                    if error.code() == "ERR_WORKER_TRANSPORT" {
+                        WorkerSignal::NativeIoError(error)
+                    } else {
+                        WorkerSignal::Error(error)
+                    }
+                }
+                PhysicalSignal::Exit(result) => WorkerSignal::Exit(result?),
+            }));
+        }
+    }
     fn finish_native_observation(&self, observed_unowned: bool) -> NodeResult<i32> {
         let mut delivery = self.delivery.borrow_mut();
         let process = self
@@ -373,27 +338,12 @@ impl WorkerState {
             .expect("native process result is published before observation");
         if delivery.owner.is_none() {
             delivery.terminal_consumed = true;
+            self.physical.consume_exit();
         }
         if !observed_unowned {
             return process;
         }
-        if delivery.native_summary.is_none() {
-            if let Some(error) = &delivery.native_failure {
-                delivery.native_summary = Some(if delivery.native_failure_count == 1 {
-                    error.clone()
-                } else {
-                    NodeError::new(
-                        error.code(),
-                        format!(
-                            "{} ({} additional unobserved worker errors)",
-                            error.message(),
-                            delivery.native_failure_count - 1
-                        ),
-                    )
-                });
-            }
-        }
-        match &delivery.native_summary {
+        match &delivery.native_failure {
             Some(error) => Err(error.clone()),
             None => process,
         }
@@ -416,6 +366,7 @@ impl Drop for WorkerStartup {
 impl Drop for WorkerState {
     fn drop(&mut self) {
         let _ = self.physical.request_termination();
+        self.physical.close_consumer();
         self.transport.close();
     }
 }

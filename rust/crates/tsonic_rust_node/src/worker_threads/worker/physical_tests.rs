@@ -16,7 +16,7 @@ fn no_owner_retains_a_full_prefix_until_explicit_native_observation() {
         sender.send(native_message(index as i64)).unwrap();
     }
     assert!(
-        state.delivery.borrow().pending.is_empty(),
+        state.physical.queued_len() == MAXIMUM_QUEUED_SIGNALS,
         "construction does not consume physical frames"
     );
     drop(sender);
@@ -35,11 +35,11 @@ fn no_owner_retains_a_full_prefix_until_explicit_native_observation() {
         "explicit native observer consumes terminal"
     );
     assert!(
-        state.delivery.borrow().pending.is_empty(),
+        state.physical.queued_len() == 0,
         "unobserved messages are not replayable"
     );
     assert!(
-        state.incoming.try_recv().is_err(),
+        state.physical.native_drained(),
         "full prefix consumed by native observation"
     );
 }
@@ -73,10 +73,32 @@ fn ownerless_errors_preserve_the_first_reason_and_count_every_later_error() {
         "first error retained"
     );
     assert!(
-        error.message().contains("2 additional"),
+        error.additional_unobserved_errors() == 2,
         "later errors counted"
     );
     assert_eq!(state.delivery.borrow().native_failure_count, 3);
+    assert_eq!(
+        error.message(),
+        "first native reason",
+        "the first message is never replaced by formatted count text"
+    );
+    assert_eq!(
+        error.additional_unobserved_errors(),
+        2,
+        "additional count is a native u64 value"
+    );
+    assert!(
+        error.source_error().has_same_identity(
+            state
+                .delivery
+                .borrow()
+                .native_failure
+                .as_ref()
+                .unwrap()
+                .source_error()
+        ),
+        "the first underlying JsError/cause identity is retained"
+    );
     assert!(
         matches!(state.physical.result(), Some(Ok(0))),
         "physical join never retroactively faults"
@@ -112,11 +134,11 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
                 "owner-bound observation leaves callback errors with their owner"
             );
             assert_eq!(
-                worker.state.delivery.borrow().pending.len(),
-                2,
-                "error and exit remain admitted"
+                worker.state.physical.queued_len(),
+                1,
+                "error frame remains retained while exit is inline"
             );
-            resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
+            assert!(worker.state.physical.exit_admitted());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
@@ -133,7 +155,7 @@ fn owner_bound_success_does_not_hide_errors_from_a_later_ownerless_observer() {
         panic!("later native observer must consume the retired error");
     };
     assert!(error.message().contains("retired native reason"));
-    assert!(worker.state.delivery.borrow().pending.is_empty());
+    assert_eq!(worker.state.physical.queued_len(), 0);
     assert!(worker.state.delivery.borrow().terminal_consumed);
 }
 
@@ -162,14 +184,13 @@ fn retirement_keeps_uninvoked_frames_for_a_new_explicit_owner() {
                 .unwrap();
             sender.send(native_message(i64::MAX)).unwrap();
             worker.capture().unwrap();
-            resources.close(tsonic_rust_js::event_loop::dispatch_owner().unwrap());
         },
         prepend(&resources, DispatchEnd::<TsonicError>::new()),
     )
     .unwrap();
     assert_eq!(old_calls.get(), 0, "retired admitted callback never runs");
     assert_eq!(
-        worker.state.delivery.borrow().pending.len(),
+        worker.state.physical.queued_len(),
         1,
         "retirement did not pop physical data"
     );
@@ -349,7 +370,6 @@ fn ownerless_native_progress_drains_more_than_twice_capacity_without_losing_erro
                     .unwrap();
             }
             sender.send(native_message(index as i64)).unwrap();
-            physical.published();
         }
         drop(sender);
         physical.finish_reader(None);
@@ -362,9 +382,9 @@ fn ownerless_native_progress_drains_more_than_twice_capacity_without_losing_erro
         3,
         "errors at every pressure level retained"
     );
-    assert!(error.message().contains("2 additional"));
+    assert_eq!(error.additional_unobserved_errors(), 2);
     assert!(state.delivery.borrow().terminal_consumed);
-    assert!(state.delivery.borrow().pending.is_empty());
+    assert_eq!(state.physical.queued_len(), 0);
     assert!(
         matches!(state.physical.result(), Some(Ok(0))),
         "native error is reported only after actual join"
@@ -429,11 +449,9 @@ fn frame_publication_wakes_registered_native_waiters_without_a_later_terminal_ev
         assert!(Pin::new(&mut observer)
             .poll(&mut Context::from_waker(&waker))
             .is_pending());
-        let physical = Arc::clone(&state.physical);
         std::thread::scope(|scope| {
             scope.spawn(|| {
                 sender.send(native_message(index)).unwrap();
-                physical.published();
             });
             let ready = wake.ready.lock().unwrap();
             let (ready, timeout) = wake
@@ -459,37 +477,31 @@ fn frame_publication_wakes_registered_native_waiters_without_a_later_terminal_ev
 }
 
 #[test]
-fn owner_retirement_wakes_the_existing_observer_and_releases_two_saturated_queues() {
-    use std::sync::mpsc::{channel, TrySendError};
+fn owner_retirement_wakes_the_existing_observer_and_releases_the_saturated_physical_fifo() {
     let (state, sender, _peer) = completed_process_with_pending_transport();
     for index in 0..MAXIMUM_QUEUED_SIGNALS {
         sender.send(native_message(index as i64)).unwrap();
     }
     state.ingest_signals(false).unwrap();
-    assert_eq!(
-        state.delivery.borrow().pending.len(),
-        MAXIMUM_QUEUED_SIGNALS
-    );
-    for index in 0..MAXIMUM_QUEUED_SIGNALS {
-        sender.send(native_message(index as i64)).unwrap();
-    }
+    assert_eq!(state.physical.queued_len(), MAXIMUM_QUEUED_SIGNALS);
     let physical = Arc::clone(&state.physical);
-    let (blocked, confirmed) = channel();
     let producer = std::thread::spawn(move || {
         let error = WorkerFrame {
             kind: WorkerFrameKind::Error,
             payload: b"retained saturated error".to_vec(),
         };
-        let Err(TrySendError::Full(error)) = sender.try_send(error) else {
-            panic!("raw queue must also exert actual native backpressure");
-        };
-        blocked.send(()).unwrap();
         sender.send(error).unwrap();
-        physical.published();
         drop(sender);
         physical.finish_reader(None);
     });
-    confirmed.recv_timeout(Duration::from_secs(10)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state.physical.capacity_waiters() == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the actual one-FIFO producer is waiting for native capacity"
+        );
+        std::thread::yield_now();
+    }
     let worker = Worker::<TsonicError> {
         state: Rc::new(state),
         emitter: EventEmitter::new(),
@@ -508,7 +520,7 @@ fn owner_retirement_wakes_the_existing_observer_and_releases_two_saturated_queue
                 .poll(&mut Context::from_waker(&waker))
                 .is_pending());
             assert_eq!(
-                worker.state.delivery.borrow().pending.len(),
+                worker.state.physical.queued_len(),
                 MAXIMUM_QUEUED_SIGNALS,
                 "native observer does not steal callback-owned input"
             );
@@ -529,13 +541,10 @@ fn owner_retirement_wakes_the_existing_observer_and_releases_two_saturated_queue
     producer.join().unwrap();
     assert_eq!(error.message(), "retained saturated error");
     assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
-    assert!(worker.state.delivery.borrow().pending.is_empty());
+    assert_eq!(worker.state.physical.queued_len(), 0);
     assert!(worker.state.delivery.borrow().reader_terminal_seen);
     assert!(worker.state.delivery.borrow().terminal_consumed);
-    assert!(matches!(
-        worker.state.incoming.try_recv(),
-        Err(TryRecvError::Disconnected)
-    ));
+    assert!(worker.state.physical.native_drained());
 }
 
 #[test]
@@ -561,14 +570,244 @@ fn public_terminate_drains_an_actually_saturated_native_reader_without_a_js_owne
     assert_eq!(worker.state.delivery.borrow().native_failure_count, 1);
     assert!(worker.state.delivery.borrow().reader_terminal_seen);
     assert!(worker.state.delivery.borrow().terminal_consumed);
-    assert!(worker.state.delivery.borrow().pending.is_empty());
-    assert!(matches!(
-        worker.state.incoming.try_recv(),
-        Err(TryRecvError::Disconnected)
-    ));
+    assert_eq!(worker.state.physical.queued_len(), 0);
+    assert!(worker.state.physical.native_drained());
     #[cfg(unix)]
     assert!(
         matches!(worker.state.physical.result(), Some(Ok(137))),
         "real native SIGKILL status follows actual reader drain"
     );
+}
+
+#[test]
+fn native_io_consumed_before_observed_exit_remains_the_natural_completion_failure() {
+    use std::io::Write;
+    let (worker, mut control) = super::completion_tests::live_native_worker("live-failure");
+    let mut observer = completion::WorkerCompletion::new(&worker.state);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !worker.state.physical.snapshot().reader_finished {
+        assert!(Pin::new(&mut observer)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        assert!(
+            Instant::now() < deadline,
+            "real reader publishes its truncated native terminal"
+        );
+        std::thread::yield_now();
+    }
+    assert!(Pin::new(&mut observer)
+        .poll(&mut Context::from_waker(Waker::noop()))
+        .is_pending());
+    assert!(
+        !worker.state.physical.snapshot().process_finished,
+        "child remains live before consumption"
+    );
+    assert_eq!(
+        worker.state.delivery.borrow().native_failure_count,
+        1,
+        "pre-observation IO failure is already counted"
+    );
+    control.write_all(&[1]).unwrap();
+    let error = native_observe(observer).unwrap_err();
+    assert_eq!(error.code(), "ERR_WORKER_TRANSPORT");
+    assert!(
+        error.message().contains("fill whole buffer"),
+        "exact native truncated-read reason retained"
+    );
+    assert!(
+        matches!(worker.state.physical.result(), Some(Ok(0))),
+        "later normal exit never retroactively erases an observed IO failure"
+    );
+}
+
+#[test]
+fn native_io_consumed_after_observed_exit_is_suppressed_without_a_timer() {
+    use std::io::Write;
+    let (worker, mut control) = super::completion_tests::live_native_worker("live-failure");
+    control.write_all(&[1]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !worker.state.physical.snapshot().process_finished {
+        assert!(
+            Instant::now() < deadline,
+            "native process produces its actual observed exit"
+        );
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        worker.state.delivery.borrow().native_failure_count,
+        0,
+        "physical completion is not an observer"
+    );
+    assert_eq!(
+        native_observe(completion::WorkerCompletion::new(&worker.state)).unwrap(),
+        0
+    );
+    assert_eq!(
+        worker.state.delivery.borrow().native_failure_count,
+        0,
+        "IO consumed after observed exit is suppressed"
+    );
+    assert!(worker.state.delivery.borrow().terminal_consumed);
+}
+
+#[test]
+fn captured_raw_fifo_boundary_does_not_admit_a_later_frame() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    sender.send(native_message(1)).unwrap();
+    let first = state.physical.admit_frames().unwrap().unwrap();
+    sender.send(native_message(2)).unwrap();
+    let Some(WorkerSignal::Message(value)) = state.next_signal(Some(first), true).unwrap() else {
+        panic!("first admitted raw frame");
+    };
+    assert_eq!(value.to_js(), JsValue::Integer(1));
+    assert!(
+        state.next_signal(Some(first), true).unwrap().is_none(),
+        "old capture cannot consume a later unstamped raw frame"
+    );
+    assert_eq!(
+        state.physical.queued_len(),
+        1,
+        "capture never pops into a second buffer"
+    );
+    let next = state.physical.admit_frames().unwrap().unwrap();
+    assert!(
+        next > first,
+        "later capture receives its existing global task admission"
+    );
+    let Some(WorkerSignal::Message(value)) = state.next_signal(Some(next), true).unwrap() else {
+        panic!("fresh admitted raw frame");
+    };
+    assert_eq!(value.to_js(), JsValue::Integer(2));
+}
+
+#[test]
+fn physical_consumer_drop_releases_an_actually_blocked_reader() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    for index in 0..MAXIMUM_QUEUED_SIGNALS {
+        sender.send(native_message(index as i64)).unwrap();
+    }
+    let physical = Arc::clone(&state.physical);
+    let reader = std::thread::spawn(move || sender.send(native_message(-1)));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while physical.capacity_waiters() == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "reader reached actual native capacity wait"
+        );
+        std::thread::yield_now();
+    }
+    drop(state);
+    assert!(
+        reader.join().unwrap().is_err(),
+        "consumer Drop wakes the existing native reader without polling or another thread"
+    );
+    assert_eq!(
+        physical.queued_len(),
+        0,
+        "discarded raw payloads are retired outside the physical mutex"
+    );
+}
+
+#[test]
+fn native_raw_fifo_stage_cost_matches_its_handwritten_physical_queue_baseline() {
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let queue = Mutex::new(VecDeque::with_capacity(1));
+    let capacity = Condvar::new();
+    let revision = AtomicU64::new(0);
+    let waiting = AtomicBool::new(false);
+    let empty = || WorkerFrame {
+        kind: WorkerFrameKind::Message,
+        payload: Vec::new(),
+    };
+    assert!(state.physical.enqueue_frame(empty()));
+    assert!(matches!(
+        state.physical.take_signal(None, false),
+        Some(PhysicalSignal::Frame(_))
+    ));
+    let iterations = 50_000;
+    let mut actual = Vec::new();
+    let mut baseline = Vec::new();
+    for _ in 0..7 {
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let mut pending = queue.lock().unwrap();
+            while pending.len() == MAXIMUM_QUEUED_SIGNALS {
+                pending = capacity.wait(pending).unwrap();
+            }
+            pending.push_back(empty());
+            drop(pending);
+            revision.fetch_add(1, AtomicOrdering::SeqCst);
+            assert!(!waiting.load(AtomicOrdering::SeqCst));
+            assert!(queue.lock().unwrap().pop_front().is_some());
+            capacity.notify_one();
+        }
+        baseline.push(start.elapsed().as_nanos());
+        let start = Instant::now();
+        for _ in 0..iterations {
+            assert!(state.physical.enqueue_frame(empty()));
+            assert!(matches!(
+                state.physical.take_signal(None, false),
+                Some(PhysicalSignal::Frame(_))
+            ));
+        }
+        actual.push(start.elapsed().as_nanos());
+    }
+    actual.sort_unstable();
+    baseline.sort_unstable();
+    println!("P05_NATIVE_FIFO_COST iterations={iterations} actual_ns={} handwritten_ns={} ratio={:.6} mutexes_per_rotation=2 publication_rmw=1 flag_load=1 payload_copies=0 extra_queue=0", actual[3], baseline[3], actual[3] as f64 / baseline[3] as f64);
+    assert_eq!(state.physical.queued_len(), 0);
+    assert_eq!(revision.load(AtomicOrdering::SeqCst), iterations * 7);
+}
+
+#[test]
+fn native_observation_error_layout_matches_the_required_handwritten_count_carrier() {
+    use tsonic_rust_runtime::JsError;
+    struct NativeFirstError {
+        code: String,
+        first: JsError,
+    }
+    struct NativeCountedError {
+        code: String,
+        first: JsError,
+        additional: u64,
+    }
+    let original = NodeError::new("NATIVE_FIRST", "unchanged exact first reason");
+    let plain = NativeFirstError {
+        code: original.code.clone(),
+        first: original.source_error().clone(),
+    };
+    let native = NativeCountedError {
+        code: plain.code.clone(),
+        first: plain.first.clone(),
+        additional: 7,
+    };
+    let mut observed = original.clone();
+    observed.set_additional_unobserved_errors(7);
+    assert_eq!(observed.code(), native.code);
+    assert_eq!(observed.message(), native.first.message());
+    assert_eq!(observed.additional_unobserved_errors(), native.additional);
+    assert!(
+        original
+            .source_error()
+            .has_same_identity(observed.source_error()),
+        "native count does not replace the cause identity"
+    );
+    assert_eq!(
+        std::mem::size_of_val(&observed),
+        std::mem::size_of_val(&native),
+        "same required typed native fields, no wrapper/box"
+    );
+    assert_eq!(
+        std::mem::size_of::<NodeError>(),
+        std::mem::size_of::<NativeFirstError>() + 8,
+        "actual common error carrier grows by exactly its u64 field"
+    );
+    assert_eq!(
+        std::mem::size_of::<Result<i32, NodeError>>(),
+        std::mem::size_of::<Result<i32, NativeCountedError>>(),
+        "result ABI remains the equivalent direct native result"
+    );
+    println!("P05_NATIVE_ERROR_LAYOUT first={} counted={} result={} metadata_bytes=8 additional_allocations=0", std::mem::size_of::<NativeFirstError>(), std::mem::size_of::<NodeError>(), std::mem::size_of::<Result<i32, NodeError>>());
 }

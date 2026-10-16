@@ -24,16 +24,38 @@ fn main() {
         child(&arguments);
         return;
     }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--native-control")
+    {
+        let selected = arguments
+            .get(1)
+            .expect("one explicit native control name")
+            .as_str();
+        match selected {
+            "construction" | "cancellation" | "concurrent" | "signal-status" | "ready-cost" => {
+                native_termination_without_a_js_owner(Some(selected))
+            }
+            "retained-prefix" => retained_prefix_with_later_explicit_owner(),
+            "unobserved-errors" => native_unobserved_errors_after_physical_join(),
+            "default-ref" => default_ref_without_listeners_reaches_real_physical_completion(),
+            "saturated-terminate" => native_saturated_public_termination(),
+            _ => panic!("unknown native control: {selected}"),
+        }
+        println!("P05 native control {selected}: passed");
+        return;
+    }
     for _ in 0..8 {
-        native_termination_without_a_js_owner();
+        native_termination_without_a_js_owner(None);
     }
     retained_prefix_with_later_explicit_owner();
     native_unobserved_errors_after_physical_join();
     default_ref_without_listeners_reaches_real_physical_completion();
+    native_saturated_public_termination();
     println!("P05 public native lifecycle: native executor, cancellation, concurrent waiters, retained FIFO, unobserved errors passed");
 }
 
-fn spawn<E: From<NodeError> + 'static>(
+fn spawn<E: From<NodeError> + From<TsonicError> + std::fmt::Debug + 'static>(
     entry: &str,
     port: u16,
     resources: &WorkerResources<E>,
@@ -42,15 +64,25 @@ fn spawn<E: From<NodeError> + 'static>(
         tsonic_rust_js::event_loop::dispatch_owner().is_err(),
         "no JS owner before native construction"
     );
-    let worker = Worker::spawn_with_options(
-        entry,
-        WorkerOptions {
-            argv: Some(JsArray::from_dense(vec![port.to_string()])),
-            ..WorkerOptions::default()
-        },
-        resources,
-    )
-    .unwrap();
+    let options = WorkerOptions {
+        argv: Some(JsArray::from_dense(vec![port.to_string()])),
+        ..WorkerOptions::default()
+    };
+    let worker = if std::env::args().any(|argument| argument == "--base-construction-owner") {
+        let (worker, _) = tsonic_rust_node::run_entry_with_contexts(
+            || {
+                let worker = Worker::spawn_with_options(entry, options, resources).unwrap();
+                worker.unref();
+                worker
+            },
+            prepend(resources, DispatchEnd::<E>::new()),
+        )
+        .unwrap();
+        worker.ref_chain();
+        worker
+    } else {
+        Worker::spawn_with_options(entry, options, resources).unwrap()
+    };
     assert!(
         tsonic_rust_js::event_loop::dispatch_owner().is_err(),
         "native construction creates no JS owner"
@@ -119,9 +151,9 @@ fn native_executor<T>(future: impl Future<Output = T>) -> T {
     }
 }
 
-fn native_termination_without_a_js_owner() {
+fn native_termination_without_a_js_owner(selected: Option<&str>) {
     let listener = control();
-    let resources = WorkerResources::<NodeError>::new();
+    let resources = WorkerResources::<TsonicError>::new();
     let worker = spawn(
         "native-pending",
         listener.local_addr().unwrap().port(),
@@ -132,12 +164,12 @@ fn native_termination_without_a_js_owner() {
         worker
             .on_callable(
                 &JsValue::String("message".to_owned()),
-                &Callable::new(|()| Ok::<(), NodeError>(()))
+                &Callable::new(|()| Ok::<(), TsonicError>(()))
             )
             .is_err(),
         "callback admission still requires explicit owner"
     );
-    {
+    if selected.is_none() || selected == Some("cancellation") {
         let mut cancelled = std::pin::pin!(worker.terminate());
         let _ = cancelled
             .as_mut()
@@ -147,36 +179,46 @@ fn native_termination_without_a_js_owner() {
     let mut second = std::pin::pin!(worker.terminate());
     let mut first_result = None;
     let mut second_result = None;
+    let concurrent = selected.is_none() || selected == Some("concurrent");
     native_executor(std::future::poll_fn(|context| {
         if first_result.is_none() {
             if let Poll::Ready(result) = first.as_mut().poll(context) {
                 first_result = Some(result);
             }
         }
-        if second_result.is_none() {
+        if concurrent && second_result.is_none() {
             if let Poll::Ready(result) = second.as_mut().poll(context) {
                 second_result = Some(result);
             }
         }
-        if first_result.is_some() && second_result.is_some() {
+        if first_result.is_some() && (!concurrent || second_result.is_some()) {
             Poll::Ready(())
         } else {
             Poll::Pending
         }
     }));
     let first = first_result.unwrap().unwrap();
-    let second = second_result.unwrap().unwrap();
+    let second = if concurrent {
+        second_result.unwrap().unwrap()
+    } else {
+        first
+    };
     assert_eq!(
         first, second,
         "concurrent native observers share one physical status"
     );
     #[cfg(unix)]
-    assert_eq!(first, 137, "Unix signal status remains native");
+    if selected.is_none() || selected == Some("signal-status") {
+        assert_eq!(first, 137, "Unix signal status remains native");
+    }
     assert_eq!(
         native_executor(worker.terminate()).unwrap(),
         first,
         "repeat observation needs no JS owner"
     );
+    if selected.is_some() && selected != Some("ready-cost") {
+        return;
+    }
     let cost = allocation_counts::measure(|| {
         for _ in 0..1024 {
             let mut ready = std::pin::pin!(worker.terminate());
@@ -250,7 +292,7 @@ fn retained_prefix_with_later_explicit_owner() {
 
 fn native_unobserved_errors_after_physical_join() {
     let listener = control();
-    let resources = WorkerResources::<NodeError>::new();
+    let resources = WorkerResources::<TsonicError>::new();
     let worker = spawn(
         "native-errors",
         listener.local_addr().unwrap().port(),
@@ -260,7 +302,11 @@ fn native_unobserved_errors_after_physical_join() {
     let error = native_executor(worker.terminate()).unwrap_err();
     assert_eq!(error.code(), "ERR_WORKER_ERROR");
     assert!(error.message().starts_with("first native error"));
-    assert!(error.message().contains("1 additional"));
+    assert_eq!(
+        error.message(),
+        "first native error",
+        "first reason is never formatted into a replacement error"
+    );
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
 }
 
@@ -298,6 +344,36 @@ fn default_ref_without_listeners_reaches_real_physical_completion() {
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
 }
 
+fn native_saturated_public_termination() {
+    let listener = control();
+    let resources = WorkerResources::<TsonicError>::new();
+    let worker = spawn(
+        "native-saturated",
+        listener.local_addr().unwrap().port(),
+        &resources,
+    );
+    let mut control = accept_ready(&listener);
+    let mut prefix = [0];
+    control.read_exact(&mut prefix).unwrap();
+    assert_eq!(
+        prefix,
+        [2],
+        "real child wrote more than raw capacity before public termination"
+    );
+    let code = native_executor(worker.terminate()).unwrap();
+    #[cfg(unix)]
+    assert_eq!(
+        code, 137,
+        "standalone public termination joins the actual native process after retained input drains"
+    );
+    #[cfg(not(unix))]
+    assert!(
+        code != 0,
+        "native process termination preserves its actual native exit status"
+    );
+    assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
+}
+
 fn child(arguments: &[String]) {
     let mut stream = TcpStream::connect((
         std::net::Ipv4Addr::LOCALHOST,
@@ -330,13 +406,24 @@ fn child(arguments: &[String]) {
         let _ = control.read_exact(&mut released);
         return;
     }
-    assert_eq!(arguments[1], "native-burst");
-    for value in 0..((1 << 17) + 17) as i64 {
+    assert!(arguments[1] == "native-burst" || arguments[1] == "native-saturated");
+    let count = if arguments[1] == "native-saturated" {
+        (1 << 16) + 17
+    } else {
+        (1 << 17) + 17
+    };
+    for value in 0..count as i64 {
         let mut payload = [0; 14];
         payload[0] = 3;
         payload[5] = 8;
         payload[6..].copy_from_slice(&value.to_be_bytes());
         write_frame(&mut stream, 4, &payload);
+    }
+    if arguments[1] == "native-saturated" {
+        control.write_all(&[2]).unwrap();
+        let mut released = [0];
+        let _ = control.read_exact(&mut released);
+        return;
     }
     stream.shutdown(Shutdown::Write).unwrap();
 }
