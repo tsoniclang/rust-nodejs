@@ -1,10 +1,10 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, VecDeque};
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, SyncSender};
 
-use tsonic_rust_runtime::dispatch::{DispatchGeneration, DispatchGenerationId, DispatchOwner};
+use tsonic_rust_runtime::dispatch::{DispatchEpoch, DispatchOwner};
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
 use tsonic_rust_runtime::TsonicError;
 
@@ -54,7 +54,7 @@ struct PendingCompletion<TError> {
 }
 
 struct SourceThreadCompletions<TError> {
-    generation: DispatchGeneration,
+    generation: DispatchEpoch,
     channel: Option<(SyncSender<WorkCompletion>, Receiver<WorkCompletion>)>,
     in_flight: BTreeMap<TaskTicket, PendingCompletion<TError>>,
     ready: VecDeque<(u64, PendingCompletion<TError>)>,
@@ -63,7 +63,7 @@ struct SourceThreadCompletions<TError> {
 impl<TError> SourceThreadCompletions<TError> {
     fn new() -> Self {
         Self {
-            generation: DispatchGeneration::new_closed(),
+            generation: DispatchEpoch::new(),
             channel: None,
             in_flight: BTreeMap::new(),
             ready: VecDeque::new(),
@@ -89,7 +89,7 @@ pub struct BackgroundTasks<TError> {
 
 pub struct BackgroundHandle<TError> {
     source: Weak<RefCell<SourceThreadCompletions<TError>>>,
-    generation: Option<DispatchGenerationId>,
+    generation: Option<NonZeroU64>,
 }
 
 impl<TError> Clone for BackgroundHandle<TError> {
@@ -178,7 +178,11 @@ impl<TError: From<crate::NodeError>> BackgroundHandle<TError> {
                 "background callback owner has been released",
             )
         })?;
-        if !source.borrow().generation.accepts(self.generation) {
+        let admitted = {
+            let source = source.borrow();
+            source.generation.is_bound() && source.generation.matches_epoch(self.generation)
+        };
+        if !admitted {
             return Err(crate::NodeError::new(
                 "ERR_NODE_BACKGROUND_CLOSED",
                 "background callback owner has been released",
