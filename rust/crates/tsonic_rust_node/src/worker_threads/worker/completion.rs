@@ -325,7 +325,7 @@ impl WorkerPhysical {
     }
 }
 
-impl<E: From<NodeError> + 'static> Worker<E> {
+impl<E: 'static> Worker<E> {
     pub async fn terminate(&self) -> Result<i32, WorkerCompletionError> {
         self.state.physical.request_termination()?;
         WorkerCompletion::new(&self.state).await
