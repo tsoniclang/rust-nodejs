@@ -107,17 +107,9 @@ impl WorkerPhysical {
             frame,
         });
         let notify_callbacks = state.callback_active;
-        let wake = if state.native_waiters.first.is_some()
-            || !state.native_waiters.additional.is_empty()
-        {
-            Some(state.native_waiters.take_wakers())
-        } else {
-            None
-        };
+        let wake = state.native_waiters.take_wakers();
         drop(state);
-        if let Some(wake) = wake {
-            wake.wake_all();
-        }
+        wake_completion_waiters(wake);
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -297,8 +289,8 @@ impl WorkerPhysical {
                         || (state.process.is_some() && !state.exit_consumed)),
             )
         };
-        native.wake_all();
-        owned.wake_all();
+        wake_completion_waiters(native);
+        wake_completion_waiters(owned);
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -311,7 +303,7 @@ impl WorkerPhysical {
             state.reader_error = error;
             (state.native_waiters.take_wakers(), state.callback_active)
         };
-        wake.wake_all();
+        wake_completion_waiters(wake);
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -325,8 +317,8 @@ impl WorkerPhysical {
                 state.callback_active,
             )
         };
-        native.wake_all();
-        owned.wake_all();
+        wake_completion_waiters(native);
+        wake_completion_waiters(owned);
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -417,11 +409,14 @@ impl WorkerCompletionWaiters {
             .map(|index| self.additional.remove(index).1)
     }
 
-    fn take_wakers(&mut self) -> CompletionWakes {
-        CompletionWakes {
+    fn take_wakers(&mut self) -> Option<CompletionWakes> {
+        if self.first.is_none() && self.additional.is_empty() {
+            return None;
+        }
+        Some(CompletionWakes {
             first: self.first.take().map(|(_, waker)| waker),
             additional: std::mem::take(&mut self.additional),
-        }
+        })
     }
 }
 
@@ -430,14 +425,15 @@ struct CompletionWakes {
     additional: Vec<(usize, Waker)>,
 }
 
-impl CompletionWakes {
-    fn wake_all(self) {
-        if let Some(waker) = self.first {
-            waker.wake();
-        }
-        for (_, waker) in self.additional {
-            waker.wake();
-        }
+fn wake_completion_waiters(wakes: Option<CompletionWakes>) {
+    let Some(wakes) = wakes else {
+        return;
+    };
+    if let Some(waker) = wakes.first {
+        waker.wake();
+    }
+    for (_, waker) in wakes.additional {
+        waker.wake();
     }
 }
 
@@ -556,39 +552,81 @@ impl Drop for WorkerCompletion<'_> {
 }
 
 #[cfg(test)]
+fn assert_cancelled_observer_capacity_is_preserved(publish: impl Fn(&WorkerPhysical)) {
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::TsonicError;
+    for owned in [false, true] {
+        let (state, _sender, _peer) =
+            super::completion_tests::completed_process_with_pending_transport();
+        let worker = Worker::<TsonicError> {
+            state: std::rc::Rc::new(state),
+            emitter: crate::events::EventEmitter::new(),
+        };
+        let resources = crate::worker_threads::WorkerResources::<TsonicError>::new();
+        crate::block_on_with_contexts(
+            async {
+                if owned {
+                    resources.register_worker(&worker).unwrap();
+                    worker.unref();
+                }
+                assert_eq!(
+                    worker.state.delivery.borrow().owner.is_some(),
+                    owned,
+                    "actual observer mode"
+                );
+                let mut observers: [WorkerCompletion<'_>; 4] =
+                    std::array::from_fn(|_| WorkerCompletion::new(&worker.state));
+                for observer in &mut observers {
+                    assert!(Pin::new(observer)
+                        .poll(&mut Context::from_waker(Waker::noop()))
+                        .is_pending());
+                }
+                drop(observers);
+                let idle_capacity = || {
+                    let state = crate::sync::lock(&worker.state.physical.state);
+                    if owned {
+                        state.owned_waiters.additional.capacity()
+                    } else {
+                        state.native_waiters.additional.capacity()
+                    }
+                };
+                let capacity = idle_capacity();
+                assert!(
+                    capacity >= 3,
+                    "real concurrent observers reserved native storage"
+                );
+                publish(&worker.state.physical);
+                assert_eq!(
+                    idle_capacity(),
+                    capacity,
+                    "native notification without observers must not discard reusable storage"
+                );
+                worker.state.physical.close_consumer();
+            },
+            prepend(&resources, DispatchEnd::<TsonicError>::new()),
+        )
+        .unwrap();
+    }
+}
+
+#[cfg(test)]
 #[test]
 fn frames_preserve_idle_storage_after_all_concurrent_native_observers_cancel() {
-    let (state, _sender, _peer) =
-        super::completion_tests::completed_process_with_pending_transport();
-    let mut observers = [
-        WorkerCompletion::new(&state),
-        WorkerCompletion::new(&state),
-        WorkerCompletion::new(&state),
-        WorkerCompletion::new(&state),
-    ];
-    for observer in &mut observers {
-        assert!(Pin::new(observer)
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending());
+    assert_cancelled_observer_capacity_is_preserved(|physical| {
+        assert!(physical.enqueue_frame(super::completion_tests::native_message(1)));
+    });
+}
+
+#[cfg(test)]
+#[test]
+fn owner_changes_preserve_idle_storage_after_all_concurrent_observers_cancel() {
+    for active in [false, true] {
+        assert_cancelled_observer_capacity_is_preserved(|physical| physical.owner_changed(active));
     }
-    drop(observers);
-    let capacity = crate::sync::lock(&state.physical.state)
-        .native_waiters
-        .additional
-        .capacity();
-    assert!(
-        capacity >= 3,
-        "real concurrent observers reserved native storage"
-    );
-    assert!(state
-        .physical
-        .enqueue_frame(super::completion_tests::native_message(1)));
-    assert_eq!(
-        crate::sync::lock(&state.physical.state)
-            .native_waiters
-            .additional
-            .capacity(),
-        capacity,
-        "a frame without observers must not discard their reusable native storage"
-    );
+}
+
+#[cfg(test)]
+#[test]
+fn reader_and_process_publication_preserve_idle_storage_after_concurrent_observers_cancel() {
+    assert_cancelled_observer_capacity_is_preserved(|physical| physical.finish_reader(None));
 }
