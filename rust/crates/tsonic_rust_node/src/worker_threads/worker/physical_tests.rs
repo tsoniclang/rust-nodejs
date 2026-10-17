@@ -1013,3 +1013,41 @@ fn common_node_error_layout_and_equality_match_the_unchanged_native_base() {
         "common equality depends only on the original code and source"
     );
 }
+
+#[test]
+fn physical_native_operations_do_not_require_callback_error_conversion() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    let worker = Worker::<()> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let _native_post = Worker::<()>::post_message;
+    assert_eq!(
+        worker.thread_id(),
+        1,
+        "native identity is independent of callback errors"
+    );
+    assert!(
+        std::ptr::eq(worker.unref(), &worker),
+        "native unref preserves Worker identity"
+    );
+    assert!(
+        !worker.state.delivery.borrow().refed,
+        "native unref changes only its own delivery flag"
+    );
+    assert!(
+        std::ptr::eq(worker.ref_chain(), &worker),
+        "native ref preserves Worker identity"
+    );
+    assert!(
+        worker.state.delivery.borrow().refed,
+        "native ref restores only its own delivery flag"
+    );
+    drop(sender);
+    worker.state.physical.finish_reader(None);
+    let mut native = std::pin::pin!(async { worker.terminate().await });
+    let outcome: Poll<Result<i32, WorkerCompletionError>> = native
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()));
+    assert!(matches!(outcome, Poll::Ready(Ok(0))), "public native terminate returns its own completion result without converting into callback E");
+}

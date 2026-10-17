@@ -248,7 +248,9 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         resources.register_worker(&value)?;
         Ok(value)
     }
+}
 
+impl<E: 'static> Worker<E> {
     pub fn thread_id(&self) -> i32 {
         self.state.thread_id
     }
