@@ -44,12 +44,13 @@ impl NativeFrameProducer {
 
 pub(super) fn completed_process_with_pending_transport(
 ) -> (WorkerState, NativeFrameProducer, TcpStream) {
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .arg("--help")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let child = WorkerChild::spawn(
+        Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    )
+    .unwrap();
     let status = child.wait().unwrap();
     assert!(status.success(), "native child completed successfully");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -57,7 +58,7 @@ pub(super) fn completed_process_with_pending_transport(
     let (socket, _) = listener.accept().unwrap();
     let (transport, unused) = WorkerTransport::start(socket).unwrap();
     drop(unused);
-    let physical = Arc::new(WorkerPhysical::new(WorkerChild::finished(child, status)).unwrap());
+    let physical = Arc::new(WorkerPhysical::new(child).unwrap());
     let sender = NativeFrameProducer(Arc::clone(&physical));
     (
         WorkerState {
