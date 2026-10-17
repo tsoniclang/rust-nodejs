@@ -109,7 +109,9 @@ impl WorkerPhysical {
         let notify_callbacks = state.callback_active;
         let wake = state.native_waiters.take_wakers();
         drop(state);
-        wake_completion_waiters(wake);
+        if let Some(wake) = wake {
+            wake_completion_waiters(wake);
+        }
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -289,8 +291,12 @@ impl WorkerPhysical {
                         || (state.process.is_some() && !state.exit_consumed)),
             )
         };
-        wake_completion_waiters(native);
-        wake_completion_waiters(owned);
+        if let Some(native) = native {
+            wake_completion_waiters(native);
+        }
+        if let Some(owned) = owned {
+            wake_completion_waiters(owned);
+        }
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -303,7 +309,9 @@ impl WorkerPhysical {
             state.reader_error = error;
             (state.native_waiters.take_wakers(), state.callback_active)
         };
-        wake_completion_waiters(wake);
+        if let Some(wake) = wake {
+            wake_completion_waiters(wake);
+        }
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -317,8 +325,12 @@ impl WorkerPhysical {
                 state.callback_active,
             )
         };
-        wake_completion_waiters(native);
-        wake_completion_waiters(owned);
+        if let Some(native) = native {
+            wake_completion_waiters(native);
+        }
+        if let Some(owned) = owned {
+            wake_completion_waiters(owned);
+        }
         if notify_callbacks {
             let _ = self.readiness.wake();
         }
@@ -425,10 +437,7 @@ struct CompletionWakes {
     additional: Vec<(usize, Waker)>,
 }
 
-fn wake_completion_waiters(wakes: Option<CompletionWakes>) {
-    let Some(wakes) = wakes else {
-        return;
-    };
+fn wake_completion_waiters(wakes: CompletionWakes) {
     if let Some(waker) = wakes.first {
         waker.wake();
     }
