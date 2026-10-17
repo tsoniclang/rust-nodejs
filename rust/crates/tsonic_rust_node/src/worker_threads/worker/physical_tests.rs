@@ -268,10 +268,13 @@ fn native_readiness_invokes_reentrant_wakers_outside_the_physical_mutex() {
 struct ReentrantDropWake {
     physical: std::sync::Weak<WorkerPhysical>,
     dropped: Arc<AtomicUsize>,
+    wakes: Arc<AtomicUsize>,
 }
 
 impl Wake for ReentrantDropWake {
-    fn wake(self: Arc<Self>) {}
+    fn wake(self: Arc<Self>) {
+        self.wakes.fetch_add(1, AtomicOrdering::Relaxed);
+    }
 }
 
 impl Drop for ReentrantDropWake {
@@ -294,9 +297,11 @@ fn native_waker_preparation_and_cancelled_registration_drop_reenter_outside_the_
         }));
     });
     let dropped = Arc::new(AtomicUsize::new(0));
+    let wakes = Arc::new(AtomicUsize::new(0));
     let waker = Waker::from(Arc::new(ReentrantDropWake {
         physical: Arc::downgrade(&state.physical),
         dropped: Arc::clone(&dropped),
+        wakes: Arc::clone(&wakes),
     }));
     let mut observer = completion::WorkerCompletion::new(&state);
     assert!(Pin::new(&mut observer)
@@ -313,6 +318,11 @@ fn native_waker_preparation_and_cancelled_registration_drop_reenter_outside_the_
         dropped.load(AtomicOrdering::Relaxed),
         1,
         "the last cancelled native waker drops outside the queue lock"
+    );
+    assert_eq!(
+        wakes.load(AtomicOrdering::Relaxed),
+        0,
+        "native preparation and cancellation never fabricate a wake"
     );
 }
 
