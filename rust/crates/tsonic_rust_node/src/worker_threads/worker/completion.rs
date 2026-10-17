@@ -285,17 +285,21 @@ impl WorkerPhysical {
     }
 
     pub(super) fn owner_changed(&self, active: bool) {
-        let (native, owned) = {
+        let (native, owned, notify_callbacks) = {
             let mut state = crate::sync::lock(&self.state);
             state.callback_active = active;
             (
                 state.native_waiters.take_wakers(),
                 state.owned_waiters.take_wakers(),
+                active
+                    && (!state.frames.is_empty()
+                        || (state.reader_finished && !state.reader_consumed)
+                        || (state.process.is_some() && !state.exit_consumed)),
             )
         };
         native.wake_all();
         owned.wake_all();
-        if active {
+        if notify_callbacks {
             let _ = self.readiness.wake();
         }
     }
