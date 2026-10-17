@@ -175,25 +175,39 @@ fn native_node_driver_transports_exact_component_background_errors() {
     let second = BackgroundTasks::<OtherFailure>::new();
     let expected = Rc::new(Cell::new(9_007_199_254_740_993));
     let failure = expected.clone();
-    first
-        .spawn(|| Ok(()), move |_| Err(Failure::Payload(failure)))
-        .unwrap();
     let observed = Rc::new(Cell::new(0));
     let recorded = observed.clone();
-    second
-        .spawn(
-            || Ok(()),
-            move |_| {
-                recorded.set(1);
-                Ok(())
-            },
-        )
-        .unwrap();
+    let (release, blocked) = std::sync::mpsc::sync_channel(1);
     let contexts = tsonic_rust_runtime::dispatch::prepend(
         &first,
         tsonic_rust_runtime::dispatch::prepend(&second, DispatchEnd::<Failure>::new()),
     );
-    let returned = match crate::run_with_contexts(&contexts) {
+    let returned = match crate::run_entry_with_contexts(
+        || {
+            first
+                .spawn(
+                    move || {
+                        blocked
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        Ok(())
+                    },
+                    move |_| Err(Failure::Payload(failure)),
+                )
+                .unwrap();
+            second
+                .spawn(
+                    || Ok(()),
+                    move |_| {
+                        recorded.set(1);
+                        release.send(()).unwrap();
+                        Ok(())
+                    },
+                )
+                .unwrap();
+        },
+        &contexts,
+    ) {
         Err(error) => error,
         Ok(_) => panic!("actual native callback must fail"),
     };
@@ -228,11 +242,14 @@ fn native_async_driver_drops_its_root_future_on_exact_callback_failure() {
     let root = BackgroundTasks::<Failure>::new();
     let expected = Rc::new(Cell::new(9_007_199_254_740_993));
     let failure = expected.clone();
-    root.spawn(|| Ok(()), move |_| Err(Failure::Payload(failure)))
-        .unwrap();
     let released = Rc::new(Cell::new(0));
     let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<Failure>::new());
-    let returned = match crate::block_on_with_contexts(PendingRoot(released.clone()), contexts) {
+    let future = async {
+        root.spawn(|| Ok(()), move |_| Err(Failure::Payload(failure)))
+            .unwrap();
+        PendingRoot(released.clone()).await
+    };
+    let returned = match crate::block_on_with_contexts(future, contexts) {
         Err(error) => error,
         Ok(_) => panic!("native background callback must interrupt the root future"),
     };
@@ -241,5 +258,177 @@ fn native_async_driver_drops_its_root_future_on_exact_callback_failure() {
     };
     assert!(Rc::ptr_eq(&returned, &expected));
     assert_eq!(released.get(), 1);
+    assert_eq!(background_task_budget().pending(), 0);
+}
+
+#[test]
+fn background_epoch_admission_uses_weak_source_identity_and_the_active_owner() {
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchContexts, DispatchEnd, DispatchOwner};
+    let tasks = BackgroundTasks::<TsonicError>::new();
+    let other = BackgroundTasks::<TsonicError>::new();
+    let old = tasks.handle();
+    let foreign = other.handle();
+    assert!(!old.source.ptr_eq(&foreign.source));
+    assert_eq!(
+        old.spawn(|| Ok(()), |_| Ok(())).unwrap_err().code(),
+        "ERR_NODE_BACKGROUND_CLOSED"
+    );
+    let observed = Rc::new(Cell::new(0));
+    let recorded = Rc::clone(&observed);
+    crate::run_entry_with_contexts(
+        || {
+            let current = tsonic_rust_js::event_loop::require_dispatch_owner();
+            let wrong = DispatchOwner::new().unwrap();
+            assert_ne!(current, wrong);
+            assert!(!tasks.enter(wrong));
+            tasks.close(wrong);
+            assert!(tasks
+                .source
+                .get()
+                .unwrap()
+                .borrow()
+                .generation
+                .owns(current));
+            assert_eq!(
+                foreign.spawn(|| Ok(()), |_| Ok(())).unwrap_err().code(),
+                "ERR_NODE_BACKGROUND_CLOSED"
+            );
+            old.spawn(
+                || Ok(7),
+                move |result| {
+                    recorded.set(result?);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        },
+        prepend(&tasks, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+    assert_eq!(observed.get(), 7);
+    assert!(tasks.source.get().unwrap().borrow().channel.is_none());
+    assert_eq!(background_task_budget().pending(), 0);
+    let next = tasks.handle();
+    assert!(old.source.ptr_eq(&next.source));
+    assert_ne!(old.generation, next.generation);
+    let recorded = Rc::clone(&observed);
+    crate::run_entry_with_contexts(
+        || {
+            assert_eq!(
+                old.spawn(|| Ok(()), |_| Ok(())).unwrap_err().code(),
+                "ERR_NODE_BACKGROUND_CLOSED"
+            );
+            next.spawn(
+                || Ok(11),
+                move |result| {
+                    recorded.set(result?);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        },
+        prepend(&tasks, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+    assert_eq!(observed.get(), 11);
+    assert_eq!(Rc::strong_count(tasks.source.get().unwrap()), 1);
+    drop(tasks);
+    assert!(old.source.upgrade().is_none());
+    assert!(next.source.upgrade().is_none());
+    let replacement = BackgroundTasks::<TsonicError>::new();
+    let replacement_handle = replacement.handle();
+    assert!(!old.source.ptr_eq(&replacement_handle.source));
+    assert_eq!(
+        old.spawn(|| Ok(()), |_| Ok(())).unwrap_err().code(),
+        "ERR_NODE_BACKGROUND_CLOSED"
+    );
+    assert_eq!(background_task_budget().pending(), 0);
+}
+
+#[test]
+fn background_epoch_shutdown_drops_captures_once_outside_the_registry_borrow() {
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchContexts, DispatchEnd};
+    struct Capture {
+        handle: crate::background::BackgroundHandle<TsonicError>,
+        drops: Rc<Cell<usize>>,
+        thread: std::thread::ThreadId,
+    }
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            assert_eq!(std::thread::current().id(), self.thread);
+            assert_eq!(
+                self.handle.spawn(|| Ok(()), |_| Ok(())).unwrap_err().code(),
+                "ERR_NODE_BACKGROUND_CLOSED"
+            );
+            let source = self.handle.source.upgrade().unwrap();
+            let source = source.borrow();
+            assert_eq!(source.pending(), 0);
+            assert!(source.channel.is_none());
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    for unwind in [false, true] {
+        let tasks = BackgroundTasks::<TsonicError>::new();
+        let handle = tasks.handle();
+        let (release, blocked) = std::sync::mpsc::sync_channel(1);
+        let drops = Rc::new(Cell::new(0));
+        let capture = Capture {
+            handle: handle.clone(),
+            drops: Rc::clone(&drops),
+            thread: std::thread::current().id(),
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::run_entry_with_contexts(
+                || {
+                    handle
+                        .spawn(
+                            move || {
+                                blocked
+                                    .recv_timeout(std::time::Duration::from_secs(5))
+                                    .unwrap();
+                                Ok(())
+                            },
+                            move |_| {
+                                drop(capture);
+                                panic!("retired capture must never execute")
+                            },
+                        )
+                        .unwrap();
+                    assert!(tasks.has_pending_work());
+                    if unwind {
+                        panic!("native background owner unwind");
+                    }
+                    tasks.close(tsonic_rust_js::event_loop::require_dispatch_owner());
+                },
+                prepend(&tasks, DispatchEnd::<TsonicError>::new()),
+            )
+            .unwrap();
+        }));
+        assert_eq!(result.is_err(), unwind);
+        assert_eq!(drops.get(), 1);
+        assert_eq!(Rc::strong_count(&drops), 1);
+        assert!(!tasks.has_pending_work());
+        assert!(tasks.source.get().unwrap().borrow().channel.is_none());
+        assert_eq!(background_task_budget().pending(), 0);
+        release.send(()).unwrap();
+    }
+}
+
+#[test]
+fn missing_background_loop_unwinds_before_creating_a_source_or_reserving_work() {
+    let tasks = BackgroundTasks::<TsonicError>::new();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = tasks.spawn(|| Ok(()), |_| Ok(()));
+    }));
+    let failure = result.expect_err("missing native event loop must unwind");
+    let message = failure
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| failure.downcast_ref::<String>().map(String::as_str));
+    assert_eq!(
+        message,
+        Some("No JavaScript event loop is running on this thread.")
+    );
+    assert!(tasks.source.get().is_none());
     assert_eq!(background_task_budget().pending(), 0);
 }

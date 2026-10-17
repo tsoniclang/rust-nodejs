@@ -69,39 +69,57 @@ fn cold_worker_and_signal_roots_allocate_no_native_storage() {
 #[test]
 fn warmed_native_server_frontiers_and_shared_handles_do_not_allocate() {
     let servers = NetServers::<NodeError>::new();
-    let server = Server::new(&servers).unwrap();
-    assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
-    let cost = measure(|| {
-        for _ in 0..1024 {
-            black_box(server.clone());
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let server = Server::new(&servers).unwrap();
             assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
-            assert!(!servers.has_work());
-            assert_eq!(servers.next_delay(), None);
-        }
-    });
-    assert_eq!(cost, (0, 0));
+            let cost = measure(|| {
+                for _ in 0..1024 {
+                    black_box(server.clone());
+                    assert!(!poll_phase(&servers, tsonic_rust_node::phases::NET).unwrap());
+                    assert!(!servers.has_work());
+                    assert_eq!(servers.next_delay(), None);
+                }
+            });
+            assert_eq!(cost, (0, 0));
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &servers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap();
 }
 
 #[test]
 fn warmed_native_watcher_frontiers_and_shared_handles_do_not_allocate() {
     let watchers = Watchers::<NodeError>::new();
-    let watcher = tsonic_rust_node::fs::watch_file_with_options(
-        &watchers,
-        "native-idle-watch-cost",
-        tsonic_rust_node::fs::WatchFileOptions::default(),
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let watcher = tsonic_rust_node::fs::watch_file_with_options(
+                &watchers,
+                "native-idle-watch-cost",
+                tsonic_rust_node::fs::WatchFileOptions::default(),
+            )
+            .unwrap();
+            assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
+            let cost = measure(|| {
+                for _ in 0..1024 {
+                    black_box(watcher.clone());
+                    assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
+                    assert!(!watchers.has_work());
+                    assert_eq!(watchers.next_delay(), None);
+                }
+            });
+            assert_eq!(cost, (0, 0));
+            watcher.close();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &watchers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
     )
     .unwrap();
-    assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
-    let cost = measure(|| {
-        for _ in 0..1024 {
-            black_box(watcher.clone());
-            assert!(!poll_phase(&watchers, tsonic_rust_node::phases::WATCHERS).unwrap());
-            assert!(!watchers.has_work());
-            assert_eq!(watchers.next_delay(), None);
-        }
-    });
-    assert_eq!(cost, (0, 0));
-    watcher.close();
 }
 
 #[test]
