@@ -108,20 +108,32 @@ fn absent_streaming_codec_preserves_its_exact_native_failure_domain() {
 
 fn stream(mode: ZlibMode, input: &Buffer) -> Buffer {
     let tasks = RuntimeTasks::<NodeError>::new();
-    let codec = Zlib::<NodeError>::new(tasks.handle(), mode, None);
-    let mut output = Vec::new();
-    for start in (0..input.len()).step_by(1024) {
-        codec
-            .write(input.slice(start as isize, Some(input.len().min(start + 1024) as isize)))
-            .unwrap();
-        drain(&codec, &mut output);
-    }
-    codec.end().unwrap();
-    drain(&codec, &mut output);
-    tasks.poll().unwrap();
-    assert!(codec.closed());
-    assert_eq!(codec.bytes_written(), input.len());
-    Buffer::from_bytes(output)
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let codec = Zlib::<NodeError>::new(tasks.handle(), mode, None);
+            let mut output = Vec::new();
+            for start in (0..input.len()).step_by(1024) {
+                codec
+                    .write(
+                        input.slice(start as isize, Some(input.len().min(start + 1024) as isize)),
+                    )
+                    .unwrap();
+                drain(&codec, &mut output);
+            }
+            codec.end().unwrap();
+            drain(&codec, &mut output);
+            tasks.poll().unwrap();
+            assert!(codec.closed());
+            assert_eq!(codec.bytes_written(), input.len());
+            Buffer::from_bytes(output)
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &tasks,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap()
+    .0
 }
 
 fn drain(codec: &Zlib<NodeError>, output: &mut Vec<u8>) {

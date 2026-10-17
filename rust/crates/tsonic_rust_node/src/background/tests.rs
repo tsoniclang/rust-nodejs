@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use tsonic_rust_runtime::dispatch::DispatchContexts;
 use tsonic_rust_runtime::dispatch_queue::TaskTicket;
 use tsonic_rust_runtime::{ErrorObject, TsonicError};
 
@@ -182,26 +183,32 @@ fn asynchronous_work_does_not_block_the_polling_thread() {
 fn completions_return_to_the_exact_source_thread() {
     let threads = [11_u32, 29_u32].map(|expected| {
         std::thread::spawn(move || {
-            let observed = Rc::new(Cell::new(None));
-            let completion_observed = Rc::clone(&observed);
-            super::with_default(|tasks| {
-                tasks.spawn(
-                    move || Ok(expected),
-                    move |result| {
-                        completion_observed.set(Some(result.map_err(TsonicError::from)?));
-                        Ok(())
-                    },
-                )
-            })
+            crate::run_entry_with_contexts(
+                || {
+                    let observed = Rc::new(Cell::new(None));
+                    let completion_observed = Rc::clone(&observed);
+                    super::with_default(|tasks| {
+                        tasks.spawn(
+                            move || Ok(expected),
+                            move |result| {
+                                completion_observed.set(Some(result.map_err(TsonicError::from)?));
+                                Ok(())
+                            },
+                        )
+                    })
+                    .unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    while super::has_pending_work() && Instant::now() < deadline {
+                        super::poll().unwrap();
+                        std::thread::yield_now();
+                    }
+                    assert!(!super::has_pending_work());
+                    assert_eq!(observed.get(), Some(expected));
+                    assert_eq!(super::background_task_budget().pending(), 0);
+                },
+                tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+            )
             .unwrap();
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while super::has_pending_work() && Instant::now() < deadline {
-                super::poll().unwrap();
-                std::thread::yield_now();
-            }
-            assert!(!super::has_pending_work());
-            assert_eq!(observed.get(), Some(expected));
-            assert_eq!(super::background_task_budget().pending(), 0);
         })
     });
     for thread in threads {
@@ -248,257 +255,300 @@ impl From<TsonicError> for OtherFailure {
 
 #[test]
 fn native_work_retains_non_send_non_clone_non_display_callback_failures() {
-    let root = super::BackgroundTasks::<Failure>::new();
-    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
-    let failure = expected.clone();
-    let source_thread = std::thread::current().id();
-    root.spawn(
-        || Ok(std::thread::current().id()),
-        move |result| {
-            assert_ne!(result.unwrap(), source_thread);
-            assert_eq!(std::thread::current().id(), source_thread);
-            Err(Failure::Payload(failure))
+    crate::run_entry_with_contexts(
+        || {
+            let root = super::BackgroundTasks::<Failure>::new();
+            let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let failure = expected.clone();
+            let source_thread = std::thread::current().id();
+            root.spawn(
+                || Ok(std::thread::current().id()),
+                move |result| {
+                    assert_ne!(result.unwrap(), source_thread);
+                    assert_eq!(std::thread::current().id(), source_thread);
+                    Err(Failure::Payload(failure))
+                },
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let returned = loop {
+                match root.poll() {
+                    Err(error) => break error,
+                    Ok(_) => {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                }
+            };
+            let Failure::Payload(returned) = returned else {
+                panic!("callback failure must retain its original native type");
+            };
+            assert!(Rc::ptr_eq(&returned, &expected));
+            assert_eq!(returned.get(), 9_007_199_254_740_993);
+            assert!(!root.has_pending_work());
+            assert_eq!(super::background_task_budget().pending(), 0);
         },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let returned = loop {
-        match root.poll() {
-            Err(error) => break error,
-            Ok(_) => {
-                assert!(Instant::now() < deadline);
-                std::thread::yield_now();
-            }
-        }
-    };
-    let Failure::Payload(returned) = returned else {
-        panic!("callback failure must retain its original native type");
-    };
-    assert!(Rc::ptr_eq(&returned, &expected));
-    assert_eq!(returned.get(), 9_007_199_254_740_993);
-    assert!(!root.has_pending_work());
-    assert_eq!(super::background_task_budget().pending(), 0);
 }
 
 #[test]
 fn distinct_callback_domains_share_capacity_without_initializing_rejected_roots() {
-    let budget = super::background_task_budget();
-    let reservations: Vec<_> = (0..super::MAX_PENDING_BACKGROUND_WORK - 1)
-        .map(|_| budget.reserve().unwrap())
-        .collect();
-    let root = super::BackgroundTasks::<Failure>::new();
-    let other = super::BackgroundTasks::<OtherFailure>::new();
-    let (release, blocked) = std::sync::mpsc::sync_channel(1);
-    root.spawn(
-        move || {
-            blocked.recv_timeout(Duration::from_secs(5)).unwrap();
-            Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            let budget = super::background_task_budget();
+            let reservations: Vec<_> = (0..super::MAX_PENDING_BACKGROUND_WORK - 1)
+                .map(|_| budget.reserve().unwrap())
+                .collect();
+            let root = super::BackgroundTasks::<Failure>::new();
+            let other = super::BackgroundTasks::<OtherFailure>::new();
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            assert!(other.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let (release, blocked) = std::sync::mpsc::sync_channel(1);
+            root.spawn(
+                move || {
+                    blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+            let rejected = other.spawn(
+                || -> crate::NodeResult<()> { panic!("rejected work cannot execute") },
+                |_| Ok(()),
+            );
+            assert_eq!(
+                rejected.unwrap_err().code(),
+                "ERR_NODE_BACKGROUND_WORK_LIMIT"
+            );
+            assert!(other.source.get().is_none());
+            assert_eq!(budget.pending(), super::MAX_PENDING_BACKGROUND_WORK);
+            drop(root);
+            assert_eq!(budget.pending(), reservations.len());
+            release.send(()).unwrap();
+            drop(reservations);
+            assert_eq!(budget.pending(), 0);
+            let value = Rc::new(Cell::new(9_007_199_254_740_993));
+            let failure = value.clone();
+            other
+                .spawn(
+                    || Ok(()),
+                    move |_| Err(OtherFailure(Failure::Payload(failure))),
+                )
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let returned = loop {
+                match other.poll() {
+                    Err(error) => break error,
+                    Ok(_) => {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                }
+            };
+            let OtherFailure(Failure::Payload(returned)) = returned else {
+                panic!("second domain must retain its exact payload");
+            };
+            assert!(Rc::ptr_eq(&returned, &value));
+            assert_eq!(returned.get(), 9_007_199_254_740_993);
+            assert_eq!(budget.pending(), 0);
         },
-        |_| Ok(()),
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
     )
     .unwrap();
-    let rejected = other.spawn(
-        || -> crate::NodeResult<()> { panic!("rejected work cannot execute") },
-        |_| Ok(()),
-    );
-    assert_eq!(
-        rejected.unwrap_err().code(),
-        "ERR_NODE_BACKGROUND_WORK_LIMIT"
-    );
-    assert!(other.source.get().is_none());
-    assert_eq!(budget.pending(), super::MAX_PENDING_BACKGROUND_WORK);
-    drop(root);
-    assert_eq!(budget.pending(), reservations.len());
-    release.send(()).unwrap();
-    drop(reservations);
-    assert_eq!(budget.pending(), 0);
-    let value = Rc::new(Cell::new(9_007_199_254_740_993));
-    let failure = value.clone();
-    other
-        .spawn(
-            || Ok(()),
-            move |_| Err(OtherFailure(Failure::Payload(failure))),
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let returned = loop {
-        match other.poll() {
-            Err(error) => break error,
-            Ok(_) => {
-                assert!(Instant::now() < deadline);
-                std::thread::yield_now();
-            }
-        }
-    };
-    let OtherFailure(Failure::Payload(returned)) = returned else {
-        panic!("second domain must retain its exact payload");
-    };
-    assert!(Rc::ptr_eq(&returned, &value));
-    assert_eq!(returned.get(), 9_007_199_254_740_993);
-    assert_eq!(budget.pending(), 0);
 }
 
 #[test]
 fn dropping_the_source_owner_releases_callbacks_and_capacity_before_native_work_finishes() {
-    let budget = super::background_task_budget();
-    let root = super::BackgroundTasks::<Failure>::new();
-    let retained = Rc::new(Cell::new(17));
-    let released = Rc::downgrade(&retained);
-    let (release, blocked) = std::sync::mpsc::sync_channel(1);
-    root.spawn(
-        move || {
-            blocked.recv_timeout(Duration::from_secs(5)).unwrap();
-            Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            let budget = super::background_task_budget();
+            let root = super::BackgroundTasks::<Failure>::new();
+            let retained = Rc::new(Cell::new(17));
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let released = Rc::downgrade(&retained);
+            let (release, blocked) = std::sync::mpsc::sync_channel(1);
+            root.spawn(
+                move || {
+                    blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                },
+                move |_| {
+                    retained.set(29);
+                    panic!("released callback must not execute");
+                },
+            )
+            .unwrap();
+            assert!(root.has_pending_work());
+            assert_eq!(budget.pending(), 1);
+            assert!(released.upgrade().is_some());
+            drop(root);
+            assert!(released.upgrade().is_none());
+            assert_eq!(budget.pending(), 0);
+            release.send(()).unwrap();
         },
-        move |_| {
-            retained.set(29);
-            panic!("released callback must not execute");
-        },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
     )
     .unwrap();
-    assert!(root.has_pending_work());
-    assert_eq!(budget.pending(), 1);
-    assert!(released.upgrade().is_some());
-    drop(root);
-    assert!(released.upgrade().is_none());
-    assert_eq!(budget.pending(), 0);
-    release.send(()).unwrap();
 }
 
 #[test]
 fn weak_scheduling_handles_do_not_retain_their_callback_owner() {
-    let budget = super::background_task_budget();
-    let root = super::BackgroundTasks::<Failure>::new();
-    let handle = root.handle();
-    let scheduled = handle.clone();
-    assert!(handle.source.ptr_eq(&scheduled.source));
-    let retained = Rc::new(Cell::new(17));
-    let released = Rc::downgrade(&retained);
-    let (release, blocked) = std::sync::mpsc::sync_channel(1);
-    handle
-        .spawn(
-            move || {
-                blocked.recv_timeout(Duration::from_secs(5)).unwrap();
-                Ok(())
-            },
-            move |_| {
-                retained.set(29);
-                scheduled
-                    .spawn(|| Ok(()), |_| Ok(()))
-                    .map_err(TsonicError::from)?;
-                panic!("released callback must not execute");
-            },
-        )
-        .unwrap();
-    assert!(released.upgrade().is_some());
-    assert_eq!(budget.pending(), 1);
-    drop(root);
-    assert!(handle.source.upgrade().is_none());
-    assert!(released.upgrade().is_none());
-    assert_eq!(budget.pending(), 0);
-    let rejected = handle.spawn(
-        || -> crate::NodeResult<()> { panic!("closed owner cannot submit native work") },
-        |_| Ok(()),
-    );
-    assert_eq!(rejected.unwrap_err().code(), "ERR_NODE_BACKGROUND_CLOSED");
-    assert_eq!(budget.pending(), 0);
-    release.send(()).unwrap();
+    crate::run_entry_with_contexts(
+        || {
+            let budget = super::background_task_budget();
+            let root = super::BackgroundTasks::<Failure>::new();
+            let handle = root.handle();
+            let scheduled = handle.clone();
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            assert!(handle.source.ptr_eq(&scheduled.source));
+            let retained = Rc::new(Cell::new(17));
+            let released = Rc::downgrade(&retained);
+            let (release, blocked) = std::sync::mpsc::sync_channel(1);
+            handle
+                .spawn(
+                    move || {
+                        blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+                        Ok(())
+                    },
+                    move |_| {
+                        retained.set(29);
+                        scheduled
+                            .spawn(|| Ok(()), |_| Ok(()))
+                            .map_err(TsonicError::from)?;
+                        panic!("released callback must not execute");
+                    },
+                )
+                .unwrap();
+            assert!(released.upgrade().is_some());
+            assert_eq!(budget.pending(), 1);
+            drop(root);
+            assert!(handle.source.upgrade().is_none());
+            assert!(released.upgrade().is_none());
+            assert_eq!(budget.pending(), 0);
+            let rejected = handle.spawn(
+                || -> crate::NodeResult<()> { panic!("closed owner cannot submit native work") },
+                |_| Ok(()),
+            );
+            assert_eq!(rejected.unwrap_err().code(), "ERR_NODE_BACKGROUND_CLOSED");
+            assert_eq!(budget.pending(), 0);
+            release.send(()).unwrap();
+        },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn weak_reentrant_scheduling_retains_exact_failures_without_a_source_borrow() {
-    let budget = super::background_task_budget();
-    let root = super::BackgroundTasks::<Failure>::new();
-    let handle = root.handle();
-    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
-    let failure = expected.clone();
-    let observed = Rc::new(Cell::new(0));
-    let recorded = observed.clone();
-    root.spawn(
-        || Ok(()),
-        move |_| {
-            recorded.set(1);
-            let recorded = recorded.clone();
-            handle
-                .spawn(
-                    || Ok(()),
-                    move |_| {
-                        recorded.set(2);
-                        Ok(())
-                    },
-                )
-                .map_err(TsonicError::from)?;
-            Err(Failure::Payload(failure))
-        },
-    )
-    .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let returned = loop {
-        match root.poll() {
-            Err(error) => break error,
-            Ok(_) => {
-                assert!(Instant::now() < deadline);
+    crate::run_entry_with_contexts(
+        || {
+            let budget = super::background_task_budget();
+            let root = super::BackgroundTasks::<Failure>::new();
+            let handle = root.handle();
+            let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let failure = expected.clone();
+            let observed = Rc::new(Cell::new(0));
+            let recorded = observed.clone();
+            root.spawn(
+                || Ok(()),
+                move |_| {
+                    recorded.set(1);
+                    let recorded = recorded.clone();
+                    handle
+                        .spawn(
+                            || Ok(()),
+                            move |_| {
+                                recorded.set(2);
+                                Ok(())
+                            },
+                        )
+                        .map_err(TsonicError::from)?;
+                    Err(Failure::Payload(failure))
+                },
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let returned = loop {
+                match root.poll() {
+                    Err(error) => break error,
+                    Ok(_) => {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                }
+            };
+            let Failure::Payload(returned) = returned else {
+                panic!("reentrant callback must retain its original failure");
+            };
+            assert!(Rc::ptr_eq(&returned, &expected));
+            assert_eq!(returned.get(), 9_007_199_254_740_993);
+            assert_eq!(observed.get(), 1);
+            assert_eq!(budget.pending(), 1);
+            while root.has_pending_work() && Instant::now() < deadline {
+                assert!(root.poll().is_ok());
                 std::thread::yield_now();
             }
-        }
-    };
-    let Failure::Payload(returned) = returned else {
-        panic!("reentrant callback must retain its original failure");
-    };
-    assert!(Rc::ptr_eq(&returned, &expected));
-    assert_eq!(returned.get(), 9_007_199_254_740_993);
-    assert_eq!(observed.get(), 1);
-    assert_eq!(budget.pending(), 1);
-    while root.has_pending_work() && Instant::now() < deadline {
-        assert!(root.poll().is_ok());
-        std::thread::yield_now();
-    }
-    assert!(!root.has_pending_work());
-    assert_eq!(observed.get(), 2);
-    assert_eq!(budget.pending(), 0);
+            assert!(!root.has_pending_work());
+            assert_eq!(observed.get(), 2);
+            assert_eq!(budget.pending(), 0);
+        },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn native_failures_lift_once_without_replacing_the_source_identity() {
-    let root = super::BackgroundTasks::<Failure>::new();
-    let identity = Rc::new(Cell::new(None));
-    let recorded = identity.clone();
-    root.spawn(
+    crate::run_entry_with_contexts(
         || {
-            Err::<(), _>(crate::NodeError::new(
-                "original-native-code",
-                "original-native-message",
-            ))
+            let root = super::BackgroundTasks::<Failure>::new();
+            let identity = Rc::new(Cell::new(None));
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let recorded = identity.clone();
+            root.spawn(
+                || {
+                    Err::<(), _>(crate::NodeError::new(
+                        "original-native-code",
+                        "original-native-message",
+                    ))
+                },
+                move |result| {
+                    let error = result.unwrap_err();
+                    recorded.set(Some((
+                        error.code().as_ptr() as usize,
+                        error.error_identity_key(),
+                    )));
+                    Err(Failure::Native(error.into()))
+                },
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let returned = loop {
+                match root.poll() {
+                    Err(error) => break error,
+                    Ok(_) => {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                }
+            };
+            let Failure::Native(TsonicError::Node { code, source }) = returned else {
+                panic!("native fault must retain its exact native boundary");
+            };
+            assert_eq!(code, "original-native-code");
+            assert_eq!(
+                Some((code.as_ptr() as usize, source.error_identity_key())),
+                identity.get()
+            );
+            assert_eq!(source.message(), "original-native-message");
         },
-        move |result| {
-            let error = result.unwrap_err();
-            recorded.set(Some((
-                error.code().as_ptr() as usize,
-                error.error_identity_key(),
-            )));
-            Err(Failure::Native(error.into()))
-        },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let returned = loop {
-        match root.poll() {
-            Err(error) => break error,
-            Ok(_) => {
-                assert!(Instant::now() < deadline);
-                std::thread::yield_now();
-            }
-        }
-    };
-    let Failure::Native(TsonicError::Node { code, source }) = returned else {
-        panic!("native fault must retain its exact native boundary");
-    };
-    assert_eq!(code, "original-native-code");
-    assert_eq!(
-        Some((code.as_ptr() as usize, source.error_identity_key())),
-        identity.get()
-    );
-    assert_eq!(source.message(), "original-native-message");
 }
 
 struct ReentrantFailure(crate::NodeError);
@@ -521,58 +571,72 @@ impl From<crate::NodeError> for ReentrantFailure {
 
 #[test]
 fn native_fault_conversion_releases_registry_borrows_before_user_from_code() {
-    let root = super::BackgroundTasks::<ReentrantFailure>::new();
-    let handle = root.handle();
-    REENTRANT_NATIVE_FAULT_HANDLE.set(Some(handle));
-    let unregistered = super::background_task_budget().reserve().unwrap();
-    root.scheduling_source()
-        .borrow_mut()
-        .completion_sender()
-        .try_send(super::WorkCompletion {
-            id: unregistered.ticket(),
-        })
-        .unwrap();
-    let returned = match root.poll() {
-        Err(error) => error,
-        Ok(_) => panic!("unregistered native completion must fail"),
-    };
-    assert_eq!(
-        returned.0.source_error().message(),
-        "background work completed without its exact callback"
-    );
-    assert!(root.has_pending_work());
-    REENTRANT_NATIVE_FAULT_HANDLE.set(None);
-    drop(unregistered);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while root.has_pending_work() && Instant::now() < deadline {
-        assert!(root.poll().is_ok());
-        std::thread::yield_now();
-    }
-    assert!(!root.has_pending_work());
-    assert_eq!(super::background_task_budget().pending(), 0);
+    crate::run_entry_with_contexts(
+        || {
+            let root = super::BackgroundTasks::<ReentrantFailure>::new();
+            let handle = root.handle();
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            REENTRANT_NATIVE_FAULT_HANDLE.set(Some(handle));
+            let unregistered = super::background_task_budget().reserve().unwrap();
+            root.scheduling_source()
+                .borrow_mut()
+                .completion_sender()
+                .try_send(super::WorkCompletion {
+                    id: unregistered.ticket(),
+                })
+                .unwrap();
+            let returned = match root.poll() {
+                Err(error) => error,
+                Ok(_) => panic!("unregistered native completion must fail"),
+            };
+            assert_eq!(
+                returned.0.source_error().message(),
+                "background work completed without its exact callback"
+            );
+            assert!(root.has_pending_work());
+            REENTRANT_NATIVE_FAULT_HANDLE.set(None);
+            drop(unregistered);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while root.has_pending_work() && Instant::now() < deadline {
+                assert!(root.poll().is_ok());
+                std::thread::yield_now();
+            }
+            assert!(!root.has_pending_work());
+            assert_eq!(super::background_task_budget().pending(), 0);
+        },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+    )
+    .unwrap();
 }
 
 mod composition;
 
 #[test]
 fn native_background_domain_needs_only_its_actual_node_error() {
-    let root = super::BackgroundTasks::<crate::NodeError>::new();
-    let observed = Rc::new(Cell::new(false));
-    let recorded = observed.clone();
-    root.spawn(
-        || Ok(()),
-        move |result| {
-            result?;
-            recorded.set(true);
-            Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            let root = super::BackgroundTasks::<crate::NodeError>::new();
+            let observed = Rc::new(Cell::new(false));
+            assert!(root.enter(tsonic_rust_js::event_loop::require_dispatch_owner()));
+            let recorded = observed.clone();
+            root.spawn(
+                || Ok(()),
+                move |result| {
+                    result?;
+                    recorded.set(true);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while root.has_pending_work() && Instant::now() < deadline {
+                root.poll().unwrap();
+                std::thread::yield_now();
+            }
+            assert!(!root.has_pending_work());
+            assert!(observed.get());
         },
+        tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while root.has_pending_work() && Instant::now() < deadline {
-        root.poll().unwrap();
-        std::thread::yield_now();
-    }
-    assert!(!root.has_pending_work());
-    assert!(observed.get());
 }

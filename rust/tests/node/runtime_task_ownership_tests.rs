@@ -44,24 +44,36 @@ fn demanded_runtime_registry_matches_one_idiomatic_native_weak_queue() {
 
 #[test]
 fn warmed_composed_runtime_dispatch_and_weak_handles_allocate_nothing() {
-    let root = RuntimeTasks::<()>::new();
-    root.enqueue(|| Ok(())).unwrap();
-    assert_eq!(root.poll(), Ok(true));
-    let handle = root.handle();
-    let contexts = tsonic_rust_runtime::dispatch::prepend(&root, DispatchEnd::<()>::new());
-    let actual = measure_requests(|| {
-        for _ in 0..1024 {
-            black_box(handle.clone());
-            let frontier = contexts
-                .prepare(tsonic_rust_node::phases::RUNTIME_TASKS)
-                .unwrap();
-            assert_eq!(contexts.next_ready(&frontier), None);
-            assert!(!contexts.has_work());
-            assert_eq!(contexts.next_delay(), None);
-            assert_eq!(contexts.poll_next(&frontier), Ok(false));
+    let root = RuntimeTasks::<tsonic_rust_runtime::TsonicError>::new();
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
             root.enqueue(|| Ok(())).unwrap();
             assert_eq!(root.poll(), Ok(true));
-        }
-    });
-    assert_eq!(actual, (0, 0));
+            let handle = root.handle();
+            let contexts = tsonic_rust_runtime::dispatch::prepend(
+                &root,
+                DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+            );
+            let actual = measure_requests(|| {
+                for _ in 0..1024 {
+                    black_box(handle.clone());
+                    let frontier = contexts
+                        .prepare(tsonic_rust_node::phases::RUNTIME_TASKS)
+                        .unwrap();
+                    assert_eq!(contexts.next_ready(&frontier), None);
+                    assert!(!contexts.has_work());
+                    assert_eq!(contexts.next_delay(), None);
+                    assert_eq!(contexts.poll_next(&frontier), Ok(false));
+                    root.enqueue(|| Ok(())).unwrap();
+                    assert_eq!(root.poll(), Ok(true));
+                }
+            });
+            assert_eq!(actual, (0, 0));
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &root,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap();
 }
