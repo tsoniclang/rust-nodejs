@@ -20,6 +20,8 @@ export const readStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
     { target: streamCarrier, path: "tsonic_rust_node::fs::read_stream_as_stream" },
     { target: readableCarrier, path: "tsonic_rust_node::fs::read_stream_as_readable" },
   ],
+  undefined,
+  [],
 );
 
 export const writeStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
@@ -32,6 +34,8 @@ export const writeStreamCarrier: RustTargetTypeRef = rustNamedTargetType(
     { target: streamCarrier, path: "tsonic_rust_node::fs::write_stream_as_stream" },
     { target: writableCarrier, path: "tsonic_rust_node::fs::write_stream_as_writable" },
   ],
+  undefined,
+  [],
 );
 
 export const readStreamOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ReadStreamOptions" };

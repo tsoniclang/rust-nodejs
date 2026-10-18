@@ -27,6 +27,8 @@ export const zlibTransformCarrier: RustTargetTypeRef = rustNamedTargetType(
     { target: duplexCarrier, path: "tsonic_rust_node::zlib::zlib_as_duplex" },
     { target: transformCarrier, path: "tsonic_rust_node::zlib::zlib_as_transform" },
   ],
+  undefined,
+  [],
 );
 
 export const zlibCallbackCarrier = rustCallableTargetType(
