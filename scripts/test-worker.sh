@@ -14,6 +14,4 @@ loader_registration="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../tsonic-rust" && 
 node "${TSONIC_ROOT:-../tsonic}/scripts/certification/capture-tests.mjs" node node \
   --import "$loader_registration" \
   --test --test-concurrency="${TSONIC_TEST_WORKERS}" "${test_files[@]}"
-export CARGO_BUILD_JOBS="$TSONIC_TEST_CPUS"
-export RUST_TEST_THREADS="$TSONIC_TEST_CPUS"
 exec node "${TSONIC_ROOT:-../tsonic}/scripts/certification/capture-tests.mjs" cargo cargo test --locked --workspace
