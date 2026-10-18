@@ -30,24 +30,41 @@ test("original source TLS failure preserves later native listening callbacks", {
   assert.equal(names.length, 2, "only the demanded TLS and background roots");
   const tail = "tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()";
   const contexts = names.reduceRight((rest, _name, index) => `tsonic_rust_runtime::dispatch::prepend(root_${index}, ${rest})`, tail);
-  const run = names.reduceRight((rest, name, index) => `super::${name}.with(|root_${index}| ${rest})`,
-    `tsonic_rust_node::run_with_contexts(${contexts})`);
+  const entry = names.reduceRight((rest, name, index) => `super::${name}.with(|root_${index}| ${rest})`,
+    `tsonic_rust_node::run_entry_with_contexts(|| {
+      crate::initialize(); expected = Some(crate::schedule().expect("source registration"));
+    }, ${contexts})`);
+  const freshContexts = names.reduceRight((rest, _name, index) => `tsonic_rust_runtime::dispatch::prepend(root_${index}, ${rest})`,
+    `tsonic_rust_runtime::dispatch::prepend(&fresh, ${tail})`);
+  const freshEntry = names.reduceRight((rest, name, index) => `super::${name}.with(|root_${index}| ${rest})`,
+    `tsonic_rust_node::run_entry_with_contexts(|| {
+      fresh.enqueue(move || { observed.set(observed.get() + 1); Ok(()) }).unwrap();
+    }, ${freshContexts})`);
+  const noRetainedWork = names.map(name => `super::${name}.with(|root| assert!(!root.has_work()));`).join("\n");
   const directory = writeGeneratedProject("native-tls-original-error", result.artifacts);
   appendFileSync(join(directory, roots[0].path), `
 #[cfg(test)]
 mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
+    use tsonic_rust_runtime::dispatch::DispatchContexts;
     #[test]
     fn original_error_stops_and_preserves_native_tls_listeners() {
-        crate::initialize();
-        let expected = crate::schedule().expect("source registration");
-        let run = || ${run};
-        let returned = run().expect_err("original source callback must fail");
+        let mut expected = None;
+        let returned = ${entry}.expect_err("original source callback must fail");
+        let expected = expected.expect("the source registration completed before dispatch");
         assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());
         assert_eq!(returned.source_error().error_message(), expected.error_message());
         assert_eq!(crate::count(), 0.0);
-        assert!(run().is_ok());
-        assert_eq!(crate::count(), 1.0);
+        ${noRetainedWork}
+        let fresh = tsonic_rust_node::runtime_tasks::RuntimeTasks::<tsonic_rust_runtime::TsonicError>::new();
+        let delivered = std::rc::Rc::new(std::cell::Cell::new(0));
+        let observed = std::rc::Rc::clone(&delivered);
+        ${freshEntry}.unwrap();
+        assert_eq!(crate::count(), 0.0);
+        assert_eq!(delivered.get(), 1);
+        assert!(!fresh.has_pending_work());
+        ${noRetainedWork}
+        assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
     }
 }
 `);

@@ -35,12 +35,15 @@ mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
     #[test]
     fn original_error_survives_source_thread_dispatch() {
-        let expected = crate::schedule().expect("callback registration");
+        let mut expected = None;
         let result = super::${names[0]}.with(|tasks| {
-            tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(tasks,
-                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))
+            tsonic_rust_node::run_entry_with_contexts(
+                || expected = Some(crate::schedule().expect("callback registration")),
+                tsonic_rust_runtime::dispatch::prepend(tasks,
+                    tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))
         });
         let returned = result.expect_err("source callback must fail");
+        let expected = expected.expect("the source registration completed before dispatch");
         assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());
         assert_eq!(returned.source_error().error_message(), expected.error_message());
     }

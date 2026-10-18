@@ -40,19 +40,36 @@ test("original source network failure preserves later native listening callbacks
 #[cfg(test)]
 mod retained_source_failure {
     use tsonic_rust_runtime::ErrorObject;
+    use tsonic_rust_runtime::dispatch::DispatchContexts;
     #[test]
     fn original_error_stops_and_preserves_pending_native_listeners() {
-        crate::initialize();
-        let expected = crate::schedule().expect("source registration");
-        let run = || super::${names[0]}.with(|root| tsonic_rust_node::run_with_contexts(
+        let mut expected = None;
+        let returned = super::${names[0]}.with(|root| tsonic_rust_node::run_entry_with_contexts(
+            || {
+                crate::initialize();
+                expected = Some(crate::schedule().expect("source registration"));
+            },
             tsonic_rust_runtime::dispatch::prepend(root,
-                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())));
-        let returned = run().expect_err("original source callback must fail");
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())))
+            .expect_err("original source callback must fail");
+        let expected = expected.expect("the source registration completed before dispatch");
         assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());
         assert_eq!(returned.source_error().error_message(), expected.error_message());
         assert_eq!(crate::count(), 0.0);
-        assert!(run().is_ok());
-        assert_eq!(crate::count(), 1.0);
+        super::${names[0]}.with(|root| assert!(!root.has_work()));
+        let fresh = tsonic_rust_node::runtime_tasks::RuntimeTasks::<tsonic_rust_runtime::TsonicError>::new();
+        let delivered = std::rc::Rc::new(std::cell::Cell::new(0));
+        let observed = std::rc::Rc::clone(&delivered);
+        super::${names[0]}.with(|root| tsonic_rust_node::run_entry_with_contexts(
+            || fresh.enqueue(move || { observed.set(observed.get() + 1); Ok(()) }).unwrap(),
+            tsonic_rust_runtime::dispatch::prepend(root, tsonic_rust_runtime::dispatch::prepend(&fresh,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))))
+            .unwrap();
+        assert_eq!(crate::count(), 0.0);
+        assert_eq!(delivered.get(), 1);
+        assert!(!fresh.has_pending_work());
+        super::${names[0]}.with(|root| assert!(!root.has_work()));
+        assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
     }
 }
 `);
