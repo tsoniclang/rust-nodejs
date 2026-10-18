@@ -11,60 +11,68 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 #[test]
 fn readline_interface_uses_explicit_input_and_output_buffers() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
-    let input = Readable::from_chunks(
-        readable_tasks.handle(),
-        vec![Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap()],
-    );
-    let output = Writable::new();
-    let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
-        input,
-        output: Some(output),
-        terminal: Some(true),
-        prompt: Some("name? ".to_string()),
-    });
-
-    let answer = Rc::new(RefCell::new(None::<String>));
-    let callback_answer = Rc::clone(&answer);
     let background = tsonic_rust_node::background::BackgroundTasks::<TsonicError>::new();
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
-    assert!(interface
-        .question_callable(
-            &tasks,
-            "name? ",
-            Callable::new(move |(value,)| {
-                *callback_answer.borrow_mut() = Some(value);
-                Ok::<(), TsonicError>(())
-            }),
-        )
-        .is_ok());
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::prepend(
-            &tasks,
-            tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
-        ),
-    ))
-    .unwrap();
-    assert_eq!(answer.borrow().as_deref(), Some("answer"));
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let input = Readable::from_chunks(
+                readable_tasks.handle(),
+                vec![Buffer::from_string("answer\r\nline2\n", Some("utf8")).unwrap()],
+            );
+            let output = Writable::new();
+            let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
+                input,
+                output: Some(output),
+                terminal: Some(true),
+                prompt: Some("name? ".to_string()),
+            });
 
-    interface.write("done😀").unwrap();
-    assert_eq!(interface.line(), "done😀");
-    assert_eq!(interface.cursor(), 6);
-    assert_eq!(interface.get_cursor_pos().cols, 6);
-    interface.set_prompt("next> ");
-    assert_eq!(interface.get_prompt(), "next> ");
-    interface.prompt().unwrap();
-    assert!(interface.terminal());
-    assert_eq!(interface.next_line().unwrap().as_deref(), Some("line2"));
-    assert!(interface.next_line().unwrap().is_none());
-    interface.pause_chain();
-    assert!(interface.is_paused());
-    interface.write("ignored").unwrap();
-    assert!(interface.next_line().unwrap().is_none());
-    interface.resume_chain();
-    assert!(!interface.is_paused());
-    interface.close();
-    assert!(interface.next_line().unwrap().is_none());
+            let answer = Rc::new(RefCell::new(None::<String>));
+            let callback_answer = Rc::clone(&answer);
+            assert!(interface
+                .question_callable(
+                    &tasks,
+                    "name? ",
+                    Callable::new(move |(value,)| {
+                        *callback_answer.borrow_mut() = Some(value);
+                        Ok::<(), TsonicError>(())
+                    }),
+                )
+                .is_ok());
+            tasks.poll().unwrap();
+            assert_eq!(answer.borrow().as_deref(), Some("answer"));
+
+            interface.write("done😀").unwrap();
+            assert_eq!(interface.line(), "done😀");
+            assert_eq!(interface.cursor(), 6);
+            assert_eq!(interface.get_cursor_pos().cols, 6);
+            interface.set_prompt("next> ");
+            assert_eq!(interface.get_prompt(), "next> ");
+            interface.prompt().unwrap();
+            assert!(interface.terminal());
+            assert_eq!(interface.next_line().unwrap().as_deref(), Some("line2"));
+            assert!(interface.next_line().unwrap().is_none());
+            interface.pause_chain();
+            assert!(interface.is_paused());
+            interface.write("ignored").unwrap();
+            assert!(interface.next_line().unwrap().is_none());
+            interface.resume_chain();
+            assert!(!interface.is_paused());
+            interface.close();
+            assert!(interface.next_line().unwrap().is_none());
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::prepend(
+                &readable_tasks,
+                tsonic_rust_runtime::dispatch::prepend(
+                    &tasks,
+                    tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+                ),
+            ),
+        ),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -81,43 +89,51 @@ fn readline_question_retains_non_display_non_send_source_failure() {
             panic!("buffered readline does not produce a native callback failure")
         }
     }
-    let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
-        input: Readable::from_chunks(
-            readable_tasks.handle(),
-            vec![Buffer::from_string("answer\n", Some("utf8")).unwrap()],
-        ),
-        output: None,
-        terminal: None,
-        prompt: None,
-    });
     let background = tsonic_rust_node::background::BackgroundTasks::<Failure>::new();
     let tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::<Failure>::new();
-    let expected = Rc::new(Cell::new(9_007_199_254_740_993));
-    let captured = Rc::clone(&expected);
-    assert!(interface
-        .question_callable(
-            &tasks,
-            "",
-            Callable::new(move |(answer,)| {
-                assert_eq!(answer, "answer");
-                Err(Failure(Rc::clone(&captured)))
-            }),
-        )
-        .is_ok());
-    assert!(!background.has_pending_work());
-    let returned =
-        match tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let mut interface = readline::create_interface(readline::SourceInterfaceOptions {
+                input: Readable::from_chunks(
+                    readable_tasks.handle(),
+                    vec![Buffer::from_string("answer\n", Some("utf8")).unwrap()],
+                ),
+                output: None,
+                terminal: None,
+                prompt: None,
+            });
+            let expected = Rc::new(Cell::new(9_007_199_254_740_993));
+            let captured = Rc::clone(&expected);
+            assert!(interface
+                .question_callable(
+                    &tasks,
+                    "",
+                    Callable::new(move |(answer,)| {
+                        assert_eq!(answer, "answer");
+                        Err(Failure(Rc::clone(&captured)))
+                    }),
+                )
+                .is_ok());
+            assert!(!background.has_pending_work());
+            let returned = match tasks.poll() {
+                Err(error) => error,
+                Ok(_) => panic!("original retained source failure"),
+            };
+            assert!(Rc::ptr_eq(&returned.0, &expected));
+            assert_eq!(returned.0.get(), 9_007_199_254_740_993);
+        },
+        tsonic_rust_runtime::dispatch::prepend(
             &background,
             tsonic_rust_runtime::dispatch::prepend(
-                &tasks,
-                tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+                &readable_tasks,
+                tsonic_rust_runtime::dispatch::prepend(
+                    &tasks,
+                    tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+                ),
             ),
-        )) {
-            Err(error) => error,
-            Ok(_) => panic!("original retained source failure"),
-        };
-    assert!(Rc::ptr_eq(&returned.0, &expected));
-    assert_eq!(returned.0.get(), 9_007_199_254_740_993);
+        ),
+    )
+    .unwrap_or_else(|_| panic!("registered buffered question fixture must complete"));
 }
 
 #[test]

@@ -9,90 +9,98 @@ use tsonic_rust_runtime::{Callable, RetainedError};
 fn file_stream_projection_preserves_listener_identity_pressure_and_finish() {
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
-    let root = std::env::current_dir().unwrap().join(".temp").join(format!(
-        "native-stream-inheritance-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&root).unwrap();
-    let path = root.join("output.txt");
-    let file = fs::create_write_stream_with_options(
-        &background,
-        &path.to_string_lossy(),
-        fs::WriteStreamOptions {
-            high_water_mark: Some(1),
-            ..Default::default()
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let root = std::env::current_dir().unwrap().join(".temp").join(format!(
+                "native-stream-inheritance-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&root).unwrap();
+            let path = root.join("output.txt");
+            let file = fs::create_write_stream_with_options(
+                &background,
+                &path.to_string_lossy(),
+                fs::WriteStreamOptions {
+                    high_water_mark: Some(1),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let writable = fs::write_stream_as_writable(&file);
+            assert_eq!(writable, fs::write_stream_as_writable(&file));
+            let removed_calls = Rc::new(Cell::new(0));
+            let callback_calls = Rc::clone(&removed_calls);
+            let removed = Callable::new(move |()| {
+                callback_calls.set(callback_calls.get() + 1);
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
+            });
+            let callback_calls = Rc::clone(&removed_calls);
+            let removed_error = Callable::new(move |(_error,): (RetainedError,)| {
+                callback_calls.set(callback_calls.get() + 1);
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
+            });
+            assert_eq!(
+                writable,
+                writable.on_error("error", &removed_error).unwrap()
+            );
+            assert_eq!(
+                writable,
+                writable.off_error("error", &removed_error).unwrap()
+            );
+            assert_eq!(
+                writable,
+                writable.once_error("error", &removed_error).unwrap()
+            );
+            writable.off_error("error", &removed_error).unwrap();
+            assert_eq!(writable, writable.once_drain("drain", &removed).unwrap());
+            assert_eq!(writable, writable.off_drain("drain", &removed).unwrap());
+            assert_eq!(writable, writable.once_finish("finish", &removed).unwrap());
+            assert_eq!(writable, writable.off_finish("finish", &removed).unwrap());
+            assert!(writable.once_drain("error", &removed).is_err());
+            assert!(writable.once_error("finish", &removed_error).is_err());
+
+            let drain_calls = Rc::new(Cell::new(0));
+            let callback_calls = Rc::clone(&drain_calls);
+            let drain = Callable::new(move |()| {
+                callback_calls.set(callback_calls.get() + 1);
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
+            });
+            let finish_calls = Rc::new(Cell::new(0));
+            let callback_calls = Rc::clone(&finish_calls);
+            let finish = Callable::new(move |()| {
+                callback_calls.set(callback_calls.get() + 1);
+                Ok::<(), tsonic_rust_runtime::TsonicError>(())
+            });
+            writable.once_drain("drain", &drain).unwrap();
+            writable.once_finish("finish", &finish).unwrap();
+            let bytes = Buffer::from_string("native stream", Some("utf8")).unwrap();
+            assert!(!writable.write_buffer(&bytes).unwrap());
+            assert!(writable.writable_need_drain());
+            assert_eq!(writable, writable.end().unwrap());
+            assert!(writable.writable_ended());
+            while background.has_pending_work() {
+                background.poll().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert_eq!(removed_calls.get(), 0);
+            assert_eq!(drain_calls.get(), 1);
+            assert_eq!(finish_calls.get(), 1);
+            assert!(writable.writable_finished());
+            assert!(!writable.writable_need_drain());
+            assert_eq!(file.bytes_written(), bytes.len());
+            assert_eq!(std::fs::read(&path).unwrap(), b"native stream");
+            std::fs::remove_dir_all(root).unwrap();
         },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
     )
     .unwrap();
-    let writable = fs::write_stream_as_writable(&file);
-    assert_eq!(writable, fs::write_stream_as_writable(&file));
-    let removed_calls = Rc::new(Cell::new(0));
-    let callback_calls = Rc::clone(&removed_calls);
-    let removed = Callable::new(move |()| {
-        callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), tsonic_rust_runtime::TsonicError>(())
-    });
-    let callback_calls = Rc::clone(&removed_calls);
-    let removed_error = Callable::new(move |(_error,): (RetainedError,)| {
-        callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), tsonic_rust_runtime::TsonicError>(())
-    });
-    assert_eq!(
-        writable,
-        writable.on_error("error", &removed_error).unwrap()
-    );
-    assert_eq!(
-        writable,
-        writable.off_error("error", &removed_error).unwrap()
-    );
-    assert_eq!(
-        writable,
-        writable.once_error("error", &removed_error).unwrap()
-    );
-    writable.off_error("error", &removed_error).unwrap();
-    assert_eq!(writable, writable.once_drain("drain", &removed).unwrap());
-    assert_eq!(writable, writable.off_drain("drain", &removed).unwrap());
-    assert_eq!(writable, writable.once_finish("finish", &removed).unwrap());
-    assert_eq!(writable, writable.off_finish("finish", &removed).unwrap());
-    assert!(writable.once_drain("error", &removed).is_err());
-    assert!(writable.once_error("finish", &removed_error).is_err());
-
-    let drain_calls = Rc::new(Cell::new(0));
-    let callback_calls = Rc::clone(&drain_calls);
-    let drain = Callable::new(move |()| {
-        callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), tsonic_rust_runtime::TsonicError>(())
-    });
-    let finish_calls = Rc::new(Cell::new(0));
-    let callback_calls = Rc::clone(&finish_calls);
-    let finish = Callable::new(move |()| {
-        callback_calls.set(callback_calls.get() + 1);
-        Ok::<(), tsonic_rust_runtime::TsonicError>(())
-    });
-    writable.once_drain("drain", &drain).unwrap();
-    writable.once_finish("finish", &finish).unwrap();
-    let bytes = Buffer::from_string("native stream", Some("utf8")).unwrap();
-    assert!(!writable.write_buffer(&bytes).unwrap());
-    assert!(writable.writable_need_drain());
-    assert_eq!(writable, writable.end().unwrap());
-    assert!(writable.writable_ended());
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
-    .unwrap();
-    assert_eq!(removed_calls.get(), 0);
-    assert_eq!(drain_calls.get(), 1);
-    assert_eq!(finish_calls.get(), 1);
-    assert!(writable.writable_finished());
-    assert!(!writable.writable_need_drain());
-    assert_eq!(file.bytes_written(), bytes.len());
-    assert_eq!(std::fs::read(&path).unwrap(), b"native stream");
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -15,6 +15,18 @@ use tsonic_rust_runtime::{Callable, TsonicError};
 
 static NEXT_FILE: AtomicUsize = AtomicUsize::new(0);
 
+async fn wait_for_input(ready: impl Fn() -> bool, wake: &RefCell<Option<std::task::Waker>>) {
+    std::future::poll_fn(|context| {
+        if ready() {
+            std::task::Poll::Ready(())
+        } else {
+            *wake.borrow_mut() = Some(context.waker().clone());
+            std::task::Poll::Pending
+        }
+    })
+    .await;
+}
+
 #[test]
 fn native_stdin_child() {
     let Ok(mode) = std::env::var("TSONIC_STDIN_PROOF") else {
@@ -27,117 +39,147 @@ fn native_stdin_child() {
     let tasks = RuntimeTasks::<TsonicError>::new();
     let background = BackgroundTasks::<TsonicError>::new();
     let roots = StdinResources::<TsonicError>::new();
-    let before_flags = nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap();
-    let stream = process::stdin(&roots, &background, tasks.handle()).unwrap();
-    assert_eq!(
-        stream,
-        process::stdin(&roots, &background, tasks.handle()).unwrap()
-    );
-    assert_eq!(
-        nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap(),
-        before_flags
-    );
-    if mode == "readline" || mode == "readline-cancel" || mode == "readline-file" {
-        check_readline(
-            mode == "readline-cancel",
-            stream,
-            &tasks,
-            &background,
-            &roots,
-        );
-        return;
-    }
-    if mode == "readline-drop" {
-        check_dropped_readline(stream, &tasks, &background, &roots);
-        return;
-    }
-    if mode != "file" && mode != "null" {
-        assert!(stream.read().unwrap().is_none());
-    }
-    println!("READY");
-    std::io::stdout().flush().unwrap();
-    let bytes = Rc::new(RefCell::new(Vec::new()));
-    let trace = Rc::new(RefCell::new(Vec::new()));
-    let collected = bytes.clone();
-    let observed = trace.clone();
-    let control = stream.clone();
-    let terminal = mode == "terminal";
-    let pause_after_first = mode == "pause";
-    let listener = Callable::new(move |(chunk,): (Buffer,)| {
-        collected.borrow_mut().extend_from_slice(&chunk.as_bytes());
-        observed.borrow_mut().push("data");
-        if terminal {
-            control.destroy()?;
-        } else if pause_after_first && observed.borrow().len() == 1 {
-            control.pause();
-        }
-        Ok::<(), TsonicError>(())
-    });
-    stream.on_data("data", &listener).unwrap();
-    let observed = trace.clone();
-    stream
-        .once_end(
-            "end",
-            &Callable::new(move |()| {
-                observed.borrow_mut().push("end");
-                Ok(())
-            }),
-        )
-        .unwrap();
-    tasks
-        .enqueue(|| {
-            println!("TASK_WITH_INPUT_WITHHELD");
+    let (completed, status) = tsonic_rust_node::block_on_with_contexts(
+        async {
+            let before_flags =
+                nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap();
+            let stream = process::stdin(&roots, &background, tasks.handle()).unwrap();
+            assert_eq!(
+                stream,
+                process::stdin(&roots, &background, tasks.handle()).unwrap()
+            );
+            assert_eq!(
+                nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap(),
+                before_flags
+            );
+            if mode == "readline" || mode == "readline-cancel" || mode == "readline-file" {
+                check_readline(
+                    mode == "readline-cancel",
+                    stream,
+                    &tasks,
+                    &background,
+                    &roots,
+                )
+                .await;
+                return;
+            }
+            if mode == "readline-drop" {
+                check_dropped_readline(stream, &tasks, &background, &roots).await;
+                return;
+            }
+            if mode != "file" && mode != "null" {
+                assert!(stream.read().unwrap().is_none());
+            }
+            println!("READY");
             std::io::stdout().flush().unwrap();
-            Ok(())
-        })
-        .unwrap();
-    stream.resume().unwrap();
-    let end = DispatchEnd::<TsonicError>::new();
-    tsonic_rust_node::run_with_contexts(prepend(
-        &roots,
-        prepend(&background, prepend(&tasks, &end)),
-    ))
-    .unwrap();
-    if pause_after_first {
-        assert!(stream.is_paused());
-        assert!(!stream.readable_ended());
-        assert_eq!(trace.borrow().as_slice(), ["data"]);
-        assert_eq!(stream.readable_length(), 0);
-        assert!(!roots.has_work());
-        assert!(!background.has_pending_work());
-        assert!(!tasks.has_pending_work());
-        println!("PAUSED_WITHOUT_PENDING_INPUT_WORK");
-        std::io::stdout().flush().unwrap();
-        stream.resume().unwrap();
-        tsonic_rust_node::run_with_contexts(prepend(
+            let bytes = Rc::new(RefCell::new(Vec::new()));
+            let trace = Rc::new(RefCell::new(Vec::new()));
+            let wake = Rc::new(RefCell::new(None::<std::task::Waker>));
+            let data_wake = Rc::clone(&wake);
+            let collected = bytes.clone();
+            let observed = trace.clone();
+            let control = stream.clone();
+            let terminal = mode == "terminal";
+            let pause_after_first = mode == "pause";
+            let listener = Callable::new(move |(chunk,): (Buffer,)| {
+                collected.borrow_mut().extend_from_slice(&chunk.as_bytes());
+                observed.borrow_mut().push("data");
+                if terminal {
+                    control.destroy()?;
+                } else if pause_after_first && observed.borrow().len() == 1 {
+                    control.pause();
+                }
+                let pending = data_wake.borrow_mut().take();
+                if let Some(pending) = pending {
+                    pending.wake();
+                }
+                Ok::<(), TsonicError>(())
+            });
+            stream.on_data("data", &listener).unwrap();
+            let observed = trace.clone();
+            let end_wake = Rc::clone(&wake);
+            stream
+                .once_end(
+                    "end",
+                    &Callable::new(move |()| {
+                        observed.borrow_mut().push("end");
+                        let pending = end_wake.borrow_mut().take();
+                        if let Some(pending) = pending {
+                            pending.wake();
+                        }
+                        Ok(())
+                    }),
+                )
+                .unwrap();
+            tasks
+                .enqueue(|| {
+                    println!("TASK_WITH_INPUT_WITHHELD");
+                    std::io::stdout().flush().unwrap();
+                    Ok(())
+                })
+                .unwrap();
+            stream.resume().unwrap();
+            wait_for_input(
+                || {
+                    if pause_after_first {
+                        stream.is_paused()
+                    } else if terminal {
+                        stream.destroyed()
+                    } else {
+                        stream.readable_ended()
+                    }
+                },
+                &wake,
+            )
+            .await;
+            if pause_after_first {
+                assert!(stream.is_paused());
+                assert!(!stream.readable_ended());
+                assert_eq!(trace.borrow().as_slice(), ["data"]);
+                assert_eq!(stream.readable_length(), 0);
+                assert!(!roots.has_work());
+                assert!(!background.has_pending_work());
+                assert!(!tasks.has_pending_work());
+                println!("PAUSED_WITHOUT_PENDING_INPUT_WORK");
+                std::io::stdout().flush().unwrap();
+                stream.resume().unwrap();
+                wait_for_input(|| stream.readable_ended(), &wake).await;
+            }
+            if terminal {
+                assert!(process::stdin_is_tty());
+                assert!(!stream.readable_ended());
+                assert!(stream.destroyed());
+            } else {
+                assert!(stream.readable_ended());
+                assert_eq!(trace.borrow().last(), Some(&"end"));
+                assert_eq!(
+                    trace
+                        .borrow()
+                        .iter()
+                        .filter(|&&event| event == "end")
+                        .count(),
+                    1
+                );
+            }
+            stream.off_data("data", &listener).unwrap();
+            let actual = String::from_utf8(bytes.borrow().clone()).unwrap();
+            println!("BYTES:{actual:?}");
+            assert_eq!(
+                nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap(),
+                before_flags
+            );
+        },
+        prepend(
             &roots,
-            prepend(&background, prepend(&tasks, &end)),
-        ))
-        .unwrap();
-    }
-    if terminal {
-        assert!(process::stdin_is_tty());
-        assert!(!stream.readable_ended());
-        assert!(stream.destroyed());
-    } else {
-        assert!(stream.readable_ended());
-        assert_eq!(trace.borrow().last(), Some(&"end"));
-        assert_eq!(
-            trace
-                .borrow()
-                .iter()
-                .filter(|&&event| event == "end")
-                .count(),
-            1
-        );
-    }
-    stream.off_data("data", &listener).unwrap();
-    let actual = String::from_utf8(bytes.borrow().clone()).unwrap();
-    println!("BYTES:{actual:?}");
-    assert_eq!(
-        nix::fcntl::fcntl(std::io::stdin(), nix::fcntl::FcntlArg::F_GETFL).unwrap(),
-        before_flags
-    );
+            prepend(
+                &background,
+                prepend(&tasks, DispatchEnd::<TsonicError>::new()),
+            ),
+        ),
+    )
+    .unwrap();
+    assert!(completed.is_some());
+    assert!(!status.exit_requested());
 }
 
 fn child(mode: &str, input: Stdio) -> std::process::Child {
@@ -240,12 +282,12 @@ fn null_device_flowing_reaches_eof_without_poll_registration_or_replayed_callbac
     assert!(finish(process, output).contains("BYTES:\"\""));
 }
 
-fn check_readline(
+async fn check_readline(
     cancel: bool,
     stream: tsonic_rust_node::stream::Readable<TsonicError>,
     tasks: &RuntimeTasks<TsonicError>,
-    background: &BackgroundTasks<TsonicError>,
-    roots: &StdinResources<TsonicError>,
+    _background: &BackgroundTasks<TsonicError>,
+    _roots: &StdinResources<TsonicError>,
 ) {
     let mut interface = tsonic_rust_node::readline::create_interface(
         tsonic_rust_node::readline::SourceInterfaceOptions {
@@ -255,6 +297,8 @@ fn check_readline(
             prompt: None,
         },
     );
+    let wake = Rc::new(RefCell::new(None::<std::task::Waker>));
+    let answer_wake = Rc::clone(&wake);
     let answers = Rc::new(RefCell::new(Vec::new()));
     let observed = answers.clone();
     interface
@@ -264,6 +308,10 @@ fn check_readline(
             Callable::new(move |(answer,)| {
                 assert!(!cancel, "canceled native readline callback");
                 observed.borrow_mut().push(answer);
+                let pending = answer_wake.borrow_mut().take();
+                if let Some(pending) = pending {
+                    pending.wake();
+                }
                 Ok(())
             }),
         )
@@ -280,9 +328,10 @@ fn check_readline(
             Ok(())
         })
         .unwrap();
-    let end = DispatchEnd::<TsonicError>::new();
-    tsonic_rust_node::run_with_contexts(prepend(roots, prepend(background, prepend(tasks, &end))))
-        .unwrap();
+    tasks.poll().unwrap();
+    if !cancel {
+        wait_for_input(|| !answers.borrow().is_empty(), &wake).await;
+    }
     if cancel {
         assert!(answers.borrow().is_empty());
         println!("CANCELED_WITHOUT_BLOCKING_WORKER");
@@ -290,18 +339,22 @@ fn check_readline(
     }
     assert_eq!(answers.borrow().len(), 1);
     let observed = answers.clone();
+    let answer_wake = Rc::clone(&wake);
     interface
         .question_callable(
             tasks,
             "",
             Callable::new(move |(answer,)| {
                 observed.borrow_mut().push(answer);
+                let pending = answer_wake.borrow_mut().take();
+                if let Some(pending) = pending {
+                    pending.wake();
+                }
                 Ok(())
             }),
         )
         .unwrap();
-    tsonic_rust_node::run_with_contexts(prepend(roots, prepend(background, prepend(tasks, &end))))
-        .unwrap();
+    wait_for_input(|| answers.borrow().len() == 2, &wake).await;
     assert_eq!(*answers.borrow(), ["native 🦀 one", "native two"]);
     stream.destroy().unwrap();
     println!("EXACT_READLINE_ANSWERS");
@@ -330,14 +383,16 @@ fn closing_readline_cancels_the_wait_without_leaving_a_blocked_stdin_worker() {
     assert!(finish(process, output).contains("CANCELED_WITHOUT_BLOCKING_WORKER"));
 }
 
-fn check_dropped_readline(
+async fn check_dropped_readline(
     stream: tsonic_rust_node::stream::Readable<TsonicError>,
     tasks: &RuntimeTasks<TsonicError>,
-    background: &BackgroundTasks<TsonicError>,
-    roots: &StdinResources<TsonicError>,
+    _background: &BackgroundTasks<TsonicError>,
+    _roots: &StdinResources<TsonicError>,
 ) {
     let retained = Rc::new(());
     let weak = Rc::downgrade(&retained);
+    let wake = Rc::new(RefCell::new(None::<std::task::Waker>));
+    let answer_wake = Rc::clone(&wake);
     let answer = Rc::new(RefCell::new(None));
     let observed = answer.clone();
     let mut reader = tsonic_rust_node::readline::create_interface(
@@ -355,6 +410,10 @@ fn check_dropped_readline(
             Callable::new(move |(line,)| {
                 let _capture = &retained;
                 *observed.borrow_mut() = Some(line);
+                let pending = answer_wake.borrow_mut().take();
+                if let Some(pending) = pending {
+                    pending.wake();
+                }
                 Ok(())
             }),
         )
@@ -363,9 +422,7 @@ fn check_dropped_readline(
     assert!(weak.upgrade().is_some());
     println!("READY");
     std::io::stdout().flush().unwrap();
-    let end = DispatchEnd::<TsonicError>::new();
-    tsonic_rust_node::run_with_contexts(prepend(roots, prepend(background, prepend(tasks, &end))))
-        .unwrap();
+    wait_for_input(|| answer.borrow().is_some(), &wake).await;
     assert_eq!(answer.borrow().as_deref(), Some("owned native answer"));
     assert!(weak.upgrade().is_none());
     stream.destroy().unwrap();
@@ -436,25 +493,31 @@ fn check_failure_identity() {
     let tasks = RuntimeTasks::<Failure>::new();
     let background = BackgroundTasks::<Failure>::new();
     let roots = StdinResources::<Failure>::new();
-    let stream = process::stdin(&roots, &background, tasks.handle()).unwrap();
     let original = Rc::new(Cell::new(9_007_199_254_740_993));
     let captured = original.clone();
-    let listener =
-        Callable::new(move |(_chunk,): (Buffer,)| Err(Failure::Original(captured.clone())));
-    stream.once_data("data", &listener).unwrap();
-    println!("READY");
-    std::io::stdout().flush().unwrap();
-    let end = DispatchEnd::<Failure>::new();
-    match tsonic_rust_node::run_with_contexts(prepend(
-        &roots,
-        prepend(&background, prepend(&tasks, &end)),
-    )) {
+    let mut stream = None;
+    let result = tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let input = process::stdin(&roots, &background, tasks.handle()).unwrap();
+            let listener =
+                Callable::new(move |(_chunk,): (Buffer,)| Err(Failure::Original(captured.clone())));
+            input.once_data("data", &listener).unwrap();
+            stream = Some(input);
+            println!("READY");
+            std::io::stdout().flush().unwrap();
+        },
+        prepend(
+            &roots,
+            prepend(&background, prepend(&tasks, DispatchEnd::<Failure>::new())),
+        ),
+    );
+    match result {
         Err(Failure::Original(returned)) => assert!(Rc::ptr_eq(&returned, &original)),
         Err(Failure::Native(error)) => panic!("native failure instead of original: {error}"),
         Err(Failure::Runtime(error)) => panic!("runtime failure instead of original: {error}"),
         Ok(_) => panic!("original callback failure was lost"),
     }
-    stream.destroy().unwrap();
+    stream.unwrap().destroy().unwrap();
     tasks.poll().unwrap();
     assert!(!roots.has_work());
     println!("ORIGINAL_FAILURE_RETAINED");

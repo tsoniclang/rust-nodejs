@@ -23,6 +23,7 @@ mod numeric_bounds {
     fn stream_integer_bounds_do_not_saturate() {
         let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
         let background = crate::background::BackgroundTasks::<crate::NodeError>::new();
+        crate::run_entry_with_contexts(|| {
         let source = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
         for options in [
             super::ReadStreamOptions {
@@ -69,6 +70,7 @@ mod numeric_bounds {
         let state = result.state.borrow();
         assert_eq!(state.remaining, Some(u64::MAX));
         assert_eq!(state.chunk_size, usize::MAX);
+        }, tsonic_rust_runtime::dispatch::prepend(&background, tsonic_rust_runtime::dispatch::prepend(&readable_tasks, tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))).unwrap();
     }
 
     #[test]

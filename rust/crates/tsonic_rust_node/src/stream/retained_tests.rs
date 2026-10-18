@@ -4,6 +4,7 @@ use std::cell::Cell;
 enum Failure {
     Source(Rc<Cell<u64>>),
     Native(NodeError),
+    Runtime(tsonic_rust_runtime::TsonicError),
 }
 
 impl From<NodeError> for Failure {
@@ -32,6 +33,12 @@ fn close_counter(calls: &Rc<Cell<usize>>) -> Callable<'static, (), Result<(), Fa
     })
 }
 
+impl From<tsonic_rust_runtime::TsonicError> for Failure {
+    fn from(error: tsonic_rust_runtime::TsonicError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
 #[test]
 fn finish_failure_commits_physical_closure_and_preserves_later_close_delivery() {
     let original = Rc::new(Cell::new(9_007_199_254_740_993));
@@ -56,57 +63,84 @@ fn finish_failure_commits_physical_closure_and_preserves_later_close_delivery() 
 #[test]
 fn end_failure_commits_physical_closure_without_repeating_end_callbacks() {
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
-    let original = Rc::new(Cell::new(9_007_199_254_740_993));
-    let readable = Readable::<Failure>::from_chunks(readable_tasks.handle(), Vec::new());
-    let closes = Rc::new(Cell::new(0));
-    assert!(readable
-        .once_end("end", &failing_callback(&original))
-        .is_ok());
-    assert!(readable
-        .once_close("close", &close_counter(&closes))
-        .is_ok());
-    assert!(matches!(readable.read(), Ok(None)));
-    assert!(!readable.closed());
-    assert_original(readable_tasks.poll().map(|_| ()), &original);
-    assert!(readable.closed());
-    assert_eq!(closes.get(), 0);
-    assert!(matches!(readable.read(), Ok(None)));
-    assert!(readable_tasks.poll().is_ok());
-    assert_eq!(closes.get(), 1);
-    assert!(matches!(readable.read(), Ok(None)));
-    assert_eq!(closes.get(), 1);
+    crate::run_entry_with_contexts(
+        || {
+            let original = Rc::new(Cell::new(9_007_199_254_740_993));
+            let readable = Readable::<Failure>::from_chunks(readable_tasks.handle(), Vec::new());
+            let closes = Rc::new(Cell::new(0));
+            assert!(readable
+                .once_end("end", &failing_callback(&original))
+                .is_ok());
+            assert!(readable
+                .once_close("close", &close_counter(&closes))
+                .is_ok());
+            assert!(matches!(readable.read(), Ok(None)));
+            assert!(!readable.closed());
+            assert_original(readable_tasks.poll().map(|_| ()), &original);
+            assert!(readable.closed());
+            assert_eq!(closes.get(), 0);
+            assert!(matches!(readable.read(), Ok(None)));
+            assert!(readable_tasks.poll().is_ok());
+            assert_eq!(closes.get(), 1);
+            assert!(matches!(readable.read(), Ok(None)));
+            assert_eq!(closes.get(), 1);
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Source(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]
 fn first_data_failure_preserves_the_uninvoked_once_registration() {
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
-    let readable = Readable::<Failure>::new(readable_tasks.handle());
-    let original = Rc::new(Cell::new(7));
-    let captured = Rc::clone(&original);
-    let first =
-        Callable::new(move |(_chunk,): (Buffer,)| Err(Failure::Source(Rc::clone(&captured))));
-    let calls = Rc::new(Cell::new(0));
-    let observed = Rc::clone(&calls);
-    let second = Callable::new(move |(chunk,): (Buffer,)| {
-        assert_eq!(chunk.len(), 2);
-        observed.set(observed.get() + 1);
-        Ok::<(), Failure>(())
+    crate::run_entry_with_contexts(
+        || {
+            let readable = Readable::<Failure>::new(readable_tasks.handle());
+            let original = Rc::new(Cell::new(7));
+            let captured = Rc::clone(&original);
+            let first = Callable::new(move |(_chunk,): (Buffer,)| {
+                Err(Failure::Source(Rc::clone(&captured)))
+            });
+            let calls = Rc::new(Cell::new(0));
+            let observed = Rc::clone(&calls);
+            let second = Callable::new(move |(chunk,): (Buffer,)| {
+                assert_eq!(chunk.len(), 2);
+                observed.set(observed.get() + 1);
+                Ok::<(), Failure>(())
+            });
+            assert!(readable.once_data("data", &first).is_ok());
+            assert!(readable.once_data("data", &second).is_ok());
+            assert!(readable.push(Buffer::from_bytes(vec![1])).is_ok());
+            assert_original(readable_tasks.poll().map(|_| ()), &original);
+            assert_eq!(calls.get(), 0);
+            assert!(readable.push(Buffer::from_bytes(vec![2, 3])).is_ok());
+            assert!(readable_tasks.poll().is_ok());
+            assert_eq!(calls.get(), 1);
+            assert!(readable.push(Buffer::from_bytes(vec![4])).is_ok());
+            assert!(readable_tasks.poll().is_ok());
+            assert_eq!(calls.get(), 1);
+            assert_eq!(
+                readable.read().ok().flatten().map(|chunk| chunk.len()),
+                None
+            );
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Source(_) => panic!("unobserved source failure escaped the fixture"),
     });
-    assert!(readable.once_data("data", &first).is_ok());
-    assert!(readable.once_data("data", &second).is_ok());
-    assert!(readable.push(Buffer::from_bytes(vec![1])).is_ok());
-    assert_original(readable_tasks.poll().map(|_| ()), &original);
-    assert_eq!(calls.get(), 0);
-    assert!(readable.push(Buffer::from_bytes(vec![2, 3])).is_ok());
-    assert!(readable_tasks.poll().is_ok());
-    assert_eq!(calls.get(), 1);
-    assert!(readable.push(Buffer::from_bytes(vec![4])).is_ok());
-    assert!(readable_tasks.poll().is_ok());
-    assert_eq!(calls.get(), 1);
-    assert_eq!(
-        readable.read().ok().flatten().map(|chunk| chunk.len()),
-        None
-    );
 }
 
 #[test]
@@ -133,30 +167,44 @@ fn stream_snapshots_share_direct_callable_storage_without_an_emission_allocation
 #[test]
 fn corked_writes_keep_later_native_chunks_after_the_first_source_failure() {
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
-    let transform = Transform::<Failure>::new(readable_tasks.handle(), |chunk| chunk);
-    let readable = transform.readable_handle();
-    let writable = transform.writable_handle();
-    let original = Rc::new(Cell::new(11));
-    let captured = Rc::clone(&original);
-    let failure =
-        Callable::new(move |(_chunk,): (Buffer,)| Err(Failure::Source(Rc::clone(&captured))));
-    assert!(readable.once_data("data", &failure).is_ok());
-    writable.cork();
-    assert!(writable.write(Buffer::from_bytes(vec![1])).is_ok());
-    assert!(writable.write(Buffer::from_bytes(vec![2])).is_ok());
-    assert!(writable.uncork().is_ok());
-    assert_original(readable_tasks.poll().map(|_| ()), &original);
-    assert_eq!(readable.readable_length(), 1);
-    assert_eq!(writable.state.borrow().corked_chunks.len(), 0);
-    assert!(writable.uncork().is_ok());
-    assert_eq!(
-        readable.read().ok().flatten().map(|chunk| chunk.len()),
-        Some(1)
-    );
-    assert!(writable.end().is_ok());
-    assert!(!writable.closed());
-    assert!(readable_tasks.poll().is_ok());
-    assert!(writable.closed());
+    crate::run_entry_with_contexts(
+        || {
+            let transform = Transform::<Failure>::new(readable_tasks.handle(), |chunk| chunk);
+            let readable = transform.readable_handle();
+            let writable = transform.writable_handle();
+            let original = Rc::new(Cell::new(11));
+            let captured = Rc::clone(&original);
+            let failure = Callable::new(move |(_chunk,): (Buffer,)| {
+                Err(Failure::Source(Rc::clone(&captured)))
+            });
+            assert!(readable.once_data("data", &failure).is_ok());
+            writable.cork();
+            assert!(writable.write(Buffer::from_bytes(vec![1])).is_ok());
+            assert!(writable.write(Buffer::from_bytes(vec![2])).is_ok());
+            assert!(writable.uncork().is_ok());
+            assert_original(readable_tasks.poll().map(|_| ()), &original);
+            assert_eq!(readable.readable_length(), 1);
+            assert_eq!(writable.state.borrow().corked_chunks.len(), 0);
+            assert!(writable.uncork().is_ok());
+            assert_eq!(
+                readable.read().ok().flatten().map(|chunk| chunk.len()),
+                Some(1)
+            );
+            assert!(writable.end().is_ok());
+            assert!(!writable.closed());
+            assert!(readable_tasks.poll().is_ok());
+            assert!(writable.closed());
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Source(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]

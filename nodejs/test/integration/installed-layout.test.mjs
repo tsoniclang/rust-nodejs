@@ -10,6 +10,7 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { createRequire } from "node:module";
 import { createTestWorkspace } from "../../../../tsonic/test/scripts/test-workspaces.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -137,6 +138,9 @@ async function generateInstalledProject(
   { includeJsSurface },
 ) {
   const scopeRoot = join(applicationRoot, "node_modules/@tsonic");
+  const installedRequire = createRequire(join(applicationRoot, "package.json"));
+  const sourceModule = await import(pathToFileURL(installedRequire.resolve("@tsonic/target-api/source")).href);
+  const sourceCompiler = await import(pathToFileURL(installedRequire.resolve("@tsonic/tsts")).href);
   const targetModule = await import(pathToFileURL(join(scopeRoot, "target-rust/dist/index.js")).href);
   const nodeModule = await import(pathToFileURL(join(nodePackageRoot, "dist/index.js")).href);
   const targetPlugin = targetModule.createTsonicPlugin();
@@ -198,8 +202,14 @@ async function generateInstalledProject(
         capability: nodeCapability,
       }).references,
     ];
+    const emptyCheckedSourceProgram = sourceCompiler.createCompilerSessionFromFiles({
+      currentDirectory: projectRoot,
+      files: {},
+      compilerOptions: { noLib: true },
+    }).checkSource();
+    assert.equal(emptyCheckedSourceProgram.sourceFiles.length, 0);
     compiled = session.compile({
-      source: createEmptyTargetSourceProgram(),
+      source: sourceModule.createTargetSourceProgram(emptyCheckedSourceProgram),
       sourcePackages: createEmptySourcePackageGraph(projectRoot),
       project,
       target,
@@ -245,49 +255,6 @@ function createEmptySourcePackageGraph(projectRoot) {
       packages: Object.freeze([packageId]),
       dependencies: Object.freeze([]),
     })]),
-  });
-}
-
-function createEmptyTargetSourceProgram() {
-  const unavailable = () => {
-    throw new Error("The installed-layout proof has no source nodes.");
-  };
-  return Object.freeze({
-    ast: Object.freeze({ isDeclarationFile: () => false }),
-    sourceFiles: Object.freeze([]),
-    sourceFacts: Object.freeze({ getFact: () => undefined }),
-    navigation: Object.freeze({
-      sourceFiles: Object.freeze([]),
-      sourceReferenceFor: () => undefined,
-      referenceFor: () => undefined,
-      declarationFor: () => undefined,
-      moduleDependencies: () => Object.freeze([]),
-      moduleReferences: () => Object.freeze([]),
-      moduleHasTopLevelAwait: () => false,
-      memberDispatch: () => undefined,
-      classConstructors: () => Object.freeze({ kind: "resolved", constructors: Object.freeze([]) }),
-      declaredHeritage: () => Object.freeze({ kind: "resolved", edges: Object.freeze([]) }),
-      declaredHeritagePath: () => Object.freeze({ kind: "unrelated" }),
-      bindingWritesWithin: () => Object.freeze([]),
-      hasReferenceOutside: () => false,
-      isProjectShape: () => false,
-      isProjectConstructibleObject: () => false,
-      isProjectDeclaration: () => false,
-    }),
-    semantics: Object.freeze({
-      includes: () => false,
-      forFile: unavailable,
-      forNode: unavailable,
-      selectValueTypeRefinement: () => Object.freeze({ kind: "not-project-reference" }),
-    }),
-    documents: Object.freeze({
-      all: Object.freeze([]),
-      includes: () => false,
-      forFile: unavailable,
-      forNode: unavailable,
-      occurrenceFor: unavailable,
-      lookupAuthored: () => Object.freeze({ kind: "missing" }),
-    }),
   });
 }
 

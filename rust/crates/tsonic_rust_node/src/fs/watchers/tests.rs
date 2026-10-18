@@ -15,6 +15,7 @@ use tsonic_rust_runtime::Callable;
 enum Failure {
     Original(Rc<Cell<u64>>),
     Native(NodeError),
+    Runtime(tsonic_rust_runtime::TsonicError),
 }
 
 impl From<NodeError> for Failure {
@@ -42,257 +43,369 @@ fn enqueue_stat(watcher: &FsWatcher<Failure>, size: u64) {
         Some((admit_event().unwrap(), current, empty_watch_stats()));
 }
 
+impl From<tsonic_rust_runtime::TsonicError> for Failure {
+    fn from(error: tsonic_rust_runtime::TsonicError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
 #[test]
 fn typed_watchers_keep_original_errors_and_other_roots_pending_work() {
     let first = Watchers::<Failure>::new();
     let second = Watchers::<Failure>::new();
-    let failing = watcher(&first, "native-original-watch");
-    let pending = watcher(&second, "native-pending-watch");
-    let original = Rc::new(Cell::new(9_007_199_254_740_993_u64));
-    let retained = Rc::clone(&original);
-    let calls = Rc::new(Cell::new(0));
-    let observed = Rc::clone(&calls);
-    failing.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
-        move |(_current, _previous): (Stats, Stats)| Err(Failure::Original(Rc::clone(&retained))),
-    )));
-    pending.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
-        move |(current, previous): (Stats, Stats)| {
-            assert_eq!(current.size, 9_007_199_254_740_993_u64);
-            assert_eq!(previous.size, 0);
-            observed.set(observed.get() + 1);
-            Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            let failing = watcher(&first, "native-original-watch");
+            let pending = watcher(&second, "native-pending-watch");
+            let original = Rc::new(Cell::new(9_007_199_254_740_993_u64));
+            let retained = Rc::clone(&original);
+            let calls = Rc::new(Cell::new(0));
+            let observed = Rc::clone(&calls);
+            failing.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
+                move |(_current, _previous): (Stats, Stats)| {
+                    Err(Failure::Original(Rc::clone(&retained)))
+                },
+            )));
+            pending.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
+                move |(current, previous): (Stats, Stats)| {
+                    assert_eq!(current.size, 9_007_199_254_740_993_u64);
+                    assert_eq!(previous.size, 0);
+                    observed.set(observed.get() + 1);
+                    Ok(())
+                },
+            )));
+            enqueue_stat(&failing, 1);
+            enqueue_stat(&pending, 9_007_199_254_740_993);
+            let contexts = prepend(&first, &second);
+            match poll_phase(&contexts, crate::phases::WATCHERS) {
+                Err(Failure::Original(returned)) => {
+                    assert!(Rc::ptr_eq(&original, &returned));
+                    assert_eq!(returned.get(), 9_007_199_254_740_993);
+                }
+                Err(Failure::Native(error)) => panic!("unexpected native error: {}", error.code()),
+                Err(Failure::Runtime(error)) => panic!("unexpected runtime guard: {error}"),
+                Ok(_) => panic!("original stat failure was lost"),
+            }
+            assert_eq!(calls.get(), 0);
+            assert!(pending.state.borrow().pending_stat.is_some());
+            assert!(matches!(
+                poll_phase(&contexts, crate::phases::WATCHERS),
+                Ok(true)
+            ));
+            assert_eq!(calls.get(), 1);
+            failing.close();
+            pending.close();
         },
-    )));
-    enqueue_stat(&failing, 1);
-    enqueue_stat(&pending, 9_007_199_254_740_993);
-    let contexts = prepend(&first, &second);
-    match poll_phase(&contexts, crate::phases::WATCHERS) {
-        Err(Failure::Original(returned)) => {
-            assert!(Rc::ptr_eq(&original, &returned));
-            assert_eq!(returned.get(), 9_007_199_254_740_993);
-        }
-        Err(Failure::Native(error)) => panic!("unexpected native error: {}", error.code()),
-        Ok(_) => panic!("original stat failure was lost"),
-    }
-    assert_eq!(calls.get(), 0);
-    assert!(pending.state.borrow().pending_stat.is_some());
-    assert!(matches!(
-        poll_phase(&contexts, crate::phases::WATCHERS),
-        Ok(true)
-    ));
-    assert_eq!(calls.get(), 1);
-    failing.close();
-    pending.close();
+        tsonic_rust_runtime::dispatch::prepend(
+            &first,
+            tsonic_rust_runtime::dispatch::prepend(
+                &second,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+            ),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]
 fn stat_callback_reentry_waits_for_the_next_captured_frontier() {
     let roots = Watchers::<Failure>::new();
-    let value = watcher(&roots, "native-reentrant-watch");
-    let alias = value.clone();
-    let calls = Rc::new(Cell::new(0));
-    let observed = Rc::clone(&calls);
-    value.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
-        move |(_current, _previous)| {
-            observed.set(observed.get() + 1);
-            if observed.get() == 1 {
-                enqueue_stat(&alias, 2);
-            } else {
-                alias.close();
-            }
-            Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            let value = watcher(&roots, "native-reentrant-watch");
+            let alias = value.clone();
+            let calls = Rc::new(Cell::new(0));
+            let observed = Rc::clone(&calls);
+            value.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(
+                move |(_current, _previous)| {
+                    observed.set(observed.get() + 1);
+                    if observed.get() == 1 {
+                        enqueue_stat(&alias, 2);
+                    } else {
+                        alias.close();
+                    }
+                    Ok(())
+                },
+            )));
+            enqueue_stat(&value, 1);
+            let frontier = match roots.prepare(crate::phases::WATCHERS) {
+                Ok(value) => value,
+                Err(_) => panic!("valid capture failed"),
+            };
+            assert!(matches!(poll_prepared(&roots, &frontier), Ok(true)));
+            assert_eq!(calls.get(), 1);
+            assert!(value.state.borrow().pending_stat.is_some());
+            assert!(matches!(
+                poll_phase(&roots, crate::phases::WATCHERS),
+                Ok(true)
+            ));
+            assert_eq!(calls.get(), 2);
+            assert!(value.closed());
+            assert!(!roots.has_work());
         },
-    )));
-    enqueue_stat(&value, 1);
-    let frontier = match roots.prepare(crate::phases::WATCHERS) {
-        Ok(value) => value,
-        Err(_) => panic!("valid capture failed"),
-    };
-    assert!(matches!(poll_prepared(&roots, &frontier), Ok(true)));
-    assert_eq!(calls.get(), 1);
-    assert!(value.state.borrow().pending_stat.is_some());
-    assert!(matches!(
-        poll_phase(&roots, crate::phases::WATCHERS),
-        Ok(true)
-    ));
-    assert_eq!(calls.get(), 2);
-    assert!(value.closed());
-    assert!(!roots.has_work());
+        tsonic_rust_runtime::dispatch::prepend(
+            &roots,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]
 fn unwatch_closes_registrations_across_different_native_error_roots() {
     let first = Watchers::<Failure>::new();
     let second = Watchers::<NodeError>::new();
-    let left = watcher(&first, "native-shared-stat-path");
-    let right = watch_file_with_options(
-        &second,
-        "native-shared-stat-path",
-        WatchFileOptions::default(),
+    crate::run_entry_with_contexts(
+        || {
+            let left = watcher(&first, "native-shared-stat-path");
+            let right = watch_file_with_options(
+                &second,
+                "native-shared-stat-path",
+                WatchFileOptions::default(),
+            )
+            .unwrap();
+            left.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
+            right.state.borrow_mut().callback =
+                Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
+            first.retain_stat(&left).unwrap();
+            second.retain_stat(&right).unwrap();
+            assert!(first.has_work());
+            assert!(second.has_work());
+            crate::fs::unwatch_file("native-shared-stat-path");
+            assert!(left.closed());
+            assert!(right.closed());
+            assert!(!first.has_work());
+            assert!(!second.has_work());
+            assert!(left.state.borrow().reservation.is_none());
+            assert!(right.state.borrow().reservation.is_none());
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &first,
+            tsonic_rust_runtime::dispatch::prepend(
+                &second,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+            ),
+        ),
     )
-    .unwrap();
-    left.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
-    right.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(|_| Ok(()))));
-    first.retain_stat(&left).unwrap();
-    second.retain_stat(&right).unwrap();
-    assert!(first.has_work());
-    assert!(second.has_work());
-    crate::fs::unwatch_file("native-shared-stat-path");
-    assert!(left.closed());
-    assert!(right.closed());
-    assert!(!first.has_work());
-    assert!(!second.has_work());
-    assert!(left.state.borrow().reservation.is_none());
-    assert!(right.state.borrow().reservation.is_none());
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]
 fn closing_a_watcher_drops_its_original_capture_outside_native_borrows() {
-    struct Probe {
-        drops: Rc<Cell<usize>>,
-        owner: Rc<RefCell<Option<FsWatcher<Failure>>>>,
-    }
-    impl Drop for Probe {
-        fn drop(&mut self) {
-            self.drops.set(self.drops.get() + 1);
-            if let Some(owner) = self.owner.borrow().as_ref() {
-                owner.close();
-            }
-        }
-    }
     let roots = Watchers::<Failure>::new();
-    let value = watcher(&roots, "native-watch-drop");
-    let drops = Rc::new(Cell::new(0));
-    let holder = Rc::new(RefCell::new(Some(value.clone())));
-    let probe = Probe {
-        drops: Rc::clone(&drops),
-        owner: Rc::clone(&holder),
-    };
-    let callback = Callable::new(move |(_current, _previous)| {
-        std::hint::black_box(&probe);
-        Ok(())
+    crate::run_entry_with_contexts(
+        || {
+            struct Probe {
+                drops: Rc<Cell<usize>>,
+                owner: Rc<RefCell<Option<FsWatcher<Failure>>>>,
+            }
+            impl Drop for Probe {
+                fn drop(&mut self) {
+                    self.drops.set(self.drops.get() + 1);
+                    if let Some(owner) = self.owner.borrow().as_ref() {
+                        owner.close();
+                    }
+                }
+            }
+            let value = watcher(&roots, "native-watch-drop");
+            let drops = Rc::new(Cell::new(0));
+            let holder = Rc::new(RefCell::new(Some(value.clone())));
+            let probe = Probe {
+                drops: Rc::clone(&drops),
+                owner: Rc::clone(&holder),
+            };
+            let callback = Callable::new(move |(_current, _previous)| {
+                std::hint::black_box(&probe);
+                Ok(())
+            });
+            let identity = callback.identity_key();
+            value.state.borrow_mut().callback = Some(WatchCallback::Stat(callback));
+            match &value.state.borrow().callback {
+                Some(WatchCallback::Stat(callback)) => {
+                    assert_eq!(callback.identity_key(), identity)
+                }
+                _ => panic!("original callback missing"),
+            }
+            value.close();
+            assert_eq!(drops.get(), 1);
+            holder.borrow_mut().take();
+            assert!(!roots.has_work());
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &roots,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
     });
-    let identity = callback.identity_key();
-    value.state.borrow_mut().callback = Some(WatchCallback::Stat(callback));
-    match &value.state.borrow().callback {
-        Some(WatchCallback::Stat(callback)) => assert_eq!(callback.identity_key(), identity),
-        _ => panic!("original callback missing"),
-    }
-    value.close();
-    assert_eq!(drops.get(), 1);
-    holder.borrow_mut().take();
-    assert!(!roots.has_work());
 }
 
 #[test]
 fn native_notifications_keep_every_path_across_a_finite_decoding_queue() {
     let roots = Watchers::<Failure>::new();
-    let value = watcher(&roots, "native-watch-paths");
-    let (sender, receiver) = mpsc::sync_channel(2);
-    let names = Rc::new(RefCell::new(Vec::new()));
-    let observed = Rc::clone(&names);
-    {
-        let mut state = value.state.borrow_mut();
-        state.maximum_events = 2;
-        state.input = Some(WatchInput {
-            receiver,
-            overflowed: Arc::new(AtomicBool::new(false)),
-        });
-        state.callback = Some(WatchCallback::Event(Callable::new(move |(kind, name)| {
-            assert_eq!(kind, "change");
-            observed.borrow_mut().push(name);
-            Ok(())
-        })));
-    }
-    let event = notify::Event::new(notify::EventKind::Any);
-    let event = (0..5).fold(event, |event, index| {
-        event.add_path(PathBuf::from(format!("path-{index}")))
+    crate::run_entry_with_contexts(
+        || {
+            let value = watcher(&roots, "native-watch-paths");
+            let (sender, receiver) = mpsc::sync_channel(2);
+            let names = Rc::new(RefCell::new(Vec::new()));
+            let observed = Rc::clone(&names);
+            {
+                let mut state = value.state.borrow_mut();
+                state.maximum_events = 2;
+                state.input = Some(WatchInput {
+                    receiver,
+                    overflowed: Arc::new(AtomicBool::new(false)),
+                });
+                state.callback = Some(WatchCallback::Event(Callable::new(move |(kind, name)| {
+                    assert_eq!(kind, "change");
+                    observed.borrow_mut().push(name);
+                    Ok(())
+                })));
+            }
+            let event = notify::Event::new(notify::EventKind::Any);
+            let event = (0..5).fold(event, |event, index| {
+                event.add_path(PathBuf::from(format!("path-{index}")))
+            });
+            sender.send(Ok(event)).unwrap();
+            for count in [2, 4, 5] {
+                assert!(matches!(
+                    poll_phase(&roots, crate::phases::WATCHERS),
+                    Ok(true)
+                ));
+                assert_eq!(names.borrow().len(), count);
+            }
+            assert_eq!(
+                *names.borrow(),
+                (0..5)
+                    .map(|index| format!("path-{index}"))
+                    .collect::<Vec<_>>()
+            );
+            assert!(value.state.borrow().pending_notification.is_none());
+            value.close();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &roots,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
     });
-    sender.send(Ok(event)).unwrap();
-    for count in [2, 4, 5] {
-        assert!(matches!(
-            poll_phase(&roots, crate::phases::WATCHERS),
-            Ok(true)
-        ));
-        assert_eq!(names.borrow().len(), count);
-    }
-    assert_eq!(
-        *names.borrow(),
-        (0..5)
-            .map(|index| format!("path-{index}"))
-            .collect::<Vec<_>>()
-    );
-    assert!(value.state.borrow().pending_notification.is_none());
-    value.close();
 }
 
 #[test]
 fn overflow_is_an_explicit_native_guard_and_pending_events_survive() {
     let roots = Watchers::<Failure>::new();
-    let value = watcher(&roots, "native-overflow-watch");
-    let (_sender, receiver) = mpsc::sync_channel(1);
-    let overflow = Arc::new(AtomicBool::new(true));
-    let observed = Rc::new(Cell::new(0));
-    let calls = Rc::clone(&observed);
-    {
-        let mut state = value.state.borrow_mut();
-        state.input = Some(WatchInput {
-            receiver,
-            overflowed: Arc::clone(&overflow),
-        });
-        state.callback = Some(WatchCallback::Event(Callable::new(move |_| {
-            calls.set(calls.get() + 1);
-            Ok(())
-        })));
-        state.pending_events.push_back((
-            admit_event().unwrap(),
-            FsWatchEvent {
-                event_type: "change".to_owned(),
-                filename: "retained".to_owned(),
-            },
-        ));
-    }
-    match roots.prepare(crate::phases::WATCHERS) {
-        Err(Failure::Native(error)) => assert_eq!(error.code(), "ERR_FS_WATCHER_QUEUE_LIMIT"),
-        _ => panic!("native overflow guard was lost"),
-    }
-    assert!(!overflow.load(Ordering::Acquire));
-    assert_eq!(observed.get(), 0);
-    assert_eq!(value.state.borrow().pending_events.len(), 1);
-    assert!(matches!(
-        poll_phase(&roots, crate::phases::WATCHERS),
-        Ok(true)
-    ));
-    assert_eq!(observed.get(), 1);
-    value.close();
+    crate::run_entry_with_contexts(
+        || {
+            let value = watcher(&roots, "native-overflow-watch");
+            let (_sender, receiver) = mpsc::sync_channel(1);
+            let overflow = Arc::new(AtomicBool::new(true));
+            let observed = Rc::new(Cell::new(0));
+            let calls = Rc::clone(&observed);
+            {
+                let mut state = value.state.borrow_mut();
+                state.input = Some(WatchInput {
+                    receiver,
+                    overflowed: Arc::clone(&overflow),
+                });
+                state.callback = Some(WatchCallback::Event(Callable::new(move |_| {
+                    calls.set(calls.get() + 1);
+                    Ok(())
+                })));
+                state.pending_events.push_back((
+                    admit_event().unwrap(),
+                    FsWatchEvent {
+                        event_type: "change".to_owned(),
+                        filename: "retained".to_owned(),
+                    },
+                ));
+            }
+            match roots.prepare(crate::phases::WATCHERS) {
+                Err(Failure::Native(error)) => {
+                    assert_eq!(error.code(), "ERR_FS_WATCHER_QUEUE_LIMIT")
+                }
+                _ => panic!("native overflow guard was lost"),
+            }
+            assert!(!overflow.load(Ordering::Acquire));
+            assert_eq!(observed.get(), 0);
+            assert_eq!(value.state.borrow().pending_events.len(), 1);
+            assert!(matches!(
+                poll_phase(&roots, crate::phases::WATCHERS),
+                Ok(true)
+            ));
+            assert_eq!(observed.get(), 1);
+            value.close();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &roots,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]
 fn weak_watcher_roots_do_not_extend_native_listener_lifetimes() {
-    struct Probe(Rc<Cell<usize>>);
-    impl Drop for Probe {
-        fn drop(&mut self) {
-            self.0.set(self.0.get() + 1);
-        }
-    }
     let roots = Watchers::<Failure>::new();
-    let value = watcher(&roots, "native-weak-watch");
-    let drops = Rc::new(Cell::new(0));
-    let probe = Probe(Rc::clone(&drops));
-    value.state.borrow_mut().callback = Some(WatchCallback::Stat(Callable::new(move |_| {
-        std::hint::black_box(&probe);
-        Ok(())
-    })));
-    let alias = value.clone();
-    drop(value);
-    assert_eq!(drops.get(), 0);
-    drop(alias);
-    assert_eq!(drops.get(), 1);
-    assert!(!roots.has_work());
-    assert!(matches!(
-        poll_phase(&roots, crate::phases::WATCHERS),
-        Ok(false)
-    ));
+    crate::run_entry_with_contexts(
+        || {
+            struct Probe(Rc<Cell<usize>>);
+            impl Drop for Probe {
+                fn drop(&mut self) {
+                    self.0.set(self.0.get() + 1);
+                }
+            }
+            let value = watcher(&roots, "native-weak-watch");
+            let drops = Rc::new(Cell::new(0));
+            let probe = Probe(Rc::clone(&drops));
+            value.state.borrow_mut().callback =
+                Some(WatchCallback::Stat(Callable::new(move |_| {
+                    std::hint::black_box(&probe);
+                    Ok(())
+                })));
+            let alias = value.clone();
+            drop(value);
+            assert_eq!(drops.get(), 0);
+            drop(alias);
+            assert_eq!(drops.get(), 1);
+            assert!(!roots.has_work());
+            assert!(matches!(
+                poll_phase(&roots, crate::phases::WATCHERS),
+                Ok(false)
+            ));
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &roots,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
+    )
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Original(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }
 
 #[test]

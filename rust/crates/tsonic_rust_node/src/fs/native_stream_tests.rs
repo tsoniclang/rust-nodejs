@@ -8,37 +8,53 @@ use tsonic_rust_runtime::Callable;
 
 static NEXT_FILE: AtomicUsize = AtomicUsize::new(0);
 
+impl From<tsonic_rust_runtime::TsonicError> for Failure {
+    fn from(error: tsonic_rust_runtime::TsonicError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
 #[test]
 fn file_write_moves_owned_bytes_and_snapshots_only_live_aliases() {
-    let fixture = Fixture::new();
     let background = BackgroundTasks::<NodeError>::new();
-    let stream =
-        WriteStream::open(&background, &fixture.text(), &WriteStreamOptions::default()).unwrap();
-    let bytes = vec![1, 2, 3];
-    let pointer = bytes.as_ptr();
-    assert!(stream.write(Buffer::from_bytes(bytes)).unwrap());
-    assert_eq!(
-        stream.state.borrow().queue.front().unwrap().as_ptr(),
-        pointer
-    );
-    let buffer = Buffer::from_bytes(vec![4, 5, 6]);
-    let alias = buffer.clone();
-    assert!(stream.write(buffer).unwrap());
-    alias.set_number(0_usize, 9_u8);
-    assert_eq!(&**stream.state.borrow().queue.back().unwrap(), &[4, 5, 6]);
-    stream.close().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while background.has_pending_work() {
-        assert!(
-            Instant::now() < deadline,
-            "owned write completion timed out"
-        );
-        background.poll().unwrap();
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(stream.closed());
-    assert_eq!(std::fs::read(&fixture.0).unwrap(), vec![1, 2, 3, 4, 5, 6]);
-    assert_eq!(stream.bytes_written(), 6);
+    crate::run_entry_with_contexts(
+        || {
+            let fixture = Fixture::new();
+            let stream =
+                WriteStream::open(&background, &fixture.text(), &WriteStreamOptions::default())
+                    .unwrap();
+            let bytes = vec![1, 2, 3];
+            let pointer = bytes.as_ptr();
+            assert!(stream.write(Buffer::from_bytes(bytes)).unwrap());
+            assert_eq!(
+                stream.state.borrow().queue.front().unwrap().as_ptr(),
+                pointer
+            );
+            let buffer = Buffer::from_bytes(vec![4, 5, 6]);
+            let alias = buffer.clone();
+            assert!(stream.write(buffer).unwrap());
+            alias.set_number(0_usize, 9_u8);
+            assert_eq!(&**stream.state.borrow().queue.back().unwrap(), &[4, 5, 6]);
+            stream.close().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while background.has_pending_work() {
+                assert!(
+                    Instant::now() < deadline,
+                    "owned write completion timed out"
+                );
+                background.poll().unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(stream.closed());
+            assert_eq!(std::fs::read(&fixture.0).unwrap(), vec![1, 2, 3, 4, 5, 6]);
+            assert_eq!(stream.bytes_written(), 6);
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap_or_else(|_| panic!("the registered native fixture owner must complete"));
 }
 
 struct Fixture(std::path::PathBuf);
@@ -69,6 +85,7 @@ impl Drop for Fixture {
 enum Failure {
     Source(Rc<Cell<u64>>),
     Native(NodeError),
+    Runtime(tsonic_rust_runtime::TsonicError),
 }
 
 impl From<NodeError> for Failure {
@@ -82,12 +99,25 @@ fn readable_alias_retains_the_native_file_without_a_capacity_reference_cycle() {
     let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
     let fixture = Fixture::new();
     let background = BackgroundTasks::<NodeError>::new();
-    let stream = ReadStream::from_file(
-        &background,
-        readable_tasks.handle(),
-        fixture.text(),
-        File::open(&fixture.0).unwrap(),
-        &ReadStreamOptions::default(),
+    let (stream, _) = crate::run_entry_with_contexts(
+        || {
+            ReadStream::from_file(
+                &background,
+                readable_tasks.handle(),
+                fixture.text(),
+                File::open(&fixture.0).unwrap(),
+                &ReadStreamOptions::default(),
+            )
+            .unwrap()
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::prepend(
+                &readable_tasks,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(
+                ),
+            ),
+        ),
     )
     .unwrap();
     let file_owner = Rc::downgrade(&stream.state);
@@ -149,55 +179,69 @@ fn native_submission_rejection_clears_physical_pending_state() {
 
 #[test]
 fn file_write_continuation_survives_the_original_source_drain_failure() {
-    let fixture = Fixture::new();
     let background = BackgroundTasks::<Failure>::new();
-    let stream = WriteStream::from_file(
-        &background,
-        fixture.text(),
-        File::create(&fixture.0).unwrap(),
-        &WriteStreamOptions {
-            high_water_mark: Some(1),
-            ..Default::default()
+    crate::run_entry_with_contexts(
+        || {
+            let fixture = Fixture::new();
+            let stream = WriteStream::from_file(
+                &background,
+                fixture.text(),
+                File::create(&fixture.0).unwrap(),
+                &WriteStreamOptions {
+                    high_water_mark: Some(1),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let original = Rc::new(Cell::new(9_007_199_254_740_993));
+            let captured = Rc::clone(&original);
+            let drain = Callable::new(move |()| Err(Failure::Source(Rc::clone(&captured))));
+            assert!(stream.writable_handle().once_drain("drain", &drain).is_ok());
+            assert!(matches!(
+                stream.write(Buffer::from_bytes(vec![1])),
+                Ok(false)
+            ));
+            assert!(matches!(
+                stream.write(Buffer::from_bytes(vec![2, 3])),
+                Ok(false)
+            ));
+            assert!(stream.close().is_ok());
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut observed = false;
+            while background.has_pending_work() {
+                assert!(
+                    Instant::now() < deadline,
+                    "native file completion timed out"
+                );
+                match background.poll() {
+                    Ok(_) => {}
+                    Err(Failure::Source(returned)) => {
+                        assert!(!observed);
+                        assert!(Rc::ptr_eq(&returned, &original));
+                        assert!(background.has_pending_work());
+                        observed = true;
+                    }
+                    Err(Failure::Native(error)) => {
+                        panic!("native file completion failed: {}", error.code())
+                    }
+                    Err(Failure::Runtime(error)) => panic!("unexpected runtime guard: {error}"),
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(observed);
+            assert!(stream.closed());
+            assert!(!stream.pending());
+            assert!(stream.writable_handle().writable_finished());
+            assert_eq!(std::fs::read(&fixture.0).unwrap(), [1, 2, 3]);
         },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<Failure>::new(),
+        ),
     )
-    .unwrap();
-    let original = Rc::new(Cell::new(9_007_199_254_740_993));
-    let captured = Rc::clone(&original);
-    let drain = Callable::new(move |()| Err(Failure::Source(Rc::clone(&captured))));
-    assert!(stream.writable_handle().once_drain("drain", &drain).is_ok());
-    assert!(matches!(
-        stream.write(Buffer::from_bytes(vec![1])),
-        Ok(false)
-    ));
-    assert!(matches!(
-        stream.write(Buffer::from_bytes(vec![2, 3])),
-        Ok(false)
-    ));
-    assert!(stream.close().is_ok());
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut observed = false;
-    while background.has_pending_work() {
-        assert!(
-            Instant::now() < deadline,
-            "native file completion timed out"
-        );
-        match background.poll() {
-            Ok(_) => {}
-            Err(Failure::Source(returned)) => {
-                assert!(!observed);
-                assert!(Rc::ptr_eq(&returned, &original));
-                assert!(background.has_pending_work());
-                observed = true;
-            }
-            Err(Failure::Native(error)) => {
-                panic!("native file completion failed: {}", error.code())
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(observed);
-    assert!(stream.closed());
-    assert!(!stream.pending());
-    assert!(stream.writable_handle().writable_finished());
-    assert_eq!(std::fs::read(&fixture.0).unwrap(), [1, 2, 3]);
+    .unwrap_or_else(|error| match error {
+        Failure::Native(error) => panic!("unexpected native fixture guard: {}", error.code()),
+        Failure::Runtime(error) => panic!("unexpected native fixture runtime guard: {error}"),
+        Failure::Source(_) => panic!("unobserved source failure escaped the fixture"),
+    });
 }

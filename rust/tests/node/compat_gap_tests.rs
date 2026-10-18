@@ -24,107 +24,118 @@ fn fs_stream_and_callback_shapes_are_backed_by_real_file_io() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
-    let root = std::env::current_dir().unwrap().join(".temp").join(format!(
-        "tsonic-rust-compat-gap-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync_with_options(
-        &root_text,
-        fs::MakeDirectoryOptions {
-            recursive: Some(true),
-            ..Default::default()
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let root = std::env::current_dir().unwrap().join(".temp").join(format!(
+                "tsonic-rust-compat-gap-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let root_text = root.to_string_lossy().to_string();
+            fs::mkdir_sync_with_options(
+                &root_text,
+                fs::MakeDirectoryOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let file = root.join("stream.txt");
+            let file_text = file.to_string_lossy().to_string();
+
+            let mut write_result = None;
+            fs::write_file_callback_string(&file_text, "hello", "utf8", |result| {
+                write_result = Some(result)
+            });
+            write_result.unwrap().unwrap();
+
+            let mut read_result = None;
+            fs::read_file_callback_string(&file_text, "utf8", |result| read_result = Some(result));
+            assert_eq!(read_result.unwrap().unwrap(), "hello");
+
+            let mut exists = None;
+            fs::exists_callback(&file_text, |result| exists = Some(result));
+            assert_eq!(exists, Some(true));
+            let mut access = None;
+            fs::access_callback(&file_text, |result| access = Some(result));
+            access.unwrap().unwrap();
+            let mut stat = None;
+            fs::stat_callback(&file_text, |result| stat = Some(result));
+            assert_eq!(stat.unwrap().unwrap().size, 5);
+
+            let copy = root.join("copy.txt");
+            let copy_text = copy.to_string_lossy().to_string();
+            let mut copy_result = None;
+            fs::copy_file_callback(&file_text, &copy_text, |result| copy_result = Some(result));
+            copy_result.unwrap().unwrap();
+            let mut append_result = None;
+            fs::append_file_callback_string(&copy_text, "!", "utf8", |result| {
+                append_result = Some(result)
+            });
+            append_result.unwrap().unwrap();
+            let mut names = None;
+            fs::readdir_callback(&root_text, |result| names = Some(result));
+            assert_eq!(
+                names.unwrap().unwrap().values(),
+                vec!["copy.txt".to_string(), "stream.txt".to_string()]
+            );
+
+            let renamed = root.join("renamed.txt");
+            let renamed_text = renamed.to_string_lossy().to_string();
+            let mut rename_result = None;
+            fs::rename_callback(&copy_text, &renamed_text, |result| {
+                rename_result = Some(result)
+            });
+            rename_result.unwrap().unwrap();
+            let mut unlink_result = None;
+            fs::unlink_callback(&renamed_text, |result| unlink_result = Some(result));
+            unlink_result.unwrap().unwrap();
+
+            let readable =
+                fs::create_read_stream(&background, readable_tasks.handle(), &file_text).unwrap();
+            while background.has_pending_work() {
+                background.poll().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert_eq!(
+                readable
+                    .read()
+                    .unwrap()
+                    .unwrap()
+                    .to_string(Some("utf8"))
+                    .unwrap(),
+                "hello"
+            );
+            let writable = fs::create_write_stream(&background, &file_text).unwrap();
+            assert!(writable
+                .write(buffer::Buffer::from_string("x", Some("utf8")).unwrap())
+                .unwrap());
+            writable.close().unwrap();
+            while background.has_pending_work() {
+                background.poll().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert_eq!(writable.bytes_written(), 1);
+
+            fs::rm_sync_with_options(
+                &root_text,
+                fs::RmOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         },
-    )
-    .unwrap();
-    let file = root.join("stream.txt");
-    let file_text = file.to_string_lossy().to_string();
-
-    let mut write_result = None;
-    fs::write_file_callback_string(&file_text, "hello", "utf8", |result| {
-        write_result = Some(result)
-    });
-    write_result.unwrap().unwrap();
-
-    let mut read_result = None;
-    fs::read_file_callback_string(&file_text, "utf8", |result| read_result = Some(result));
-    assert_eq!(read_result.unwrap().unwrap(), "hello");
-
-    let mut exists = None;
-    fs::exists_callback(&file_text, |result| exists = Some(result));
-    assert_eq!(exists, Some(true));
-    let mut access = None;
-    fs::access_callback(&file_text, |result| access = Some(result));
-    access.unwrap().unwrap();
-    let mut stat = None;
-    fs::stat_callback(&file_text, |result| stat = Some(result));
-    assert_eq!(stat.unwrap().unwrap().size, 5);
-
-    let copy = root.join("copy.txt");
-    let copy_text = copy.to_string_lossy().to_string();
-    let mut copy_result = None;
-    fs::copy_file_callback(&file_text, &copy_text, |result| copy_result = Some(result));
-    copy_result.unwrap().unwrap();
-    let mut append_result = None;
-    fs::append_file_callback_string(&copy_text, "!", "utf8", |result| {
-        append_result = Some(result)
-    });
-    append_result.unwrap().unwrap();
-    let mut names = None;
-    fs::readdir_callback(&root_text, |result| names = Some(result));
-    assert_eq!(
-        names.unwrap().unwrap().values(),
-        vec!["copy.txt".to_string(), "stream.txt".to_string()]
-    );
-
-    let renamed = root.join("renamed.txt");
-    let renamed_text = renamed.to_string_lossy().to_string();
-    let mut rename_result = None;
-    fs::rename_callback(&copy_text, &renamed_text, |result| {
-        rename_result = Some(result)
-    });
-    rename_result.unwrap().unwrap();
-    let mut unlink_result = None;
-    fs::unlink_callback(&renamed_text, |result| unlink_result = Some(result));
-    unlink_result.unwrap().unwrap();
-
-    let readable =
-        fs::create_read_stream(&background, readable_tasks.handle(), &file_text).unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
-    .unwrap();
-    assert_eq!(
-        readable
-            .read()
-            .unwrap()
-            .unwrap()
-            .to_string(Some("utf8"))
-            .unwrap(),
-        "hello"
-    );
-    let writable = fs::create_write_stream(&background, &file_text).unwrap();
-    assert!(writable
-        .write(buffer::Buffer::from_string("x", Some("utf8")).unwrap())
-        .unwrap());
-    writable.close().unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
-    .unwrap();
-    assert_eq!(writable.bytes_written(), 1);
-
-    fs::rm_sync_with_options(
-        &root_text,
-        fs::RmOptions {
-            recursive: Some(true),
-            ..Default::default()
-        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::prepend(
+                &background,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(
+                ),
+            ),
+        ),
     )
     .unwrap();
 }

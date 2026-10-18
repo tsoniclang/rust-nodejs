@@ -229,44 +229,56 @@ mod detached_response_tests {
     #[test]
     fn detached_response_can_finish_after_request_callback_returns() {
         let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
-        let output = Rc::new(RefCell::new(Vec::new()));
-        let retained = Rc::new(RefCell::new(None::<ServerResponse<TsonicError>>));
-        let retained_in_handler = Rc::clone(&retained);
-        let transport = MemoryTransport {
-            input: Cursor::new(b"GET /later HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec()),
-            output: Rc::clone(&output),
-        };
         let roots = HttpServers::<TsonicError>::new();
-        accept_runtime_transport(
-            &roots.handle(),
-            readable_tasks.handle(),
-            Box::new(transport),
-            Callable::new(
-                move |(request, response): (
-                    IncomingMessage<TsonicError>,
-                    ServerResponse<TsonicError>,
-                )| {
-                    assert_eq!(request.url(), Some("/later"));
-                    *retained_in_handler.borrow_mut() = Some(response);
-                    Ok::<(), TsonicError>(())
-                },
+        crate::run_entry_with_contexts(
+            || {
+                let output = Rc::new(RefCell::new(Vec::new()));
+                let retained = Rc::new(RefCell::new(None::<ServerResponse<TsonicError>>));
+                let retained_in_handler = Rc::clone(&retained);
+                let transport = MemoryTransport {
+                    input: Cursor::new(b"GET /later HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec()),
+                    output: Rc::clone(&output),
+                };
+                accept_runtime_transport(
+                    &roots.handle(),
+                    readable_tasks.handle(),
+                    Box::new(transport),
+                    Callable::new(
+                        move |(request, response): (
+                            IncomingMessage<TsonicError>,
+                            ServerResponse<TsonicError>,
+                        )| {
+                            assert_eq!(request.url(), Some("/later"));
+                            *retained_in_handler.borrow_mut() = Some(response);
+                            Ok::<(), TsonicError>(())
+                        },
+                    ),
+                )
+                .unwrap();
+
+                assert!(roots.has_work());
+                assert!(output.borrow().is_empty());
+                let response = retained.borrow_mut().take().unwrap();
+                response.write_string("a").unwrap();
+                response.end_string("b").unwrap();
+                roots.prepare(crate::phases::HTTP).unwrap();
+                assert!(!roots.has_work());
+
+                let wire = output.borrow();
+                assert!(wire.starts_with(b"HTTP/1.1 200 OK\r\n"));
+                assert!(wire
+                    .windows(b"Transfer-Encoding: chunked\r\n".len())
+                    .any(|window| window == b"Transfer-Encoding: chunked\r\n"));
+                assert!(wire.ends_with(b"1\r\na\r\n1\r\nb\r\n0\r\n\r\n"));
+            },
+            tsonic_rust_runtime::dispatch::prepend(
+                &roots,
+                tsonic_rust_runtime::dispatch::prepend(
+                    &readable_tasks,
+                    tsonic_rust_runtime::dispatch::DispatchEnd::<TsonicError>::new(),
+                ),
             ),
         )
         .unwrap();
-
-        assert!(roots.has_work());
-        assert!(output.borrow().is_empty());
-        let response = retained.borrow_mut().take().unwrap();
-        response.write_string("a").unwrap();
-        response.end_string("b").unwrap();
-        roots.prepare(crate::phases::HTTP).unwrap();
-        assert!(!roots.has_work());
-
-        let wire = output.borrow();
-        assert!(wire.starts_with(b"HTTP/1.1 200 OK\r\n"));
-        assert!(wire
-            .windows(b"Transfer-Encoding: chunked\r\n".len())
-            .any(|window| window == b"Transfer-Encoding: chunked\r\n"));
-        assert!(wire.ends_with(b"1\r\na\r\n1\r\nb\r\n0\r\n\r\n"));
     }
 }

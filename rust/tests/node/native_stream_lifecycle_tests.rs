@@ -127,52 +127,61 @@ fn codec_destruction_shares_error_and_close_identity_across_all_base_projections
 #[test]
 fn duplex_drain_finish_and_close_use_their_owning_native_states_once() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
-    let transform = stream::Transform::new(readable_tasks.handle(), |chunk| chunk);
-    let duplex = stream::transform_as_duplex(&transform);
-    let readable = stream::transform_as_readable(&transform);
-    let trace = Rc::new(RefCell::new(Vec::new()));
-    let removed = Callable::new(|()| {
-        Err::<(), NodeError>(NodeError::new(
-            "ERR_TEST_CALLBACK",
-            "removed lifecycle listener",
-        ))
-    });
-    assert_eq!(duplex, duplex.on_drain("drain", &removed).unwrap());
-    duplex.off_drain("drain", &removed).unwrap();
-    duplex.once_drain("drain", &removed).unwrap();
-    duplex.off_drain("drain", &removed).unwrap();
-    duplex.on_finish("finish", &removed).unwrap();
-    duplex.off_finish("finish", &removed).unwrap();
-    duplex.once_finish("finish", &removed).unwrap();
-    duplex.off_finish("finish", &removed).unwrap();
-    for event in ["drain", "finish", "close"] {
-        let callback_trace = Rc::clone(&trace);
-        let callback = Callable::new(move |()| {
-            callback_trace.borrow_mut().push(event);
-            Ok::<(), NodeError>(())
-        });
-        match event {
-            "drain" => duplex.once_drain(event, &callback).unwrap(),
-            "finish" => duplex.once_finish(event, &callback).unwrap(),
-            "close" => duplex.once_close(event, &callback).unwrap(),
-            _ => unreachable!(),
-        };
-    }
-    duplex.cork();
-    let bytes = Buffer::from_bytes(vec![7; 16 * 1024]);
-    assert!(!duplex.write_buffer(&bytes).unwrap());
-    duplex.uncork().unwrap();
-    assert!(duplex.writable_need_drain());
-    assert_eq!(readable.read_buffer(None).unwrap().unwrap(), bytes);
-    assert!(!duplex.writable_need_drain());
-    assert_eq!(duplex, duplex.end().unwrap());
-    duplex.end().unwrap();
-    assert_eq!(*trace.borrow(), ["drain", "finish"]);
-    assert!(!readable.readable_ended());
-    readable_tasks.poll().unwrap();
-    assert_eq!(*trace.borrow(), ["drain", "finish", "close"]);
-    assert!(duplex.writable_finished());
-    assert!(readable.readable_ended());
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let transform = stream::Transform::new(readable_tasks.handle(), |chunk| chunk);
+            let duplex = stream::transform_as_duplex(&transform);
+            let readable = stream::transform_as_readable(&transform);
+            let trace = Rc::new(RefCell::new(Vec::new()));
+            let removed = Callable::new(|()| {
+                Err::<(), NodeError>(NodeError::new(
+                    "ERR_TEST_CALLBACK",
+                    "removed lifecycle listener",
+                ))
+            });
+            assert_eq!(duplex, duplex.on_drain("drain", &removed).unwrap());
+            duplex.off_drain("drain", &removed).unwrap();
+            duplex.once_drain("drain", &removed).unwrap();
+            duplex.off_drain("drain", &removed).unwrap();
+            duplex.on_finish("finish", &removed).unwrap();
+            duplex.off_finish("finish", &removed).unwrap();
+            duplex.once_finish("finish", &removed).unwrap();
+            duplex.off_finish("finish", &removed).unwrap();
+            for event in ["drain", "finish", "close"] {
+                let callback_trace = Rc::clone(&trace);
+                let callback = Callable::new(move |()| {
+                    callback_trace.borrow_mut().push(event);
+                    Ok::<(), NodeError>(())
+                });
+                match event {
+                    "drain" => duplex.once_drain(event, &callback).unwrap(),
+                    "finish" => duplex.once_finish(event, &callback).unwrap(),
+                    "close" => duplex.once_close(event, &callback).unwrap(),
+                    _ => unreachable!(),
+                };
+            }
+            duplex.cork();
+            let bytes = Buffer::from_bytes(vec![7; 16 * 1024]);
+            assert!(!duplex.write_buffer(&bytes).unwrap());
+            duplex.uncork().unwrap();
+            assert!(duplex.writable_need_drain());
+            assert_eq!(readable.read_buffer(None).unwrap().unwrap(), bytes);
+            assert!(!duplex.writable_need_drain());
+            assert_eq!(duplex, duplex.end().unwrap());
+            duplex.end().unwrap();
+            assert_eq!(*trace.borrow(), ["drain", "finish"]);
+            assert!(!readable.readable_ended());
+            readable_tasks.poll().unwrap();
+            assert_eq!(*trace.borrow(), ["drain", "finish", "close"]);
+            assert!(duplex.writable_finished());
+            assert!(readable.readable_ended());
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
+    .unwrap();
 }
 
 #[test]

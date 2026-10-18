@@ -660,119 +660,144 @@ fn fs_extended_sync_directory_lifecycle() {
 #[test]
 fn fs_glob_and_watchers_are_closed_polling_apis() {
     let watchers = fs::Watchers::<tsonic_rust_runtime::TsonicError>::new();
-    let root = temp_root("glob-watch");
-    let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync_with_options(
-        &root_text,
-        fs::MakeDirectoryOptions {
-            recursive: Some(true),
-            ..Default::default()
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let root = temp_root("glob-watch");
+            let root_text = root.to_string_lossy().to_string();
+            fs::mkdir_sync_with_options(
+                &root_text,
+                fs::MakeDirectoryOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let alpha = root.join("alpha.txt");
+            let beta = root.join("beta.log");
+            fs::write_file_sync_string(&alpha.to_string_lossy(), "a", "utf8").unwrap();
+            fs::write_file_sync_string(&beta.to_string_lossy(), "b", "utf8").unwrap();
+
+            let matches = fs::glob_sync(&root.join("*.txt").to_string_lossy()).unwrap();
+            assert_eq!(matches.len(), 1);
+            assert!(matches[0].ends_with("alpha.txt"));
+
+            let mut watcher = fs::watch_with_options(
+                &watchers,
+                &alpha.to_string_lossy(),
+                fs::WatchOptions {
+                    persistent: false,
+                    recursive: false,
+                    encoding: Some("utf8".to_string()),
+                    ignore: Vec::new(),
+                    signal_aborted: false,
+                    max_queue: 16,
+                    overflow: "ignore".to_string(),
+                },
+            )
+            .unwrap();
+            assert!(!watcher.has_ref());
+            watcher.ref_();
+            assert!(watcher.has_ref());
+            watcher.unref();
+            assert!(!watcher.has_ref());
+            assert_eq!(watcher.poll().unwrap(), None);
+            fs::write_file_sync_string(&alpha.to_string_lossy(), "changed", "utf8").unwrap();
+            let event = poll_watch_event_eventually(&mut watcher);
+            assert_eq!(event.event_type, "change");
+            assert_eq!(event.filename, "alpha.txt");
+            watcher.close();
+            assert!(watcher.closed());
+            assert!(watcher.poll().is_err());
+
+            let callable_watcher = fs::watch_callable(
+                &watchers,
+                &alpha.to_string_lossy(),
+                tsonic_rust_runtime::Callable::new(|(_event_type, _filename): (String, String)| {
+                    Ok::<(), tsonic_rust_runtime::TsonicError>(())
+                }),
+            )
+            .unwrap();
+            assert!(!callable_watcher.closed());
+            callable_watcher.close();
+
+            let new_file = root.join("new.txt");
+            let new_file_text = new_file.to_string_lossy().to_string();
+            let file_watcher = fs::watch_file_with_options(
+                &watchers,
+                &new_file_text,
+                fs::WatchFileOptions {
+                    bigint: false,
+                    persistent: false,
+                    interval_ms: 250,
+                },
+            )
+            .unwrap();
+            assert!(!file_watcher.has_ref());
+            assert!(file_watcher.poll().is_err());
+
+            fs::watch_file_callable(
+                &watchers,
+                &new_file_text,
+                tsonic_rust_runtime::Callable::new(
+                    |(_current, _previous): (fs::Stats, fs::Stats)| {
+                        Ok::<(), tsonic_rust_runtime::TsonicError>(())
+                    },
+                ),
+            )
+            .unwrap();
+            fs::unwatch_file(&new_file_text);
+
+            let callback_observed = std::rc::Rc::new(std::cell::Cell::new(false));
+            let callback_state = std::rc::Rc::clone(&callback_observed);
+            let callback_path = new_file_text.clone();
+            fs::watch_file_options_callable(
+                &watchers,
+                &new_file_text,
+                fs::WatchFileOptions {
+                    bigint: false,
+                    persistent: true,
+                    interval_ms: 1,
+                },
+                tsonic_rust_runtime::Callable::new(
+                    move |(current, previous): (fs::Stats, fs::Stats)| {
+                        assert!(current.is_file);
+                        assert!(!previous.is_file);
+                        callback_state.set(true);
+                        fs::unwatch_file(&callback_path);
+                        Ok::<(), tsonic_rust_runtime::TsonicError>(())
+                    },
+                ),
+            )
+            .unwrap();
+            fs::write_file_sync_string(&new_file_text, "new", "utf8").unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while tsonic_rust_runtime::dispatch::DispatchContexts::has_work(&watchers) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "native watcher callback timed out"
+                );
+                tsonic_rust_runtime::dispatch::poll_phase(
+                    &watchers,
+                    tsonic_rust_node::phases::WATCHERS,
+                )
+                .unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert!(callback_observed.get());
+
+            fs::rm_sync_with_options(
+                &root_text,
+                fs::RmOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         },
-    )
-    .unwrap();
-    let alpha = root.join("alpha.txt");
-    let beta = root.join("beta.log");
-    fs::write_file_sync_string(&alpha.to_string_lossy(), "a", "utf8").unwrap();
-    fs::write_file_sync_string(&beta.to_string_lossy(), "b", "utf8").unwrap();
-
-    let matches = fs::glob_sync(&root.join("*.txt").to_string_lossy()).unwrap();
-    assert_eq!(matches.len(), 1);
-    assert!(matches[0].ends_with("alpha.txt"));
-
-    let mut watcher = fs::watch_with_options(
-        &watchers,
-        &alpha.to_string_lossy(),
-        fs::WatchOptions {
-            persistent: false,
-            recursive: false,
-            encoding: Some("utf8".to_string()),
-            ignore: Vec::new(),
-            signal_aborted: false,
-            max_queue: 16,
-            overflow: "ignore".to_string(),
-        },
-    )
-    .unwrap();
-    assert!(!watcher.has_ref());
-    watcher.ref_();
-    assert!(watcher.has_ref());
-    watcher.unref();
-    assert!(!watcher.has_ref());
-    assert_eq!(watcher.poll().unwrap(), None);
-    fs::write_file_sync_string(&alpha.to_string_lossy(), "changed", "utf8").unwrap();
-    let event = poll_watch_event_eventually(&mut watcher);
-    assert_eq!(event.event_type, "change");
-    assert_eq!(event.filename, "alpha.txt");
-    watcher.close();
-    assert!(watcher.closed());
-    assert!(watcher.poll().is_err());
-
-    let callable_watcher = fs::watch_callable(
-        &watchers,
-        &alpha.to_string_lossy(),
-        tsonic_rust_runtime::Callable::new(|(_event_type, _filename): (String, String)| {
-            Ok::<(), tsonic_rust_runtime::TsonicError>(())
-        }),
-    )
-    .unwrap();
-    assert!(!callable_watcher.closed());
-    callable_watcher.close();
-
-    let new_file = root.join("new.txt");
-    let new_file_text = new_file.to_string_lossy().to_string();
-    let file_watcher = fs::watch_file_with_options(
-        &watchers,
-        &new_file_text,
-        fs::WatchFileOptions {
-            bigint: false,
-            persistent: false,
-            interval_ms: 250,
-        },
-    )
-    .unwrap();
-    assert!(!file_watcher.has_ref());
-    assert!(file_watcher.poll().is_err());
-
-    fs::watch_file_callable(
-        &watchers,
-        &new_file_text,
-        tsonic_rust_runtime::Callable::new(|(_current, _previous): (fs::Stats, fs::Stats)| {
-            Ok::<(), tsonic_rust_runtime::TsonicError>(())
-        }),
-    )
-    .unwrap();
-    fs::unwatch_file(&new_file_text);
-
-    let callback_observed = std::rc::Rc::new(std::cell::Cell::new(false));
-    let callback_state = std::rc::Rc::clone(&callback_observed);
-    let callback_path = new_file_text.clone();
-    fs::watch_file_options_callable(
-        &watchers,
-        &new_file_text,
-        fs::WatchFileOptions {
-            bigint: false,
-            persistent: true,
-            interval_ms: 1,
-        },
-        tsonic_rust_runtime::Callable::new(move |(current, previous): (fs::Stats, fs::Stats)| {
-            assert!(current.is_file);
-            assert!(!previous.is_file);
-            callback_state.set(true);
-            fs::unwatch_file(&callback_path);
-            Ok::<(), tsonic_rust_runtime::TsonicError>(())
-        }),
-    )
-    .unwrap();
-    fs::write_file_sync_string(&new_file_text, "new", "utf8").unwrap();
-    tsonic_rust_node::run_with_contexts(&watchers).unwrap();
-    assert!(callback_observed.get());
-
-    fs::rm_sync_with_options(
-        &root_text,
-        fs::RmOptions {
-            recursive: Some(true),
-            ..Default::default()
-        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &watchers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
     )
     .unwrap();
 }
@@ -782,74 +807,86 @@ fn fs_stream_option_carriers_are_closed_shapes() {
     let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
     let background =
         tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
-    let root = temp_root("streams");
-    let root_text = root.to_string_lossy().to_string();
-    fs::mkdir_sync_with_options(
-        &root_text,
-        fs::MakeDirectoryOptions {
-            recursive: Some(true),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let file = root.join("stream.txt");
-    let file_text = file.to_string_lossy().to_string();
-    fs::write_file_sync_string(&file_text, "abcdef", "utf8").unwrap();
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let root = temp_root("streams");
+            let root_text = root.to_string_lossy().to_string();
+            fs::mkdir_sync_with_options(
+                &root_text,
+                fs::MakeDirectoryOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let file = root.join("stream.txt");
+            let file_text = file.to_string_lossy().to_string();
+            fs::write_file_sync_string(&file_text, "abcdef", "utf8").unwrap();
 
-    let readable = fs::create_read_stream_with_options(
-        &background,
-        readable_tasks.handle(),
-        &file_text,
-        fs::ReadStreamOptions {
-            start: Some(1),
-            end: Some(3),
-            high_water_mark: Some(4),
-            ..fs::ReadStreamOptions::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(readable.path(), file_text);
-    assert!(readable.pending());
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
-    .unwrap();
-    assert!(!readable.pending());
-    let chunk = readable.read().unwrap().unwrap();
-    assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
-    assert_eq!(readable.bytes_read(), 3);
-    readable.close().unwrap();
-    assert!(!readable.pending());
+            let readable = fs::create_read_stream_with_options(
+                &background,
+                readable_tasks.handle(),
+                &file_text,
+                fs::ReadStreamOptions {
+                    start: Some(1),
+                    end: Some(3),
+                    high_water_mark: Some(4),
+                    ..fs::ReadStreamOptions::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(readable.path(), file_text);
+            assert!(readable.pending());
+            while background.has_pending_work() {
+                background.poll().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert!(!readable.pending());
+            let chunk = readable.read().unwrap().unwrap();
+            assert_eq!(chunk.to_string(Some("utf8")).unwrap(), "bcd");
+            assert_eq!(readable.bytes_read(), 3);
+            readable.close().unwrap();
+            assert!(!readable.pending());
 
-    let write_options = fs::WriteStreamOptions {
-        flags: Some("w".to_string()),
-        flush: Some(true),
-        ..fs::WriteStreamOptions::default()
-    };
-    let writable =
-        fs::create_write_stream_with_options(&background, &file_text, write_options).unwrap();
-    assert_eq!(writable.path(), file_text);
-    assert!(writable.pending());
-    assert!(writable
-        .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
-        .unwrap());
-    writable.close().unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &background,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
-    .unwrap();
-    assert_eq!(writable.bytes_written(), 1);
-    assert!(!writable.pending());
-    assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");
+            let write_options = fs::WriteStreamOptions {
+                flags: Some("w".to_string()),
+                flush: Some(true),
+                ..fs::WriteStreamOptions::default()
+            };
+            let writable =
+                fs::create_write_stream_with_options(&background, &file_text, write_options)
+                    .unwrap();
+            assert_eq!(writable.path(), file_text);
+            assert!(writable.pending());
+            assert!(writable
+                .write(tsonic_rust_node::buffer::Buffer::from_string("x", Some("utf8")).unwrap())
+                .unwrap());
+            writable.close().unwrap();
+            while background.has_pending_work() {
+                background.poll().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert_eq!(writable.bytes_written(), 1);
+            assert!(!writable.pending());
+            assert_eq!(fs::read_file_sync_string(&file_text, "utf8").unwrap(), "x");
 
-    fs::rm_sync_with_options(
-        &root_text,
-        fs::RmOptions {
-            recursive: Some(true),
-            ..Default::default()
+            fs::rm_sync_with_options(
+                &root_text,
+                fs::RmOptions {
+                    recursive: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         },
+        tsonic_rust_runtime::dispatch::prepend(
+            &readable_tasks,
+            tsonic_rust_runtime::dispatch::prepend(
+                &background,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(
+                ),
+            ),
+        ),
     )
     .unwrap();
 }
