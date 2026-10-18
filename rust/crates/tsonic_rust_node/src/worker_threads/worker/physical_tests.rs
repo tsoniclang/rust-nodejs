@@ -534,7 +534,7 @@ fn reader_eof_before_process_exit_wakes_native_progress_but_is_not_completion() 
     );
     control.write_all(&[1]).unwrap();
     let error = native_observe(observer).unwrap_err();
-    assert_eq!(error.first().code(), "ERR_WORKER_TRANSPORT");
+    assert_eq!(error.first().code(), "ERR_WORKER_PROTOCOL");
     assert!(
         worker.state.physical.snapshot().process_finished,
         "native process producer wakes final completion"
@@ -715,7 +715,7 @@ fn native_io_consumed_before_observed_exit_remains_the_natural_completion_failur
     );
     control.write_all(&[1]).unwrap();
     let error = native_observe(observer).unwrap_err();
-    assert_eq!(error.first().code(), "ERR_WORKER_TRANSPORT");
+    assert_eq!(error.first().code(), "ERR_WORKER_PROTOCOL");
     assert!(
         error.first().message().contains("fill whole buffer"),
         "exact native truncated-read reason retained"
@@ -727,7 +727,7 @@ fn native_io_consumed_before_observed_exit_remains_the_natural_completion_failur
 }
 
 #[test]
-fn native_io_consumed_after_observed_exit_is_suppressed_without_a_timer() {
+fn truncated_frame_is_not_erased_by_late_native_observation() {
     use std::io::Write;
     let (worker, mut control) = super::completion_tests::live_native_worker("live-failure");
     control.write_all(&[1]).unwrap();
@@ -744,14 +744,20 @@ fn native_io_consumed_after_observed_exit_is_suppressed_without_a_timer() {
         0,
         "physical completion is not an observer"
     );
-    assert_eq!(
-        native_observe(completion::WorkerCompletion::new(&worker.state)).unwrap(),
-        0
+    let error = native_observe(completion::WorkerCompletion::new(&worker.state)).unwrap_err();
+    assert_eq!(error.first().code(), "ERR_WORKER_PROTOCOL");
+    assert!(
+        error.first().message().contains("fill whole buffer"),
+        "exact native truncated-read reason retained"
+    );
+    assert!(
+        matches!(worker.state.physical.result(), Some(Ok(0))),
+        "actual process exit remains zero"
     );
     assert_eq!(
         worker.state.delivery.borrow().native_failure_count(),
-        0,
-        "IO consumed after observed exit is suppressed"
+        1,
+        "a later exit never erases the truncated-frame protocol failure"
     );
     assert!(worker.state.delivery.borrow().terminal_consumed);
 }

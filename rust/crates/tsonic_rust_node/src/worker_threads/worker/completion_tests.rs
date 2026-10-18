@@ -86,6 +86,89 @@ fn take_admitted(state: &WorkerState) -> Option<WorkerSignal> {
 }
 
 #[test]
+fn boundary_peer_stop_is_published_before_completion_wakes_and_native_wait() {
+    struct ObserveStop {
+        physical: std::sync::Weak<WorkerPhysical>,
+        observed: Arc<Mutex<Vec<(bool, bool)>>>,
+    }
+    impl Wake for ObserveStop {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            let physical = self.physical.upgrade().unwrap();
+            let snapshot = physical.snapshot();
+            self.observed
+                .lock()
+                .unwrap()
+                .push((snapshot.peer_stopped, snapshot.process_finished));
+            assert!(physical.suppresses_native_io());
+        }
+    }
+    for kind in [
+        None,
+        Some(std::io::ErrorKind::ConnectionReset),
+        Some(std::io::ErrorKind::BrokenPipe),
+    ] {
+        let (state, _sender, _peer) = completed_process_with_pending_transport();
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let waker = Waker::from(Arc::new(ObserveStop {
+            physical: Arc::downgrade(&state.physical),
+            observed: Arc::clone(&observed),
+        }));
+        let mut completion = completion::WorkerCompletion::new(&state);
+        assert!(Pin::new(&mut completion)
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        observed.lock().unwrap().clear();
+        state.physical.finish_reader(kind.map(|kind| {
+            super::super::protocol::WorkerTransportError::Io {
+                error: std::io::Error::from(kind),
+                phase: super::super::protocol::WorkerFramePhase::Boundary,
+            }
+        }));
+        let snapshot = state.physical.snapshot();
+        assert_eq!(snapshot.reader_io_kind, kind);
+        assert!(snapshot.peer_stopped);
+        assert_eq!(observed.lock().unwrap().first(), Some(&(true, false)));
+        assert!(matches!(
+            state.physical.take_signal(None, true),
+            Some(completion::PhysicalSignal::ReaderEnd(None))
+        ));
+        assert!(matches!(
+            state.physical.take_signal(None, true),
+            Some(completion::PhysicalSignal::Exit(Ok(0)))
+        ));
+    }
+}
+
+#[test]
+fn only_proven_epipe_posts_increment_the_native_unread_count() {
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let worker = Worker::<tsonic_rust_runtime::TsonicError> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    worker.post_message(JsValue::Int32(1)).unwrap();
+    assert_eq!(
+        worker.state.physical.snapshot().unread_posts,
+        0,
+        "successful kernel writes are not claimed unread"
+    );
+    worker.state.transport.shutdown_write();
+    for expected in 1..=128 {
+        worker.post_message(JsValue::Int32(1)).unwrap();
+        assert_eq!(
+            worker.state.physical.snapshot().unread_posts,
+            expected,
+            "each proven EPIPE is one unread drop"
+        );
+    }
+    worker.state.physical.finish_reader(None);
+    assert_eq!(worker.state.physical.snapshot().unread_posts, 128);
+}
+
+#[test]
 fn terminal_publication_after_empty_never_overtakes_the_final_frame() {
     for prefix in [0, MAXIMUM_QUEUED_SIGNALS - 1, MAXIMUM_QUEUED_SIGNALS] {
         for error in [false, true] {
@@ -532,7 +615,7 @@ fn native_io_after_exit_is_not_a_worker_error_but_protocol_and_clone_failures_re
         drop(sender);
         state
             .physical
-            .finish_reader(Some(NodeError::new(code, "exact native reason")));
+            .finish_reader(Some(NodeError::new(code, "exact native reason").into()));
         state.ingest_signals(false).unwrap();
         state.ingest_signals(false).unwrap();
         assert!(
@@ -638,14 +721,17 @@ fn native_worker_error_delivery_suppresses_observed_exit_io_but_keeps_protocol_a
                     worker.state.physical.finish_reader(None);
                 } else {
                     drop(sender);
-                    worker.state.physical.finish_reader(Some(NodeError::new(
-                        if kind == "io" {
-                            "ERR_WORKER_TRANSPORT"
-                        } else {
-                            "ERR_WORKER_PROTOCOL"
-                        },
-                        reason,
-                    )));
+                    worker.state.physical.finish_reader(Some(
+                        NodeError::new(
+                            if kind == "io" {
+                                "ERR_WORKER_TRANSPORT"
+                            } else {
+                                "ERR_WORKER_PROTOCOL"
+                            },
+                            reason,
+                        )
+                        .into(),
+                    ));
                 }
             },
             prepend(&resources, DispatchEnd::<TsonicError>::new()),
@@ -880,5 +966,88 @@ fn live_native_termination_and_unread_posts_preserve_the_prefix_without_transpor
             worker.state.delivery.borrow().terminal_consumed,
             "one process/reader terminal owner"
         );
+    }
+}
+
+#[test]
+fn unread_native_peer_exit_reports_only_observable_failed_writes() {
+    use std::cell::Cell;
+    use tsonic_rust_runtime::dispatch::{prepend, DispatchEnd};
+    use tsonic_rust_runtime::TsonicError;
+    for failed_writes in [false, true] {
+        let (worker, mut control) = live_native_worker("unread");
+        let resources = WorkerResources::<TsonicError>::new();
+        let messages = Rc::new(RefCell::new(Vec::new()));
+        let delivered = Rc::clone(&messages);
+        let errors = Rc::new(Cell::new(0));
+        let failures = Rc::clone(&errors);
+        let exits = Rc::new(Cell::new(0));
+        let completed = Rc::clone(&exits);
+        let prefix = Rc::clone(&messages);
+        crate::block_on_with_contexts(
+            async {
+                resources.register_worker(&worker).unwrap();
+                worker
+                    .on_callable1(
+                        &JsValue::String("message".to_owned()),
+                        &Callable::new(move |(value,): (JsValue,)| {
+                            let JsValue::Integer(value) = value else {
+                                panic!("exact native int64 prefix");
+                            };
+                            delivered.borrow_mut().push(value);
+                            Ok::<(), TsonicError>(())
+                        }),
+                    )
+                    .unwrap();
+                worker
+                    .on_callable1(
+                        &JsValue::String("error".to_owned()),
+                        &Callable::new(move |(_value,): (JsValue,)| {
+                            failures.set(failures.get() + 1);
+                            Ok::<(), TsonicError>(())
+                        }),
+                    )
+                    .unwrap();
+                worker
+                    .on_callable1(
+                        &JsValue::String("exit".to_owned()),
+                        &Callable::new(move |(value,): (JsValue,)| {
+                            assert!(
+                                matches!(value, JsValue::Int32(0)),
+                                "actual child exit status"
+                            );
+                            assert_eq!(
+                                *prefix.borrow(),
+                                (0..10).collect::<Vec<_>>(),
+                                "completed prefix precedes exit"
+                            );
+                            completed.set(completed.get() + 1);
+                            Ok::<(), TsonicError>(())
+                        }),
+                    )
+                    .unwrap();
+                if failed_writes {
+                    worker.state.transport.shutdown_write();
+                }
+                for _ in 0..128 {
+                    worker
+                        .post_message(JsValue::String("x".repeat(1024)))
+                        .unwrap();
+                }
+                control.write_all(&[1]).unwrap();
+            },
+            prepend(&resources, DispatchEnd::<TsonicError>::new()),
+        )
+        .unwrap();
+        let terminal = worker.state.physical.snapshot();
+        assert_eq!(terminal.unread_posts, if failed_writes { 128 } else { 0 });
+        assert!(
+            terminal.unread_posts <= 128,
+            "fixture ground truth bounds observable unread posts"
+        );
+        assert_eq!(errors.get(), 0);
+        assert_eq!(exits.get(), 1);
+        assert!(terminal.peer_stopped);
+        println!("CH08 native terminal failed_writes={failed_writes}: kind={:?}, peer-stopped={}, unread={}", terminal.reader_io_kind, terminal.peer_stopped, terminal.unread_posts);
     }
 }

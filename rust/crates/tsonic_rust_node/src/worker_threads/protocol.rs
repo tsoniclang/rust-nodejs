@@ -41,6 +41,61 @@ pub(crate) struct WorkerFrame {
     pub payload: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WorkerFramePhase {
+    Boundary,
+    Header,
+    Payload,
+    Write,
+}
+
+#[derive(Debug)]
+pub(crate) enum WorkerTransportError {
+    Io {
+        error: std::io::Error,
+        phase: WorkerFramePhase,
+    },
+    Protocol(NodeError),
+}
+
+impl WorkerTransportError {
+    pub(crate) fn io_kind(&self) -> Option<std::io::ErrorKind> {
+        match self {
+            Self::Io { error, .. } => Some(error.kind()),
+            Self::Protocol(_) => None,
+        }
+    }
+
+    pub(crate) fn peer_stopped(&self) -> bool {
+        matches!(self, Self::Io { error, phase: WorkerFramePhase::Boundary }
+            if matches!(error.kind(), std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::UnexpectedEof))
+    }
+
+    pub(crate) fn broken_pipe(&self) -> bool {
+        matches!(self, Self::Io { error, phase: WorkerFramePhase::Write }
+            if error.kind() == std::io::ErrorKind::BrokenPipe)
+    }
+}
+
+impl From<NodeError> for WorkerTransportError {
+    fn from(error: NodeError) -> Self {
+        Self::Protocol(error)
+    }
+}
+
+impl From<WorkerTransportError> for NodeError {
+    fn from(error: WorkerTransportError) -> Self {
+        match error {
+            WorkerTransportError::Protocol(error) => error,
+            WorkerTransportError::Io {
+                error,
+                phase: WorkerFramePhase::Header | WorkerFramePhase::Payload,
+            } => protocol_error(&error.to_string()),
+            WorkerTransportError::Io { error, .. } => io_error(error),
+        }
+    }
+}
+
 pub(crate) enum TransportEvent {
     Frame(WorkerFrame),
     Failure(NodeError),
@@ -68,7 +123,7 @@ impl WorkerTransport {
             },
             move |error| {
                 if let Some(error) = error {
-                    let _ = sender.send(TransportEvent::Failure(error));
+                    let _ = sender.send(TransportEvent::Failure(error.into()));
                 }
                 let _ = sender.send(TransportEvent::End);
                 let _ = wake.wake();
@@ -80,7 +135,7 @@ impl WorkerTransport {
     pub(super) fn start_observed(
         stream: TcpStream,
         frame: impl Fn(WorkerFrame) -> bool + Send + 'static,
-        terminal: impl FnOnce(Option<NodeError>) + Send + 'static,
+        terminal: impl FnOnce(Option<WorkerTransportError>) + Send + 'static,
     ) -> NodeResult<Self> {
         Self::start_reader(stream, frame, terminal)
     }
@@ -88,7 +143,7 @@ impl WorkerTransport {
     fn start_reader(
         stream: TcpStream,
         frame_event: impl Fn(WorkerFrame) -> bool + Send + 'static,
-        terminal: impl FnOnce(Option<NodeError>) + Send + 'static,
+        terminal: impl FnOnce(Option<WorkerTransportError>) + Send + 'static,
     ) -> NodeResult<Self> {
         stream
             .set_write_timeout(Some(Duration::from_secs(30)))
@@ -111,7 +166,9 @@ impl WorkerTransport {
                                 frame.kind,
                                 WorkerFrameKind::Message | WorkerFrameKind::Error
                             ) {
-                                break Some(protocol_error("unexpected worker transport frame"));
+                                break Some(
+                                    protocol_error("unexpected worker transport frame").into(),
+                                );
                             }
                             let sent = frame_event(frame);
                             if !sent {
@@ -120,9 +177,7 @@ impl WorkerTransport {
                         }
                         Ok(None) => break None,
                         Err(error) => {
-                            if error.code() != "ERR_WORKER_TRANSPORT"
-                                || !reader_closed.load(Ordering::SeqCst)
-                            {
+                            if error.io_kind().is_none() || !reader_closed.load(Ordering::SeqCst) {
                                 break Some(error);
                             }
                             break None;
@@ -135,12 +190,11 @@ impl WorkerTransport {
         Ok(Self { writer, closed })
     }
 
-    pub fn send(&self, kind: WorkerFrameKind, payload: &[u8]) -> NodeResult<()> {
+    pub fn send(&self, kind: WorkerFrameKind, payload: &[u8]) -> Result<(), WorkerTransportError> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(NodeError::new(
-                "ERR_CLOSED_MESSAGE_PORT",
-                "worker transport is closed",
-            ));
+            return Err(
+                NodeError::new("ERR_CLOSED_MESSAGE_PORT", "worker transport is closed").into(),
+            );
         }
         let mut writer = crate::sync::lock(&self.writer);
         write_frame(&mut writer, kind, payload)
@@ -152,6 +206,13 @@ impl WorkerTransport {
         }
         let writer = crate::sync::lock(&self.writer);
         let _ = writer.shutdown(Shutdown::Both);
+    }
+
+    #[cfg(test)]
+    pub(super) fn shutdown_write(&self) {
+        crate::sync::lock(&self.writer)
+            .shutdown(Shutdown::Write)
+            .unwrap();
     }
 }
 
@@ -167,47 +228,73 @@ pub(crate) fn write_frame(
     stream: &mut TcpStream,
     kind: WorkerFrameKind,
     payload: &[u8],
-) -> NodeResult<()> {
+) -> Result<(), WorkerTransportError> {
     if payload.len() > MAXIMUM_FRAME_BYTES {
-        return Err(protocol_error(
-            "worker frame exceeds the finite transport limit",
-        ));
+        return Err(protocol_error("worker frame exceeds the finite transport limit").into());
     }
     let length = u32::try_from(payload.len())
         .map_err(|_| protocol_error("worker frame length exceeds the finite transport limit"))?;
     let mut header = [0_u8; 5];
     header[0] = kind as u8;
     header[1..].copy_from_slice(&length.to_be_bytes());
-    stream.write_all(&header).map_err(io_error)?;
-    stream.write_all(payload).map_err(io_error)?;
-    stream.flush().map_err(io_error)
+    stream
+        .write_all(&header)
+        .map_err(|error| WorkerTransportError::Io {
+            error,
+            phase: WorkerFramePhase::Write,
+        })?;
+    stream
+        .write_all(payload)
+        .map_err(|error| WorkerTransportError::Io {
+            error,
+            phase: WorkerFramePhase::Write,
+        })?;
+    stream.flush().map_err(|error| WorkerTransportError::Io {
+        error,
+        phase: WorkerFramePhase::Write,
+    })
 }
 
-pub(crate) fn read_frame(stream: &mut impl Read) -> NodeResult<Option<WorkerFrame>> {
+pub(crate) fn read_frame(
+    stream: &mut impl Read,
+) -> Result<Option<WorkerFrame>, WorkerTransportError> {
     let mut header = [0_u8; 5];
     let received = loop {
         match stream.read(&mut header) {
             Ok(0) => return Ok(None),
             Ok(received) => break received,
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(io_error(error)),
+            Err(error) => {
+                return Err(WorkerTransportError::Io {
+                    error,
+                    phase: WorkerFramePhase::Boundary,
+                })
+            }
         }
     };
     stream
         .read_exact(&mut header[received..])
-        .map_err(io_error)?;
+        .map_err(|error| WorkerTransportError::Io {
+            error,
+            phase: WorkerFramePhase::Header,
+        })?;
     let kind = WorkerFrameKind::from_byte(header[0])?;
     let length = usize::try_from(u32::from_be_bytes(
         header[1..].try_into().expect("exact header length"),
     ))
     .expect("u32 must fit usize");
     if length > MAXIMUM_FRAME_BYTES {
-        return Err(protocol_error(
-            "worker frame length exceeds the finite transport limit",
-        ));
+        return Err(
+            protocol_error("worker frame length exceeds the finite transport limit").into(),
+        );
     }
     let mut payload = vec![0_u8; length];
-    stream.read_exact(&mut payload).map_err(io_error)?;
+    stream
+        .read_exact(&mut payload)
+        .map_err(|error| WorkerTransportError::Io {
+            error,
+            phase: WorkerFramePhase::Payload,
+        })?;
     Ok(Some(WorkerFrame { kind, payload }))
 }
 
@@ -224,6 +311,77 @@ mod tests {
     use super::*;
     use std::io::Cursor;
     use std::net::TcpListener;
+
+    struct FailingReader {
+        prefix: Cursor<Vec<u8>>,
+        kind: std::io::ErrorKind,
+    }
+
+    impl Read for FailingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = self.prefix.read(buffer)?;
+            if count == 0 {
+                Err(std::io::Error::from(self.kind))
+            } else {
+                Ok(count)
+            }
+        }
+    }
+
+    #[test]
+    fn native_error_kind_and_frame_phase_decide_peer_stop_without_an_extra_read() {
+        for kind in [
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::BrokenPipe,
+        ] {
+            for (prefix, phase) in [
+                (vec![], WorkerFramePhase::Boundary),
+                (
+                    vec![WorkerFrameKind::Message as u8],
+                    WorkerFramePhase::Header,
+                ),
+                (
+                    vec![WorkerFrameKind::Message as u8, 0, 0, 0, 1],
+                    WorkerFramePhase::Payload,
+                ),
+            ] {
+                let mut reader = FailingReader {
+                    prefix: Cursor::new(prefix),
+                    kind,
+                };
+                let error = match read_frame(&mut reader) {
+                    Err(error) => error,
+                    Ok(_) => panic!("injected native error remains exact"),
+                };
+                assert_eq!(error.io_kind(), Some(kind));
+                assert_eq!(error.peer_stopped(), phase == WorkerFramePhase::Boundary);
+                assert!(
+                    matches!(&error, WorkerTransportError::Io { phase: actual, .. } if *actual == phase)
+                );
+                let error = NodeError::from(error);
+                assert_eq!(
+                    error.code(),
+                    if phase == WorkerFramePhase::Boundary {
+                        "ERR_WORKER_TRANSPORT"
+                    } else {
+                        "ERR_WORKER_PROTOCOL"
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_epipe_is_proven_by_the_failed_write_not_by_successful_kernel_buffering() {
+        let (sender, receiver) = socket_pair();
+        let (transport, _incoming) = WorkerTransport::start(sender).unwrap();
+        transport.shutdown_write();
+        let error = transport.send(WorkerFrameKind::Message, &[1]).unwrap_err();
+        assert_eq!(error.io_kind(), Some(std::io::ErrorKind::BrokenPipe));
+        assert!(error.broken_pipe());
+        assert!(!error.peer_stopped());
+        drop(receiver);
+    }
 
     struct CountedReader {
         source: Cursor<Vec<u8>>,
@@ -359,12 +517,15 @@ mod tests {
             let (_transport, incoming) = WorkerTransport::start(receiver).unwrap();
             sender.write_all(&bytes).unwrap();
             sender.shutdown(Shutdown::Write).unwrap();
-            assert!(
-                matches!(
-                    incoming.recv_timeout(Duration::from_secs(5)).unwrap(),
-                    TransportEvent::Failure(_)
-                ),
-                "truncated native frame remains a failure"
+            let TransportEvent::Failure(error) =
+                incoming.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("truncated native frame remains a failure");
+            };
+            assert_eq!(
+                error.code(),
+                "ERR_WORKER_PROTOCOL",
+                "partial frame is rejected live"
             );
         }
     }

@@ -205,39 +205,44 @@ fn tls_connect_returns_a_pending_socket_and_completes_off_the_source_thread() {
     });
     let callback_called = std::rc::Rc::new(std::cell::Cell::new(false));
     let callback_state = std::rc::Rc::clone(&callback_called);
-    let started = Instant::now();
-    let mut socket = tls::connect_callable(
-        &background,
-        tls::SourceConnectOptions {
-            host: Some("127.0.0.1".to_string()),
-            servername: Some("localhost".to_string()),
-            port: Some(port),
-            reject_unauthorized: Some(false),
-            timeout: Some(500),
-            ..tls::SourceConnectOptions::default()
+    let (mut socket, _) = tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let started = Instant::now();
+            let mut socket = tls::connect_callable(
+                &background,
+                tls::SourceConnectOptions {
+                    host: Some("127.0.0.1".to_string()),
+                    servername: Some("localhost".to_string()),
+                    port: Some(port),
+                    reject_unauthorized: Some(false),
+                    timeout: Some(500),
+                    ..tls::SourceConnectOptions::default()
+                },
+                Callable::new(move |()| {
+                    callback_state.set(true);
+                    Ok::<(), tsonic_rust_runtime::TsonicError>(())
+                }),
+            )
+            .unwrap();
+
+            assert!(started.elapsed() < Duration::from_millis(250));
+            assert!(!callback_called.get());
+            assert_eq!(
+                socket.write_string("early").unwrap_err().code,
+                "ERR_SOCKET_CONNECTING"
+            );
+            assert_eq!(
+                socket.read_optional_buffer().unwrap_err().code,
+                "ERR_SOCKET_CONNECTING"
+            );
+            assert_eq!(socket.servername_string(), "localhost");
+            assert_eq!(socket.bytes_read(), 0);
+            assert_eq!(socket.bytes_written(), 0);
+            socket
         },
-        Callable::new(move |()| {
-            callback_state.set(true);
-            Ok::<(), tsonic_rust_runtime::TsonicError>(())
-        }),
+        &background,
     )
     .unwrap();
-
-    assert!(started.elapsed() < Duration::from_millis(250));
-    assert!(!callback_called.get());
-    assert_eq!(
-        socket.write_string("early").unwrap_err().code,
-        "ERR_SOCKET_CONNECTING"
-    );
-    assert_eq!(
-        socket.read_optional_buffer().unwrap_err().code,
-        "ERR_SOCKET_CONNECTING"
-    );
-    assert_eq!(socket.servername_string(), "localhost");
-    assert_eq!(socket.bytes_read(), 0);
-    assert_eq!(socket.bytes_written(), 0);
-
-    tsonic_rust_node::run_with_contexts(&background).unwrap();
     assert!(!callback_called.get());
     assert_eq!(socket.write_string("late").unwrap_err().code, "ERR_TLS_IO");
     server.join().unwrap();

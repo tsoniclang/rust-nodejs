@@ -103,21 +103,41 @@ fn zlib_source_abi_adapters_preserve_options_and_callback_completion() {
             },
         )
     };
-    tsonic_rust_node::zlib::gzip_callable(&root, &input, callback()).unwrap();
-    tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, callback()).unwrap();
-    tsonic_rust_node::zlib::deflate_callable(&root, &input, callback()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&root, &deflate, callback()).unwrap();
-    tsonic_rust_node::zlib::gzip_options_callable(&root, &input, options.clone(), callback())
-        .unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&root, &gzip, options.clone(), callback())
-        .unwrap();
-    tsonic_rust_node::zlib::deflate_options_callable(&root, &input, options.clone(), callback())
-        .unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(&root, &deflate, options, callback()).unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &root,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            tsonic_rust_node::zlib::gzip_callable(&root, &input, callback()).unwrap();
+            tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, callback()).unwrap();
+            tsonic_rust_node::zlib::deflate_callable(&root, &input, callback()).unwrap();
+            tsonic_rust_node::zlib::inflate_callable(&root, &deflate, callback()).unwrap();
+            tsonic_rust_node::zlib::gzip_options_callable(
+                &root,
+                &input,
+                options.clone(),
+                callback(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::gunzip_options_callable(
+                &root,
+                &gzip,
+                options.clone(),
+                callback(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::deflate_options_callable(
+                &root,
+                &input,
+                options.clone(),
+                callback(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::inflate_options_callable(&root, &deflate, options, callback())
+                .unwrap();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &root,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
+    )
     .unwrap();
     assert_eq!(completions.get(), 8);
 }
@@ -155,32 +175,46 @@ fn zlib_callbacks_distinguish_failure_from_successful_empty_output() {
             },
         )
     };
-    tsonic_rust_node::zlib::gunzip_callable(&root, &invalid, failure()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&root, &invalid, failure()).unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&root, &invalid, Default::default(), failure())
-        .unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(
-        &root,
-        &invalid,
-        Default::default(),
-        failure(),
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            tsonic_rust_node::zlib::gunzip_callable(&root, &invalid, failure()).unwrap();
+            tsonic_rust_node::zlib::inflate_callable(&root, &invalid, failure()).unwrap();
+            tsonic_rust_node::zlib::gunzip_options_callable(
+                &root,
+                &invalid,
+                Default::default(),
+                failure(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::inflate_options_callable(
+                &root,
+                &invalid,
+                Default::default(),
+                failure(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, success()).unwrap();
+            tsonic_rust_node::zlib::inflate_callable(&root, &deflate, success()).unwrap();
+            tsonic_rust_node::zlib::gunzip_options_callable(
+                &root,
+                &gzip,
+                Default::default(),
+                success(),
+            )
+            .unwrap();
+            tsonic_rust_node::zlib::inflate_options_callable(
+                &root,
+                &deflate,
+                Default::default(),
+                success(),
+            )
+            .unwrap();
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &root,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
     )
-    .unwrap();
-    tsonic_rust_node::zlib::gunzip_callable(&root, &gzip, success()).unwrap();
-    tsonic_rust_node::zlib::inflate_callable(&root, &deflate, success()).unwrap();
-    tsonic_rust_node::zlib::gunzip_options_callable(&root, &gzip, Default::default(), success())
-        .unwrap();
-    tsonic_rust_node::zlib::inflate_options_callable(
-        &root,
-        &deflate,
-        Default::default(),
-        success(),
-    )
-    .unwrap();
-    tsonic_rust_node::run_with_contexts(tsonic_rust_runtime::dispatch::prepend(
-        &root,
-        tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
-    ))
     .unwrap();
     assert_eq!(failures.get(), 4);
     assert_eq!(successes.get(), 4);
@@ -213,23 +247,29 @@ fn zlib_callback_failure_retains_its_non_display_non_send_native_payload() {
     let expected = Rc::new(Cell::new(9_007_199_254_740_993));
     let payload = expected.clone();
     let input = Buffer::from_bytes(b"exact callback failure".to_vec());
-    tsonic_rust_node::zlib::gzip_callable(
-        &root,
-        &input,
-        Callable::new(
-            move |(error, output): (Option<tsonic_rust_node::NodeError>, Option<Buffer>)| {
-                assert!(error.is_none());
-                assert!(!output.expect("compressed output").is_empty());
-                Err(Failure::Payload(Rc::clone(&payload)))
-            },
-        ),
-    )
-    .unwrap();
-    let returned =
-        match tsonic_rust_node::run_with_contexts(prepend(&root, DispatchEnd::<Failure>::new())) {
-            Err(error) => error,
-            Ok(_) => panic!("retained callback must fail"),
-        };
+    let returned = match tsonic_rust_node::run_entry_with_contexts(
+        || {
+            tsonic_rust_node::zlib::gzip_callable(
+                &root,
+                &input,
+                Callable::new(
+                    move |(error, output): (
+                        Option<tsonic_rust_node::NodeError>,
+                        Option<Buffer>,
+                    )| {
+                        assert!(error.is_none());
+                        assert!(!output.expect("compressed output").is_empty());
+                        Err(Failure::Payload(Rc::clone(&payload)))
+                    },
+                ),
+            )
+            .unwrap();
+        },
+        prepend(&root, DispatchEnd::<Failure>::new()),
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("retained callback must fail"),
+    };
     match returned {
         Failure::Payload(value) => {
             assert!(Rc::ptr_eq(&value, &expected));

@@ -1,3 +1,4 @@
+use super::super::protocol::WorkerTransportError;
 use super::physical_child::WorkerChild;
 use super::{
     io_error, status_code, Worker, WorkerCompletionError, WorkerFrame, WorkerState,
@@ -24,6 +25,10 @@ struct PhysicalState {
     consumer_open: bool,
     callback_active: bool,
     reader_finished: bool,
+    peer_stopped: bool,
+    unread_posts: u64,
+    #[cfg(test)]
+    reader_io_kind: Option<std::io::ErrorKind>,
     reader_error: Option<NodeError>,
     reader_ticket: Option<TaskTicket>,
     reader_consumed: bool,
@@ -47,6 +52,12 @@ pub(super) enum PhysicalSignal {
 }
 
 pub(super) struct PhysicalSnapshot {
+    #[cfg(test)]
+    pub(super) peer_stopped: bool,
+    #[cfg(test)]
+    pub(super) unread_posts: u64,
+    #[cfg(test)]
+    pub(super) reader_io_kind: Option<std::io::ErrorKind>,
     #[cfg(test)]
     pub(super) reader_finished: bool,
     #[cfg(test)]
@@ -72,6 +83,10 @@ impl WorkerPhysical {
                 consumer_open: true,
                 callback_active: false,
                 reader_finished: false,
+                peer_stopped: false,
+                unread_posts: 0,
+                #[cfg(test)]
+                reader_io_kind: None,
                 reader_error: None,
                 reader_ticket: None,
                 reader_consumed: false,
@@ -243,6 +258,12 @@ impl WorkerPhysical {
         let state = crate::sync::lock(&self.state);
         PhysicalSnapshot {
             #[cfg(test)]
+            peer_stopped: state.peer_stopped,
+            #[cfg(test)]
+            unread_posts: state.unread_posts,
+            #[cfg(test)]
+            reader_io_kind: state.reader_io_kind,
+            #[cfg(test)]
             reader_finished: state.reader_finished,
             #[cfg(test)]
             callback_active: state.callback_active,
@@ -252,7 +273,15 @@ impl WorkerPhysical {
 
     pub(super) fn suppresses_native_io(&self) -> bool {
         let state = crate::sync::lock(&self.state);
-        state.termination_requested || state.process.as_ref().is_some_and(Result::is_ok)
+        state.termination_requested || state.peer_stopped || state.process.is_some()
+    }
+
+    pub(super) fn record_unread_post(&self) {
+        let mut state = crate::sync::lock(&self.state);
+        state.unread_posts = state
+            .unread_posts
+            .checked_add(1)
+            .expect("native unread post count");
     }
 
     pub(super) fn result(&self) -> Option<NodeResult<i32>> {
@@ -302,11 +331,28 @@ impl WorkerPhysical {
         }
     }
 
-    pub(super) fn finish_reader(&self, error: Option<NodeError>) {
+    pub(super) fn finish_reader(&self, error: Option<WorkerTransportError>) {
         let (wake, notify_callbacks) = {
             let mut state = crate::sync::lock(&self.state);
+            #[cfg(test)]
+            {
+                state.reader_io_kind = error.as_ref().and_then(WorkerTransportError::io_kind);
+            }
+            state.peer_stopped = error
+                .as_ref()
+                .is_none_or(WorkerTransportError::peer_stopped);
             state.reader_finished = true;
-            state.reader_error = error;
+            state.reader_error = error.and_then(|error| {
+                if error.io_kind().is_some()
+                    && (state.termination_requested
+                        || state.peer_stopped
+                        || state.process.is_some())
+                {
+                    None
+                } else {
+                    Some(error.into())
+                }
+            });
             (state.native_waiters.take_wakers(), state.callback_active)
         };
         if let Some(wake) = wake {

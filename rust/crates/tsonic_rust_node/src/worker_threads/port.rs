@@ -187,7 +187,9 @@ impl<E: From<NodeError> + 'static> MessagePort<E> {
             ));
         }
         if let Some(transport) = &state.transport {
-            return transport.send(WorkerFrameKind::Message, &encode(&payload)?);
+            return transport
+                .send(WorkerFrameKind::Message, &encode(&payload)?)
+                .map_err(NodeError::from);
         }
         let peer = state.peer.as_ref().and_then(Weak::upgrade).ok_or_else(|| {
             NodeError::new("ERR_CLOSED_MESSAGE_PORT", "message port peer is closed")

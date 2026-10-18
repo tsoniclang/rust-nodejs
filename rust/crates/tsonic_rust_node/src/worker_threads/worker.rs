@@ -262,10 +262,17 @@ impl<E: 'static> Worker<E> {
                 "worker is no longer running",
             ));
         }
-        self.state.transport.send(
+        match self.state.transport.send(
             WorkerFrameKind::Message,
             &encode(&ClonedValue::from_js(&value)?)?,
-        )
+        ) {
+            Ok(()) => Ok(()),
+            Err(error) if error.broken_pipe() => {
+                self.state.physical.record_unread_post();
+                Ok(())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn ref_chain(&self) -> &Self {

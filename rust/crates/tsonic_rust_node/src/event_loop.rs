@@ -238,27 +238,30 @@ mod tests {
 
     #[test]
     fn runtime_tasks_preserve_exact_failures_and_uninvoked_work() {
-        let original = tsonic_rust_runtime::JsError::error("original native failure");
-        let retained = original.clone();
-        let observed = std::rc::Rc::new(Cell::new(0));
-        let completed = std::rc::Rc::clone(&observed);
-        crate::runtime_tasks::with_default(|tasks| tasks.enqueue(move || Err(retained.into())))
-            .unwrap();
-        crate::runtime_tasks::with_default(|tasks| {
-            tasks.enqueue(move || {
-                completed.set(7);
-                Ok(())
+        crate::block_on(async {
+            let original = tsonic_rust_runtime::JsError::error("original native failure");
+            let retained = original.clone();
+            let observed = std::rc::Rc::new(Cell::new(0));
+            let completed = std::rc::Rc::clone(&observed);
+            crate::runtime_tasks::with_default(|tasks| tasks.enqueue(move || Err(retained.into())))
+                .unwrap();
+            crate::runtime_tasks::with_default(|tasks| {
+                tasks.enqueue(move || {
+                    completed.set(7);
+                    Ok(())
+                })
             })
+            .unwrap();
+            let failure = crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap_err();
+            assert!(matches!(failure, tsonic_rust_runtime::TsonicError::Js(_)));
+            assert!(failure.source_error().has_same_identity(&original));
+            assert_eq!(observed.get(), 0);
+            assert!(super::has_runtime_tasks());
+            assert!(crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap());
+            assert_eq!(observed.get(), 7);
+            assert!(!super::has_runtime_tasks());
         })
         .unwrap();
-        let failure = crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap_err();
-        assert!(matches!(failure, tsonic_rust_runtime::TsonicError::Js(_)));
-        assert!(failure.source_error().has_same_identity(&original));
-        assert_eq!(observed.get(), 0);
-        assert!(super::has_runtime_tasks());
-        assert!(crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap());
-        assert_eq!(observed.get(), 7);
-        assert!(!super::has_runtime_tasks());
     }
 
     #[test]
