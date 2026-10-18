@@ -27,7 +27,7 @@ test("native Buffer concat does not allocate an input copy", { timeout: 300_000 
   assertNoTargetDiagnostics(result.diagnostics);
   const root = writeGeneratedProject("native-buffer-concat-cost", result.artifacts);
   mkdirSync(join(root, "tests"), { recursive: true });
-  writeFileSync(join(root, "tests/cost.rs"), `${nativeOwnershipCostSupport}
+  writeFileSync(join(root, "tests/cost.rs"), `${nativeOwnershipCostSupport(root)}
 use native_buffer_concat_cost::index;
 use tsonic_rust_js::array::JsArray;
 use tsonic_rust_node::buffer::Buffer;

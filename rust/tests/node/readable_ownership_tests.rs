@@ -9,8 +9,8 @@ use tsonic_rust_node::NodeError;
 use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskQueue};
 use tsonic_rust_runtime::Callable;
 
-#[path = "../support/allocation_counts.rs"]
-mod allocation_counts;
+#[path = "../../../../rust-runtime/tests/helpers/allocation_counts.rs"]
+pub mod allocation_counts;
 
 #[test]
 fn final_chunk_returns_before_exactly_once_end_and_close() {
@@ -319,20 +319,20 @@ fn ten_thousand_chunks_use_one_pending_task_and_allocation_free_delivery() {
                 Ok(())
             });
             assert_eq!(
-                allocation_counts::measure(|| {
+                allocation_counts::measure_requests(|| {
                     stream.on_data("data", &listener).unwrap();
                 })
                 .0,
                 3
             );
-            let repeated = allocation_counts::measure(|| {
+            let repeated = allocation_counts::measure_requests(|| {
                 for _ in 0..10_000 {
                     stream.resume().unwrap();
                 }
             });
             assert_eq!(repeated, (0, 0));
             assert_eq!(
-                allocation_counts::measure(|| {
+                allocation_counts::measure_requests(|| {
                     tasks.poll().unwrap();
                 }),
                 (0, 0)
