@@ -38,6 +38,10 @@ fn main() {
             }
             "retained-prefix" => retained_prefix_with_later_explicit_owner(),
             "unobserved-errors" => native_unobserved_errors_after_physical_join(),
+            #[cfg(target_os = "linux")]
+            "native-notifications" => native_ownerless_frames_do_not_notify_a_callback_poller(),
+            #[cfg(target_os = "linux")]
+            "activation-notifications" => empty_callback_activation_does_not_notify_a_poller(),
             "default-ref" => default_ref_without_listeners_reaches_real_physical_completion(),
             "saturated-terminate" => native_saturated_public_termination(),
             _ => panic!("unknown native control: {selected}"),
@@ -45,6 +49,10 @@ fn main() {
         println!("P05 native control {selected}: passed");
         return;
     }
+    #[cfg(target_os = "linux")]
+    native_ownerless_frames_do_not_notify_a_callback_poller();
+    #[cfg(target_os = "linux")]
+    empty_callback_activation_does_not_notify_a_poller();
     for _ in 0..8 {
         native_termination_without_a_js_owner(None);
     }
@@ -364,6 +372,90 @@ fn native_unobserved_errors_after_physical_join() {
     );
     println!("P05_NATIVE_JS_ERASURE direct_allocations={} direct_bytes={} retained_allocations={} retained_bytes={} reference_retained_allocations={} reference_retained_bytes={}", direct_cost.0, direct_cost.1, retained_cost.0, retained_cost.1, reference_cost.0, reference_cost.1);
     assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
+}
+
+#[cfg(target_os = "linux")]
+fn native_readiness_counters() -> std::collections::BTreeMap<String, u64> {
+    let mut counters = std::collections::BTreeMap::new();
+    for descriptor in std::fs::read_dir("/proc/self/fdinfo").unwrap() {
+        let path = descriptor.unwrap().path();
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => panic!(
+                "cannot inspect native descriptor {}: {error}",
+                path.display()
+            ),
+        };
+        let identity = contents
+            .lines()
+            .find_map(|line| line.strip_prefix("eventfd-id:"));
+        let count = contents
+            .lines()
+            .find_map(|line| line.strip_prefix("eventfd-count:"));
+        if let (Some(identity), Some(count)) = (identity, count) {
+            counters.insert(
+                identity.trim().to_owned(),
+                u64::from_str_radix(count.trim(), 16).unwrap(),
+            );
+        }
+    }
+    counters
+}
+
+#[cfg(target_os = "linux")]
+fn native_readiness_writes_since(before: &std::collections::BTreeMap<String, u64>) -> u64 {
+    native_readiness_counters()
+        .into_iter()
+        .map(|(identity, count)| {
+            count
+                .checked_sub(before.get(&identity).copied().unwrap_or(0))
+                .unwrap()
+        })
+        .sum()
+}
+
+#[cfg(target_os = "linux")]
+fn native_ownerless_frames_do_not_notify_a_callback_poller() {
+    let before = native_readiness_counters();
+    native_unobserved_errors_after_physical_join();
+    let writes = native_readiness_writes_since(&before);
+    assert_eq!(writes, 0, "standalone native Worker frames and physical completion require no callback-poller notification");
+    println!("P05_NATIVE_NO_OWNER_CALLBACK_NOTIFICATIONS writes={writes}");
+}
+
+#[cfg(target_os = "linux")]
+fn empty_callback_activation_does_not_notify_a_poller() {
+    let listener = control();
+    let resources = WorkerResources::<TsonicError>::new();
+    let ((), _) = tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let before = native_readiness_counters();
+            let worker = Worker::spawn_with_options(
+                "native-pending",
+                WorkerOptions {
+                    argv: Some(JsArray::from_dense(vec![listener
+                        .local_addr()
+                        .unwrap()
+                        .port()
+                        .to_string()])),
+                    ..WorkerOptions::default()
+                },
+                &resources,
+            )
+            .unwrap();
+            let _control = accept_ready(&listener);
+            let writes = native_readiness_writes_since(&before);
+            assert_eq!(
+                writes, 0,
+                "empty callback activation has no retained input or completion to notify"
+            );
+            println!("P05_NATIVE_EMPTY_CALLBACK_ACTIVATION_NOTIFICATIONS writes={writes}");
+            drop(worker);
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
 }
 
 fn default_ref_without_listeners_reaches_real_physical_completion() {

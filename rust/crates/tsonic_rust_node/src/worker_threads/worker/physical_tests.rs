@@ -268,10 +268,13 @@ fn native_readiness_invokes_reentrant_wakers_outside_the_physical_mutex() {
 struct ReentrantDropWake {
     physical: std::sync::Weak<WorkerPhysical>,
     dropped: Arc<AtomicUsize>,
+    wakes: Arc<AtomicUsize>,
 }
 
 impl Wake for ReentrantDropWake {
-    fn wake(self: Arc<Self>) {}
+    fn wake(self: Arc<Self>) {
+        self.wakes.fetch_add(1, AtomicOrdering::Relaxed);
+    }
 }
 
 impl Drop for ReentrantDropWake {
@@ -294,9 +297,11 @@ fn native_waker_preparation_and_cancelled_registration_drop_reenter_outside_the_
         }));
     });
     let dropped = Arc::new(AtomicUsize::new(0));
+    let wakes = Arc::new(AtomicUsize::new(0));
     let waker = Waker::from(Arc::new(ReentrantDropWake {
         physical: Arc::downgrade(&state.physical),
         dropped: Arc::clone(&dropped),
+        wakes: Arc::clone(&wakes),
     }));
     let mut observer = completion::WorkerCompletion::new(&state);
     assert!(Pin::new(&mut observer)
@@ -313,6 +318,11 @@ fn native_waker_preparation_and_cancelled_registration_drop_reenter_outside_the_
         dropped.load(AtomicOrdering::Relaxed),
         1,
         "the last cancelled native waker drops outside the queue lock"
+    );
+    assert_eq!(
+        wakes.load(AtomicOrdering::Relaxed),
+        0,
+        "native preparation and cancellation never fabricate a wake"
     );
 }
 
@@ -941,6 +951,34 @@ fn native_observation_error_layout_matches_the_required_handwritten_count_carrie
 }
 
 #[test]
+fn dropping_the_physical_consumer_retires_its_callback_notification_availability() {
+    let (state, _sender, _peer) = completed_process_with_pending_transport();
+    let physical = Arc::clone(&state.physical);
+    let worker = Worker::<TsonicError> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let resources = WorkerResources::<TsonicError>::new();
+    crate::block_on_with_contexts(
+        async {
+            resources.register_worker(&worker).unwrap();
+            worker.unref();
+            assert!(
+                physical.snapshot().callback_active,
+                "the selected real owner published callback availability"
+            );
+            drop(worker);
+            assert!(
+                !physical.snapshot().callback_active,
+                "actual consumer drop retires callback availability before late reader completion"
+            );
+        },
+        prepend(&resources, DispatchEnd::<TsonicError>::new()),
+    )
+    .unwrap();
+}
+
+#[test]
 fn common_node_error_layout_and_equality_match_the_unchanged_native_base() {
     #[derive(PartialEq, Eq)]
     struct NativeFirstError {
@@ -984,4 +1022,42 @@ fn common_node_error_layout_and_equality_match_the_unchanged_native_base() {
         native_original == native_equivalent,
         "common equality depends only on the original code and source"
     );
+}
+
+#[test]
+fn physical_native_operations_do_not_require_callback_error_conversion() {
+    let (state, sender, _peer) = completed_process_with_pending_transport();
+    let worker = Worker::<()> {
+        state: Rc::new(state),
+        emitter: EventEmitter::new(),
+    };
+    let _native_post = Worker::<()>::post_message;
+    assert_eq!(
+        worker.thread_id(),
+        1,
+        "native identity is independent of callback errors"
+    );
+    assert!(
+        std::ptr::eq(worker.unref(), &worker),
+        "native unref preserves Worker identity"
+    );
+    assert!(
+        !worker.state.delivery.borrow().refed,
+        "native unref changes only its own delivery flag"
+    );
+    assert!(
+        std::ptr::eq(worker.ref_chain(), &worker),
+        "native ref preserves Worker identity"
+    );
+    assert!(
+        worker.state.delivery.borrow().refed,
+        "native ref restores only its own delivery flag"
+    );
+    drop(sender);
+    worker.state.physical.finish_reader(None);
+    let mut native = std::pin::pin!(async { worker.terminate().await });
+    let outcome: Poll<Result<i32, WorkerCompletionError>> = native
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()));
+    assert!(matches!(outcome, Poll::Ready(Ok(0))), "public native terminate returns its own completion result without converting into callback E");
 }
