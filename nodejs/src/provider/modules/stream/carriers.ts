@@ -6,6 +6,7 @@ export const streamCarrier: RustTargetTypeRef = rustNamedTargetType(
   "rust.node.Stream",
   "tsonic_rust_node::stream::Stream",
   nodeProgramErrorArguments,
+  [], undefined, [], undefined, [],
 );
 
 export const readableCarrier: RustTargetTypeRef = rustNamedTargetType(
@@ -15,6 +16,8 @@ export const readableCarrier: RustTargetTypeRef = rustNamedTargetType(
   [],
   undefined,
   [{ target: streamCarrier, path: "tsonic_rust_node::stream::readable_as_stream" }],
+  undefined,
+  [],
 );
 
 export const writableCarrier: RustTargetTypeRef = rustNamedTargetType(
@@ -24,6 +27,8 @@ export const writableCarrier: RustTargetTypeRef = rustNamedTargetType(
   [],
   undefined,
   [{ target: streamCarrier, path: "tsonic_rust_node::stream::writable_as_stream" }],
+  undefined,
+  [],
 );
 
 export const duplexCarrier: RustTargetTypeRef = rustNamedTargetType(
@@ -37,6 +42,8 @@ export const duplexCarrier: RustTargetTypeRef = rustNamedTargetType(
     { target: readableCarrier, path: "tsonic_rust_node::stream::duplex_as_readable" },
     { target: writableCarrier, path: "tsonic_rust_node::stream::duplex_as_writable" },
   ],
+  undefined,
+  [],
 );
 
 export const transformCarrier: RustTargetTypeRef = rustNamedTargetType(
@@ -51,4 +58,6 @@ export const transformCarrier: RustTargetTypeRef = rustNamedTargetType(
     { target: writableCarrier, path: "tsonic_rust_node::stream::transform_as_writable" },
     { target: duplexCarrier, path: "tsonic_rust_node::stream::transform_as_duplex" },
   ],
+  undefined,
+  [],
 );
