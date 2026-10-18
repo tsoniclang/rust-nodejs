@@ -81,12 +81,7 @@ impl<E: From<NodeError> + 'static> RuntimeResource for WorkerResource<E> {
     }
 
     fn next_delay(&self) -> Option<Duration> {
-        match self {
-            Self::Worker(resource) => resource
-                .upgrade()
-                .and_then(|worker| worker.next_reap_delay()),
-            Self::Port(_) => None,
-        }
+        None
     }
 }
 
@@ -135,7 +130,13 @@ impl<E: From<NodeError> + 'static> WorkerResources<E> {
 
     pub(super) fn register_worker(&self, worker: &Worker<E>) -> NodeResult<()> {
         self.resources
-            .register(worker.ticket(), WorkerResource::Worker(worker.downgrade()))
+            .register_physical(worker.ticket(), WorkerResource::Worker(worker.downgrade()))?;
+        if let Ok(owner) = tsonic_rust_js::event_loop::dispatch_owner() {
+            if self.resources.owns(owner) {
+                worker.activate(owner);
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn parent_port(&self) -> NodeResult<Option<MessagePort<E>>> {
@@ -178,6 +179,11 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
                     port.activate(owner);
                 }
             }
+            if let WorkerResource::Worker(resource) = resource {
+                if let Some(worker) = resource.upgrade() {
+                    worker.activate(owner);
+                }
+            }
         });
         if let Some(parent) = self.parent.get() {
             parent.activate(owner);
@@ -194,6 +200,11 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
                     port.deactivate();
                 }
             }
+            if let WorkerResource::Worker(resource) = resource {
+                if let Some(worker) = resource.upgrade() {
+                    worker.deactivate();
+                }
+            }
         });
         if let Some(parent) = self.parent.get() {
             parent.deactivate();
@@ -207,7 +218,7 @@ impl<E: From<NodeError> + 'static> DispatchContexts for WorkerResources<E> {
                     }
                     resource.is_alive()
                 }
-                WorkerResource::Worker(_) => false,
+                WorkerResource::Worker(resource) => resource.is_alive(),
             })
         {
             if let Some(parent) = self.parent.get() {

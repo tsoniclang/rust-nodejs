@@ -20,7 +20,7 @@ use protocol::{io_error, read_frame, write_frame, WorkerFrameKind, WorkerTranspo
 pub use clone::ClonedValue as StructuredCloneValue;
 pub use port::{MessageChannel, MessagePort};
 pub use resources::WorkerResources;
-pub use worker::{Worker, WorkerOptions};
+pub use worker::{Worker, WorkerCompletionError, WorkerOptions};
 
 pub(crate) const WORKER_ARGUMENT_MARKER: &str = "--tsonic-node-worker-v1";
 pub(crate) const WORKER_ARGUMENT_DELIMITER: &str = "--";
@@ -100,8 +100,18 @@ pub fn initialize_worker_process() -> NodeResult<Option<String>> {
         .set_write_timeout(Some(Duration::from_secs(30)))
         .map_err(io_error)?;
     write_frame(&mut stream, WorkerFrameKind::Authenticate, &token)?;
-    let worker_data = read_frame(&mut stream)?;
-    let environment_data = read_frame(&mut stream)?;
+    let worker_data = read_frame(&mut stream)?.ok_or_else(|| {
+        NodeError::new(
+            "ERR_WORKER_BOOTSTRAP",
+            "worker bootstrap transport ended before worker data",
+        )
+    })?;
+    let environment_data = read_frame(&mut stream)?.ok_or_else(|| {
+        NodeError::new(
+            "ERR_WORKER_BOOTSTRAP",
+            "worker bootstrap transport ended before environment data",
+        )
+    })?;
     if worker_data.kind != WorkerFrameKind::WorkerData
         || environment_data.kind != WorkerFrameKind::EnvironmentData
     {
