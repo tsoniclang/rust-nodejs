@@ -11,6 +11,10 @@ import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnion
 import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/errors.js";
+import { createRustPlanningContext } from "../../../../tsonic-rust/dist/backend/planner/context.js";
+import { rustPackageFallibleBoundary } from "../../../../tsonic-rust/dist/backend/planner/program/fallible-boundaries.js";
+import { planRustSourcePackageErrors } from "../../../../tsonic-rust/dist/backend/planner/program/source-package-errors.js";
+import { rustCurrentErrorBoundary } from "../../../../tsonic-rust/dist/backend/planner/program/plan-context.js";
 import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
 
 test("Node callbacks retain native errors and exact optional error storage", { timeout: 300_000 }, () => {
@@ -52,6 +56,13 @@ test("native callback throwing requires exact operand, carrier and registration"
   } });
   assert.deepEqual(program.providerErrorCarriers, [fact.error.conversion.source]);
   assert.ok(Object.isFrozen(fact.error));
+  const planning = createRustPlanningContext(program);
+  const components = program.sourcePackageComponents.components.map(component => ({
+    ...component, sourceFileNames: new Set(component.sourceFileNames), programModuleName: "program",
+  }));
+  const errors = planRustSourcePackageErrors(planning, components);
+  assert.equal(errors.diagnostics.length, 0, "checked source-package error plans are complete");
+  assert.equal(errors.plan !== undefined, true, "checked source-package errors are admitted");
   for (const [mutation, message] of [
     [{ error: { ...fact.error, expression: declaration } }, "Finalized throw fact conflicts with its exact source operand or native Error carrier."],
     [{ error: { ...fact.error, conversion: { ...fact.error.conversion, source: { kind: "target-named", id: "example.UnregisteredError" } } } }, "Finalized throw fact conflicts with its exact source operand or native Error carrier."],
@@ -64,9 +75,16 @@ test("native callback throwing requires exact operand, carrier and registration"
         ? { ...fact, error: mutation.error } : program.records.targetOperation.get(subject) },
     }, program.records);
     const changed = { ...program, records, providerErrorCarriers: mutation.providerErrorCarriers ?? program.providerErrorCarriers };
-    assert.equal(planThrowStatement(statement, { input: { program: changed }, sourceFile: ast.getSourceFile(statement), diagnostics,
-      fallibleBoundary: { componentId: "source", errorDomain: "runtime", errorTypePath: "rt::TsonicError" },
-    }) === undefined, true, message);
+    const context = {
+      input: { ...planning, program: changed }, sourceFile: ast.getSourceFile(statement), diagnostics,
+      sourcePackageErrors: errors.plan,
+      sourcePackageComponentId: program.sourcePackageComponents.rootComponentId,
+      usedAliases: new Set(),
+    };
+    const owner = rustCurrentErrorBoundary(context);
+    assert.equal(owner !== undefined, true, "the throw has its actual checked package error owner");
+    context.fallibleBoundary = rustPackageFallibleBoundary(owner);
+    assert.equal(planThrowStatement(statement, context) === undefined, true, message);
     assert.equal(diagnostics.length, 1);
     assert.equal(diagnostics[0].message, `${message} Node kind: KindIdentifier.`);
   }

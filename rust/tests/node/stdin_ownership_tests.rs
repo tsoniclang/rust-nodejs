@@ -53,18 +53,11 @@ fn native_stdin_child() {
                 before_flags
             );
             if mode == "readline" || mode == "readline-cancel" || mode == "readline-file" {
-                check_readline(
-                    mode == "readline-cancel",
-                    stream,
-                    &tasks,
-                    &background,
-                    &roots,
-                )
-                .await;
+                check_readline(mode == "readline-cancel", stream, &tasks).await;
                 return;
             }
             if mode == "readline-drop" {
-                check_dropped_readline(stream, &tasks, &background, &roots).await;
+                check_dropped_readline(stream, &tasks).await;
                 return;
             }
             if mode != "file" && mode != "null" {
@@ -286,8 +279,6 @@ async fn check_readline(
     cancel: bool,
     stream: tsonic_rust_node::stream::Readable<TsonicError>,
     tasks: &RuntimeTasks<TsonicError>,
-    _background: &BackgroundTasks<TsonicError>,
-    _roots: &StdinResources<TsonicError>,
 ) {
     let mut interface = tsonic_rust_node::readline::create_interface(
         tsonic_rust_node::readline::SourceInterfaceOptions {
@@ -386,8 +377,6 @@ fn closing_readline_cancels_the_wait_without_leaving_a_blocked_stdin_worker() {
 async fn check_dropped_readline(
     stream: tsonic_rust_node::stream::Readable<TsonicError>,
     tasks: &RuntimeTasks<TsonicError>,
-    _background: &BackgroundTasks<TsonicError>,
-    _roots: &StdinResources<TsonicError>,
 ) {
     let retained = Rc::new(());
     let weak = Rc::downgrade(&retained);

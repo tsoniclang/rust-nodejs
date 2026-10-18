@@ -140,7 +140,9 @@ async function generateInstalledProject(
   const scopeRoot = join(applicationRoot, "node_modules/@tsonic");
   const installedRequire = createRequire(join(applicationRoot, "package.json"));
   const sourceModule = await import(pathToFileURL(installedRequire.resolve("@tsonic/target-api/source")).href);
-  const sourceCompiler = await import(pathToFileURL(installedRequire.resolve("@tsonic/tsts")).href);
+  const compilerManifestPath = installedRequire.resolve("@tsonic/tsts/package.json");
+  const compilerManifest = JSON.parse(readFileSync(compilerManifestPath, "utf8"));
+  const sourceCompiler = await import(pathToFileURL(resolve(dirname(compilerManifestPath), compilerManifest.exports["."].import)).href);
   const targetModule = await import(pathToFileURL(join(scopeRoot, "target-rust/dist/index.js")).href);
   const nodeModule = await import(pathToFileURL(join(nodePackageRoot, "dist/index.js")).href);
   const targetPlugin = targetModule.createTsonicPlugin();
