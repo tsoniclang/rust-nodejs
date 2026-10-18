@@ -143,6 +143,34 @@ fn boundary_peer_stop_is_published_before_completion_wakes_and_native_wait() {
 }
 
 #[test]
+fn published_process_exit_does_not_erase_a_partial_frame_protocol_failure() {
+    for phase in [
+        super::super::protocol::WorkerFramePhase::Header,
+        super::super::protocol::WorkerFramePhase::Payload,
+    ] {
+        let (state, _sender, _peer) = completed_process_with_pending_transport();
+        state.physical.finish_reader(None);
+        assert!(state.physical.snapshot().process_finished);
+        state
+            .physical
+            .finish_reader(Some(super::super::protocol::WorkerTransportError::Io {
+                error: std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "exact partial native frame",
+                ),
+                phase,
+            }));
+        let Some(completion::PhysicalSignal::ReaderEnd(Some(error))) =
+            state.physical.take_signal(None, true)
+        else {
+            panic!("an observed process exit must not erase a partial-frame failure");
+        };
+        assert_eq!(error.code(), "ERR_WORKER_PROTOCOL");
+        assert_eq!(error.message(), "exact partial native frame");
+    }
+}
+
+#[test]
 fn only_proven_epipe_posts_increment_the_native_unread_count() {
     let (state, _sender, _peer) = completed_process_with_pending_transport();
     let worker = Worker::<tsonic_rust_runtime::TsonicError> {

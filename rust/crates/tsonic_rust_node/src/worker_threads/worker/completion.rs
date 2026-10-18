@@ -1,4 +1,4 @@
-use super::super::protocol::WorkerTransportError;
+use super::super::protocol::{WorkerFramePhase, WorkerTransportError};
 use super::physical_child::WorkerChild;
 use super::{
     io_error, status_code, Worker, WorkerCompletionError, WorkerFrame, WorkerState,
@@ -345,8 +345,13 @@ impl WorkerPhysical {
             state.reader_error = error.and_then(|error| {
                 if error.io_kind().is_some()
                     && (state.termination_requested
-                        || state.peer_stopped
-                        || state.process.is_some())
+                        || (matches!(
+                            &error,
+                            WorkerTransportError::Io {
+                                phase: WorkerFramePhase::Boundary,
+                                ..
+                            }
+                        ) && (state.peer_stopped || state.process.is_some())))
                 {
                     None
                 } else {
