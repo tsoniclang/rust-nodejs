@@ -53,7 +53,9 @@ fn loop_owner_native_worker_transport_bootstrap_round_trip_has_no_js_loop() {
     }
     port.post_message(JsValue::String("reply before loop".to_owned()))
         .unwrap();
-    let frame = read_frame(&mut peer).unwrap();
+    let frame = read_frame(&mut peer)
+        .unwrap()
+        .expect("native bootstrap reply frame");
     assert_eq!(frame.kind, WorkerFrameKind::Message);
     match decode(&frame.payload).unwrap().to_js() {
         JsValue::String(text) => assert_eq!(text, "reply before loop"),

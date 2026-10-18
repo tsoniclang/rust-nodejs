@@ -1,12 +1,12 @@
 use super::WorkerResources;
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Command, ExitStatus};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tsonic_rust_runtime::dispatch::DispatchOwner;
 use tsonic_rust_runtime::dispatch_queue::{TaskReservation, TaskTicket};
 
 use rand::rngs::OsRng;
@@ -19,7 +19,7 @@ use crate::events::{EventEmitter, WeakEventEmitter};
 
 use super::clone::{decode, encode, ClonedValue};
 use super::protocol::{
-    io_error, read_frame, write_frame, TransportEvent, WorkerFrameKind, WorkerTransport,
+    io_error, read_frame, write_frame, WorkerFrame, WorkerFrameKind, WorkerTransport,
 };
 use super::{
     encode_environment_data_snapshot, AUTHENTICATION_TOKEN_BYTES, WORKER_ARGUMENT_DELIMITER,
@@ -28,6 +28,20 @@ use super::{
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAXIMUM_QUEUED_SIGNALS: usize = 1 << 16;
+
+mod completion;
+mod completion_error;
+mod dispatch;
+mod physical_child;
+use completion::{PhysicalSignal, WorkerPhysical};
+pub use completion_error::WorkerCompletionError;
+pub(super) use dispatch::RuntimeWorker;
+use physical_child::WorkerChild;
+
+#[cfg(test)]
+mod completion_tests;
+#[cfg(test)]
+mod physical_tests;
 
 #[derive(Clone)]
 pub struct WorkerOptions {
@@ -49,26 +63,76 @@ impl Default for WorkerOptions {
 }
 
 pub struct Worker<E: 'static = tsonic_rust_runtime::TsonicError> {
-    state: Rc<RefCell<WorkerState>>,
+    state: Rc<WorkerState>,
     emitter: EventEmitter<E>,
 }
 
 struct WorkerState {
     reservation: TaskReservation,
-    pending: VecDeque<(TaskTicket, WorkerSignal)>,
-    child: Child,
+    physical: Arc<WorkerPhysical>,
     transport: WorkerTransport,
-    incoming: Receiver<TransportEvent>,
     thread_id: i32,
+    delivery: RefCell<WorkerDelivery>,
+}
+
+struct WorkerDelivery {
     refed: bool,
-    complete: bool,
-    transport_ended: bool,
-    exit_code: Option<i32>,
+    owner: Option<DispatchOwner>,
+    reader_terminal_seen: bool,
+    terminal_consumed: bool,
+    native_failure: Option<WorkerCompletionError>,
+}
+
+impl WorkerDelivery {
+    fn new() -> Self {
+        Self {
+            refed: true,
+            owner: None,
+            reader_terminal_seen: false,
+            terminal_consumed: false,
+            native_failure: None,
+        }
+    }
+
+    fn record_failure(&mut self, error: NodeError) {
+        match &mut self.native_failure {
+            Some(first) => first.record_additional(),
+            None => self.native_failure = Some(error.into()),
+        }
+    }
+
+    #[cfg(test)]
+    fn native_failure_count(&self) -> u64 {
+        self.native_failure.as_ref().map_or(0, |error| {
+            error
+                .additional_unobserved_errors()
+                .checked_add(1)
+                .expect("finite native test error count")
+        })
+    }
+
+    fn consume_native(&mut self, signal: WorkerSignal, physical: &WorkerPhysical) {
+        match signal {
+            WorkerSignal::Message(_) => {}
+            WorkerSignal::Error(error) => self.record_failure(error),
+            WorkerSignal::RemoteError(message) => {
+                self.record_failure(NodeError::new("ERR_WORKER_ERROR", message))
+            }
+            WorkerSignal::NativeIoError(error) => {
+                if !physical.suppresses_native_io() {
+                    self.record_failure(error);
+                }
+            }
+            WorkerSignal::Exit(_) => self.terminal_consumed = true,
+        }
+    }
 }
 
 enum WorkerSignal {
     Message(ClonedValue),
-    Error(String),
+    Error(NodeError),
+    RemoteError(String),
+    NativeIoError(NodeError),
     Exit(i32),
 }
 
@@ -108,7 +172,6 @@ impl<E: From<NodeError> + 'static> Worker<E> {
         let thread_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
         let mut token = [0_u8; AUTHENTICATION_TOKEN_BYTES];
         OsRng.fill_bytes(&mut token);
-
         let mut command = Command::new(std::env::current_exe().map_err(io_error)?);
         command
             .arg(WORKER_ARGUMENT_MARKER)
@@ -124,15 +187,19 @@ impl<E: From<NodeError> + 'static> Worker<E> {
             }
         }
         apply_environment(&mut command, &options.env)?;
-
         let mut startup = WorkerStartup {
-            child: Some(command.spawn().map_err(io_error)?),
+            child: Some(WorkerChild::spawn(&mut command).map_err(io_error)?),
         };
         let mut stream = accept_worker(
             &listener,
-            startup.child.as_mut().expect("starting native worker"),
+            startup.child.as_ref().expect("starting native worker"),
         )?;
-        let authentication = read_frame(&mut stream)?;
+        let authentication = read_frame(&mut stream)?.ok_or_else(|| {
+            NodeError::new(
+                "ERR_WORKER_AUTHENTICATION",
+                "worker transport ended before authentication",
+            )
+        })?;
         if authentication.kind != WorkerFrameKind::Authenticate
             || !constant_time_equal(&authentication.payload, &token)
         {
@@ -141,260 +208,167 @@ impl<E: From<NodeError> + 'static> Worker<E> {
                 "worker process authentication failed",
             ));
         }
-        let worker_data = encode(&ClonedValue::from_js(&options.worker_data)?)?;
-        write_frame(&mut stream, WorkerFrameKind::WorkerData, &worker_data)?;
+        write_frame(
+            &mut stream,
+            WorkerFrameKind::WorkerData,
+            &encode(&ClonedValue::from_js(&options.worker_data)?)?,
+        )?;
         write_frame(
             &mut stream,
             WorkerFrameKind::EnvironmentData,
             &encode_environment_data_snapshot()?,
         )?;
-        let (transport, incoming) = WorkerTransport::start(stream)?;
+        let physical = Arc::new(WorkerPhysical::new(
+            startup.child.take().expect("authenticated native worker"),
+        )?);
+        let frames = Arc::clone(&physical);
+        let terminal = Arc::clone(&physical);
+        let transport = match WorkerTransport::start_observed(
+            stream,
+            move |frame| frames.enqueue_frame(frame),
+            move |error| terminal.finish_reader(error),
+        ) {
+            Ok(started) => started,
+            Err(error) => {
+                let _ = physical.child.kill();
+                let _ = physical.child.wait();
+                return Err(error);
+            }
+        };
         let value = Self {
-            state: Rc::new(RefCell::new(WorkerState {
+            state: Rc::new(WorkerState {
                 reservation,
-                pending: VecDeque::new(),
-                child: startup.child.take().expect("authenticated native worker"),
+                physical,
                 transport,
-                incoming,
                 thread_id,
-                refed: true,
-                complete: false,
-                transport_ended: false,
-                exit_code: None,
-            })),
+                delivery: RefCell::new(WorkerDelivery::new()),
+            }),
             emitter: EventEmitter::new(),
         };
         resources.register_worker(&value)?;
         Ok(value)
     }
+}
 
+impl<E: 'static> Worker<E> {
     pub fn thread_id(&self) -> i32 {
-        self.state.borrow().thread_id
+        self.state.thread_id
     }
 
     pub fn post_message(&self, value: JsValue) -> NodeResult<()> {
-        let state = self.state.borrow();
-        if state.complete {
+        if self.state.physical.snapshot().process_finished {
             return Err(NodeError::new(
                 "ERR_WORKER_NOT_RUNNING",
                 "worker is no longer running",
             ));
         }
-        let payload = encode(&ClonedValue::from_js(&value)?)?;
-        state.transport.send(WorkerFrameKind::Message, &payload)
-    }
-
-    pub async fn terminate(&self) -> NodeResult<i32> {
-        let exit_code = {
-            let mut state = self.state.borrow_mut();
-            if let Some(exit_code) = state.exit_code {
-                exit_code
-            } else {
-                state.child.kill().map_err(io_error)?;
-                let status = state.child.wait().map_err(io_error)?;
-                let exit_code = status_code(status);
-                state.complete(exit_code)?;
-                exit_code
-            }
-        };
-        Ok(exit_code)
+        self.state.transport.send(
+            WorkerFrameKind::Message,
+            &encode(&ClonedValue::from_js(&value)?)?,
+        )
     }
 
     pub fn ref_chain(&self) -> &Self {
-        let mut state = self.state.borrow_mut();
-        if !state.complete {
-            state.refed = true;
-        }
-        drop(state);
+        self.state.delivery.borrow_mut().refed = true;
         self
     }
 
     pub fn unref(&self) -> &Self {
-        self.state.borrow_mut().refed = false;
+        self.state.delivery.borrow_mut().refed = false;
         self
-    }
-
-    pub fn on_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'static, (), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.on_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn on_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'static, (JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.on_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn once_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'static, (), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.once_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn once_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'static, (JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.once_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn off_callable(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'_, (), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.off_callable(event, listener)?;
-        Ok(self)
-    }
-
-    pub fn off_callable1(
-        &self,
-        event: &JsValue,
-        listener: &Callable<'_, (JsValue,), Result<(), E>>,
-    ) -> NodeResult<&Self> {
-        self.emitter.off_callable1(event, listener)?;
-        Ok(self)
-    }
-
-    pub(super) fn capture(&self) -> Result<Option<TaskTicket>, E> {
-        let captured = {
-            let mut state = self.state.borrow_mut();
-            state
-                .ingest_signals()
-                .map(|()| state.pending.back().map(|(ticket, _)| *ticket))
-        };
-        captured.map_err(E::from)
-    }
-
-    pub(super) fn poll(&self, boundary: Option<TaskTicket>) -> Result<bool, E> {
-        let Some(boundary) = boundary else {
-            return Ok(false);
-        };
-        let mut dispatched = false;
-        loop {
-            let signal = {
-                let mut state = self.state.borrow_mut();
-                if !state
-                    .pending
-                    .front()
-                    .is_some_and(|(ticket, _)| *ticket <= boundary)
-                {
-                    break;
-                }
-                state.pending.pop_front().map(|(_, signal)| signal)
-            };
-            let Some(signal) = signal else {
-                break;
-            };
-
-            let converted;
-            let (event, arguments): (&str, &[JsValue]) = match &signal {
-                WorkerSignal::Message(value) => {
-                    converted = value.to_js();
-                    ("message", std::slice::from_ref(&converted))
-                }
-                WorkerSignal::Error(error) => {
-                    converted = JsValue::String((error).to_owned());
-                    ("error", std::slice::from_ref(&converted))
-                }
-                WorkerSignal::Exit(code) => {
-                    converted = JsValue::from(*code);
-                    ("exit", std::slice::from_ref(&converted))
-                }
-            };
-            let emission = self.emitter.prepare_named_emission(event, arguments)?;
-            emission.invoke(arguments)?;
-            dispatched = true;
-        }
-        Ok(dispatched)
-    }
-
-    pub(super) fn is_refed_active(&self) -> bool {
-        let state = self.state.borrow();
-        state.refed && !state.complete
     }
 }
 
 impl WorkerState {
-    fn ingest_signals(&mut self) -> NodeResult<()> {
-        while self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
-            match self.incoming.try_recv() {
-                Ok(TransportEvent::Frame(frame)) => match frame.kind {
-                    WorkerFrameKind::Message => self.pending.push_back((
-                        super::resources::admit_signal()?,
-                        WorkerSignal::Message(decode(&frame.payload)?),
-                    )),
-                    WorkerFrameKind::Error => {
-                        self.pending.push_back((
-                            super::resources::admit_signal()?,
-                            WorkerSignal::Error(
-                                String::from_utf8_lossy(&frame.payload).into_owned(),
-                            ),
-                        ));
-                    }
-                    WorkerFrameKind::Close => break,
-                    _ => self.pending.push_back((
-                        super::resources::admit_signal()?,
-                        WorkerSignal::Error("unexpected worker transport frame".to_string()),
-                    )),
-                },
-                Ok(TransportEvent::Failure(error)) => {
-                    self.pending.push_back((
-                        super::resources::admit_signal()?,
-                        WorkerSignal::Error(error),
-                    ));
-                    break;
-                }
-                Ok(TransportEvent::End) | Err(TryRecvError::Disconnected) => {
-                    self.transport_ended = true;
-                    break;
-                }
-                Err(TryRecvError::Empty) => break,
-            }
+    fn ingest_signals(&self, native_observation: bool) -> NodeResult<()> {
+        if !native_observation {
+            self.physical.admit_frames()?;
+            #[cfg(test)]
+            completion_tests::at_ingestion_gap();
+            return Ok(());
         }
-        if !self.complete && self.pending.len() < MAXIMUM_QUEUED_SIGNALS {
-            if let Some(status) = self.child.try_wait().map_err(io_error)? {
-                let code = status_code(status);
-                self.complete(code)?;
-            }
+        if self.delivery.borrow().owner.is_some() {
+            return Ok(());
         }
+        while let Some(signal) = self.next_signal(None, false)? {
+            self.delivery
+                .borrow_mut()
+                .consume_native(signal, &self.physical);
+        }
+        #[cfg(test)]
+        completion_tests::at_ingestion_gap();
         Ok(())
     }
 
-    fn complete(&mut self, exit_code: i32) -> NodeResult<()> {
-        if self.complete {
-            return Ok(());
+    fn next_signal(
+        &self,
+        boundary: Option<TaskTicket>,
+        include_exit: bool,
+    ) -> NodeResult<Option<WorkerSignal>> {
+        loop {
+            let Some(signal) = self.physical.take_signal(boundary, include_exit) else {
+                return Ok(None);
+            };
+            return Ok(Some(match signal {
+                PhysicalSignal::Frame(frame) => match frame.kind {
+                    WorkerFrameKind::Message => match decode(&frame.payload) {
+                        Ok(value) => WorkerSignal::Message(value),
+                        Err(error) => WorkerSignal::Error(error),
+                    },
+                    WorkerFrameKind::Error => WorkerSignal::RemoteError(
+                        String::from_utf8_lossy(&frame.payload).into_owned(),
+                    ),
+                    _ => WorkerSignal::Error(NodeError::new(
+                        "ERR_WORKER_PROTOCOL",
+                        "unexpected worker transport frame",
+                    )),
+                },
+                PhysicalSignal::ReaderEnd(error) => {
+                    self.delivery.borrow_mut().reader_terminal_seen = true;
+                    let Some(error) = error else {
+                        continue;
+                    };
+                    if error.code() == "ERR_WORKER_TRANSPORT" {
+                        WorkerSignal::NativeIoError(error)
+                    } else {
+                        WorkerSignal::Error(error)
+                    }
+                }
+                PhysicalSignal::Exit(result) => WorkerSignal::Exit(result?),
+            }));
         }
-        let ticket = super::resources::admit_signal()?;
-        self.pending
-            .push_back((ticket, WorkerSignal::Exit(exit_code)));
-        self.complete = true;
-        self.refed = false;
-        self.exit_code = Some(exit_code);
-        self.transport.close();
-        Ok(())
+    }
+    fn finish_native_observation(
+        &self,
+        observed_unowned: bool,
+    ) -> Result<i32, WorkerCompletionError> {
+        let mut delivery = self.delivery.borrow_mut();
+        let process = self
+            .physical
+            .result()
+            .expect("native process result is published before observation")
+            .map_err(WorkerCompletionError::from);
+        if delivery.owner.is_none() {
+            delivery.terminal_consumed = true;
+            self.physical.consume_exit();
+        }
+        if !observed_unowned {
+            return process;
+        }
+        match &delivery.native_failure {
+            Some(error) => Err(error.clone()),
+            None => process,
+        }
     }
 }
 
 struct WorkerStartup {
-    child: Option<Child>,
+    child: Option<WorkerChild>,
 }
 
 impl Drop for WorkerStartup {
     fn drop(&mut self) {
-        if let Some(child) = self.child.as_mut() {
+        if let Some(child) = &self.child {
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -403,60 +377,13 @@ impl Drop for WorkerStartup {
 
 impl Drop for WorkerState {
     fn drop(&mut self) {
-        if !self.complete {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-            self.transport.close();
-        }
+        let _ = self.physical.request_termination();
+        self.physical.close_consumer();
+        self.transport.close();
     }
 }
 
-pub(super) struct RuntimeWorker<E: 'static> {
-    state: Weak<RefCell<WorkerState>>,
-    emitter: WeakEventEmitter<E>,
-}
-
-impl<E: 'static> Clone for RuntimeWorker<E> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            emitter: self.emitter.clone(),
-        }
-    }
-}
-
-impl<E: 'static> RuntimeWorker<E> {
-    pub(super) fn is_alive(&self) -> bool {
-        self.state.strong_count() > 0 && self.emitter.is_alive()
-    }
-
-    pub(super) fn upgrade(&self) -> Option<Worker<E>> {
-        Some(Worker {
-            state: self.state.upgrade()?,
-            emitter: self.emitter.upgrade()?,
-        })
-    }
-}
-
-impl<E: From<NodeError> + 'static> Worker<E> {
-    pub(super) fn downgrade(&self) -> RuntimeWorker<E> {
-        RuntimeWorker {
-            state: Rc::downgrade(&self.state),
-            emitter: self.emitter.downgrade(),
-        }
-    }
-
-    pub(super) fn ticket(&self) -> TaskTicket {
-        self.state.borrow().reservation.ticket()
-    }
-
-    pub(super) fn next_reap_delay(&self) -> Option<Duration> {
-        let state = self.state.borrow();
-        (state.transport_ended && !state.complete).then_some(Duration::from_millis(1))
-    }
-}
-
-fn accept_worker(listener: &TcpListener, child: &mut Child) -> NodeResult<std::net::TcpStream> {
+fn accept_worker(listener: &TcpListener, child: &WorkerChild) -> NodeResult<std::net::TcpStream> {
     let deadline = Instant::now() + CONNECT_TIMEOUT;
     loop {
         match listener.accept() {
@@ -467,7 +394,7 @@ fn accept_worker(listener: &TcpListener, child: &mut Child) -> NodeResult<std::n
                 return Ok(stream);
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if let Some(status) = child.try_wait().map_err(io_error)? {
+                if let Some(status) = child.try_wait_startup().map_err(io_error)? {
                     return Err(NodeError::new(
                         "ERR_WORKER_STARTUP",
                         format!("worker process exited before authentication with status {status}"),
@@ -558,15 +485,33 @@ fn encode_token(token: &[u8]) -> String {
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
     let mut difference = left.len() ^ right.len();
     for index in 0..left.len().max(right.len()) {
-        let left = left.get(index).copied().unwrap_or_default();
-        let right = right.get(index).copied().unwrap_or_default();
-        difference |= usize::from(left ^ right);
+        difference |= usize::from(
+            left.get(index).copied().unwrap_or_default()
+                ^ right.get(index).copied().unwrap_or_default(),
+        );
     }
     difference == 0
 }
 
-fn status_code(status: ExitStatus) -> i32 {
-    status.code().unwrap_or(1)
+fn status_code(status: ExitStatus) -> NodeResult<i32> {
+    if let Some(code) = status.code() {
+        return Ok(code);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal().map(|signal| 128 + signal).ok_or_else(|| {
+            NodeError::new(
+                "ERR_WORKER_EXIT_STATUS",
+                "native Unix process status has neither an exit code nor a signal",
+            )
+        })
+    }
+    #[cfg(not(unix))]
+    Err(NodeError::new(
+        "ERR_WORKER_EXIT_STATUS",
+        "native process status does not expose its required exit code",
+    ))
 }
 
 static NEXT_THREAD_ID: AtomicI32 = AtomicI32::new(1);

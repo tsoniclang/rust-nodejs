@@ -64,10 +64,21 @@ impl MessagePortState {
         if self.routing.active.is_some() {
             return;
         }
+        let Some(ticket) = [
+            self.messages.front().map(|(ticket, _)| *ticket),
+            self.errors.front().map(|(ticket, _)| *ticket),
+            self.close_pending,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .filter(|ticket| *ticket <= boundary) else {
+            return;
+        };
         let selected = if self
             .messages
             .front()
-            .is_some_and(|(ticket, _)| *ticket <= boundary)
+            .is_some_and(|(message, _)| *message == ticket)
         {
             self.messages
                 .pop_front()
@@ -75,12 +86,12 @@ impl MessagePortState {
         } else if self
             .errors
             .front()
-            .is_some_and(|(ticket, _)| *ticket <= boundary)
+            .is_some_and(|(error, _)| *error == ticket)
         {
             self.errors
                 .pop_front()
                 .map(|(ticket, error)| (ticket, PortSignal::Error(error)))
-        } else if self.close_pending.is_some_and(|ticket| ticket <= boundary) {
+        } else if self.close_pending == Some(ticket) {
             self.close_pending
                 .take()
                 .map(|ticket| (ticket, PortSignal::Close))

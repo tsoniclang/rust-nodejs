@@ -320,7 +320,7 @@ impl MessagePortState {
                     _ => self.push_error("unexpected worker transport frame".to_string())?,
                 },
                 Ok(TransportEvent::Failure(error)) => {
-                    self.push_error(error)?;
+                    self.push_error(error.to_string())?;
                     self.mark_closed()?;
                     break;
                 }

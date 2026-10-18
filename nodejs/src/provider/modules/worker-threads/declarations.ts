@@ -1,7 +1,7 @@
 import { boolCarrier, emptyCallbackCarrier, int32Carrier, jsValueCarrier, oneValueCallbackCarrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, numberType, stringArrayType, stringType, undefinedType, voidType } from "../../model/source-types.js";
 import { cloneDefaultCarrierTraits, cloneOnlyCarrierTraits, providerNativeFallibility } from "../../model/operations.js";
-import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./carriers.js";
+import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerCompletionErrorCarrier, workerOptionsCarrier } from "./carriers.js";
 import { propertyMember, providerRef, valueExport } from "../../declarations/builders.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { nodeWorkerInput } from "../../model/dispatch.js";
@@ -191,6 +191,7 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       ),
       isAsync: true,
       ...providerNativeFallibility,
+      errorCarrier: workerCompletionErrorCarrier,
     },
     receiverMethod(workerId, "ref", "ref_chain", workerCarrier, [], reference(workerCarrier)),
     receiverMethod(workerId, "unref", "unref", workerCarrier, [], reference(workerCarrier)),
