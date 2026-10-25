@@ -26,7 +26,6 @@ export function createRustNodejsCapability(): RustNodejsCapabilityPlugin {
         declarations: [...(selectProfile(context).sourceProfileContributions?.(context).declarations ?? []), {
           fileName: "node-globals.d.ts",
           text: [
-            'declare var process: typeof import("node:process").default;',
             'declare namespace NodeJS {',
             '  type ProcessEnv = import("node:process").ProcessEnv;',
             '  type Signals = import("node:process").Signals;',

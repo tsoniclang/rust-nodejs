@@ -85,6 +85,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
   const providerPackage = createRustProviderPackage({
     id: "@tsonic/rust-nodejs",
     sourceGlobals: {
+      process: "node:process::default",
       performance: "node:perf_hooks::performance",
       ...(typedArrays ? { crypto: "node:crypto::webcrypto" } : {}),
     },
