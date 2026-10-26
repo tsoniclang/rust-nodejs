@@ -3,9 +3,15 @@ import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier } from "./c
 import { providerNativeFallibility } from "../../model/operations.js";
 import { stringArrayCarrier, stringCarrier } from "../../model/carriers.js";
 import { stringArrayType, stringType, voidType } from "../../model/source-types.js";
+import type { ProviderTypeExpr } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
 
 import type { RustProviderConstantArgument, RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
+
+const promiseType = (output: ProviderTypeExpr): ProviderTypeExpr => ({
+  kind: "source-global", name: "Promise", typeArguments: [output],
+});
+
 export function fsPromisesModule(): RustProviderModuleDefinition {
   const m = "node:fs/promises";
   const bufferType = providerRef("node:buffer", "Buffer");
@@ -26,8 +32,8 @@ export function fsPromisesModule(): RustProviderModuleDefinition {
         name: "readFile",
         kind: "function",
         signatures: [
-          { id: `${m}::readFile(path)`, parameters: [{ name: "path", type: stringType }], returnType: bufferType },
-          { id: `${m}::readFile(path,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "encoding", type: stringType }], returnType: stringType },
+          { id: `${m}::readFile(path)`, parameters: [{ name: "path", type: stringType }], returnType: promiseType(bufferType) },
+          { id: `${m}::readFile(path,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "encoding", type: stringType }], returnType: promiseType(stringType) },
         ],
       },
       {
@@ -35,21 +41,21 @@ export function fsPromisesModule(): RustProviderModuleDefinition {
         name: "writeFile",
         kind: "function",
         signatures: [
-          { id: `${m}::writeFile(path,buffer)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: bufferType }], returnType: voidType },
-          { id: `${m}::writeFile(path,string,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: stringType }, { name: "encoding", type: stringType }], returnType: voidType },
+          { id: `${m}::writeFile(path,buffer)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: bufferType }], returnType: promiseType(voidType) },
+          { id: `${m}::writeFile(path,string,encoding)`, parameters: [{ name: "path", type: stringType }, { name: "data", type: stringType }, { name: "encoding", type: stringType }], returnType: promiseType(voidType) },
         ],
       },
-      fnExport(m, "readdir", [{ name: "path", type: stringType }], stringArrayType),
-      fnExport(m, "stat", [{ name: "path", type: stringType }], providerRef("node:fs", "Stats")),
-      fnExport(m, "lstat", [{ name: "path", type: stringType }], providerRef("node:fs", "Stats")),
-      fnExport(m, "realpath", [{ name: "path", type: stringType }], stringType),
+      fnExport(m, "readdir", [{ name: "path", type: stringType }], promiseType(stringArrayType)),
+      fnExport(m, "stat", [{ name: "path", type: stringType }], promiseType(providerRef("node:fs", "Stats"))),
+      fnExport(m, "lstat", [{ name: "path", type: stringType }], promiseType(providerRef("node:fs", "Stats"))),
+      fnExport(m, "realpath", [{ name: "path", type: stringType }], promiseType(stringType)),
       {
         id: `${m}::mkdir`,
         name: "mkdir",
         kind: "function" as const,
         signatures: [
-          { id: `${m}::mkdir(path)`, parameters: [{ name: "path", type: stringType }], returnType: voidType },
-          { id: `${m}::mkdir(path,options)`, parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef("node:fs", "MakeDirectoryOptions") }], returnType: voidType },
+          { id: `${m}::mkdir(path)`, parameters: [{ name: "path", type: stringType }], returnType: promiseType(voidType) },
+          { id: `${m}::mkdir(path,options)`, parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef("node:fs", "MakeDirectoryOptions") }], returnType: promiseType(voidType) },
         ],
       },
       {
@@ -57,13 +63,13 @@ export function fsPromisesModule(): RustProviderModuleDefinition {
         name: "rm",
         kind: "function" as const,
         signatures: [
-          { id: `${m}::rm(path)`, parameters: [{ name: "path", type: stringType }], returnType: voidType },
-          { id: `${m}::rm(path,options)`, parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef("node:fs", "RmOptions") }], returnType: voidType },
+          { id: `${m}::rm(path)`, parameters: [{ name: "path", type: stringType }], returnType: promiseType(voidType) },
+          { id: `${m}::rm(path,options)`, parameters: [{ name: "path", type: stringType }, { name: "options", type: providerRef("node:fs", "RmOptions") }], returnType: promiseType(voidType) },
         ],
       },
-      fnExport(m, "unlink", [{ name: "path", type: stringType }], voidType),
-      fnExport(m, "copyFile", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
-      fnExport(m, "rename", [{ name: "from", type: stringType }, { name: "to", type: stringType }], voidType),
+      fnExport(m, "unlink", [{ name: "path", type: stringType }], promiseType(voidType)),
+      fnExport(m, "copyFile", [{ name: "from", type: stringType }, { name: "to", type: stringType }], promiseType(voidType)),
+      fnExport(m, "rename", [{ name: "from", type: stringType }, { name: "to", type: stringType }], promiseType(voidType)),
     ],
   };
 }

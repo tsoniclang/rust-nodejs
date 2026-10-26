@@ -68,6 +68,29 @@ test("inherited stream operations retain the declared native receiver and exact 
   assert.equal(destroy[0].receiverCarrier.value.id, "rust.node.Duplex");
 });
 
+test("process output writes retain their actual stream program-error ABI", () => {
+  const [{ definition }] = createTsonicPlugin().createTargetContributions({});
+  const stream = definition.operations.find(row => row.signatureId === "node:stream::Writable.write(buffer)");
+  assert.equal(stream !== undefined, true);
+  for (const [signature, name, mode] of [
+    ["node:process::ProcessWriteStream.write(string)", "write_string", "ref"],
+    ["node:process::ProcessWriteStream.write(buffer)", "write", "value"],
+  ]) {
+    const rows = definition.operations.filter(row => row.signatureId === signature);
+    assert.equal(rows.length, 1, signature);
+    const row = rows[0];
+    assert.deepEqual(row.target, { form: "receiver-method", name, argModes: [mode] }, signature);
+    assert.deepEqual(row.receiverCarrier, stream.receiverCarrier, signature);
+    assert.deepEqual(row.receiverCarrier.value.genericArguments, [{
+      kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
+    }], signature);
+    assert.equal(row.isFallible, true, signature);
+    assert.equal(row.errorBoundary, "source-program", signature);
+    assert.equal(row.errorCarrier === undefined, true, signature);
+    assert.deepEqual(row.nativeErrorCarriers, [{ kind: "target-named", id: "rust.node.NodeError" }], signature);
+  }
+});
+
 test("advertised duplex lifecycle operations retain exact receivers and finalization fallibility", () => {
   const [{ definition }] = createTsonicPlugin().createTargetContributions({});
   for (const owner of ["Writable", "Duplex"]) {

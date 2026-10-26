@@ -8,7 +8,7 @@ import { fnExport, methodMember, propertyMember, providerRef, valueExport } from
 import { rustJsArrayTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
 import { processEnvCarrier, processMemoryUsageCarrier } from "./carriers.js";
 import { readableCarrier, writableCarrier } from "../stream/carriers.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { providerNativeFallibility, sourceCallbackFallibility } from "../../model/operations.js";
 import { rustNeverTargetType } from "@tsonic/target-rust/provider";
 
 import type { ProviderTypeExpr } from "../../model/source-types.js";
@@ -227,8 +227,8 @@ export function processRows(): readonly RustProviderOperationDefinition[] {
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.heapUsed`, operationKind: "property", target: { form: "field", name: "heap_used" }, resultCarrier: uint64Carrier },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.external`, operationKind: "property", target: { form: "field", name: "external" }, resultCarrier: uint64Carrier },
     { exportId: memoryUsageId, memberId: `${memoryUsageId}.arrayBuffers`, operationKind: "property", target: { form: "field", name: "array_buffers" }, resultCarrier: uint64Carrier },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [stringCarrier], ...providerNativeFallibility },
-    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write", argModes: ["value"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [bufferCarrier], ...providerNativeFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(string)`, operationKind: "method", target: { form: "receiver-method", name: "write_string", argModes: ["ref"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [stringCarrier], ...sourceCallbackFallibility },
+    { exportId: writeStreamId, memberId: `${writeStreamId}.write`, signatureId: `${writeStreamId}.write(buffer)`, operationKind: "method", target: { form: "receiver-method", name: "write", argModes: ["value"] }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier, parameterCarriers: [bufferCarrier], ...sourceCallbackFallibility },
     { exportId: writeStreamId, memberId: `${writeStreamId}.isTTY`, operationKind: "property", target: { form: "receiver-method", name: "is_tty" }, resultCarrier: boolCarrier, receiverCarrier: writableCarrier },
     { exportId: writeStreamId, memberId: `${writeStreamId}.fd`, operationKind: "property", target: { form: "receiver-method", name: "fd" }, resultCarrier: int32Carrier, receiverCarrier: writableCarrier },
     { exportId: `${m}::exit`, operationKind: "method", target: { form: "call", path: "std::process::exit" }, resultCarrier: rustNeverTargetType(), parameterCarriers: [int32Carrier] },
