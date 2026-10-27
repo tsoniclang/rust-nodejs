@@ -9,7 +9,7 @@ import { nativeOwnershipCostSupport } from "../../../../tsonic-rust/test/helpers
 import { createRustRecordFixture } from "../../../../tsonic-rust/test/helpers/records.mjs";
 import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnionProofSource } from "../../../../tsonic/test/fixtures/native-node-errors.mjs";
 import { createTsonicPlugin } from "../../../dist/index.js";
-import { Node_Expression } from "@tsonic/target-api/source";
+import { createTargetSourceProgram, Node_Expression } from "@tsonic/target-api/source";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/statement-try.js";
 import { admitRustThrowCompletion } from "../../../../tsonic-rust/dist/analysis/errors/throw-admission.js";
 import { admitRustConversionEmission } from "../../../../tsonic-rust/dist/analysis/conversions/emission.js";
@@ -33,10 +33,11 @@ test("Node callbacks retain native errors and exact optional error storage", { t
 });
 
 test("native callback throwing requires exact operand, carrier and registration", () => {
-  const { program } = analyzeRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()], files: {
+  const { source, program } = analyzeRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()], files: {
     "index.ts": `import type { NodeError } from "node:util";
       export function fail(error: NodeError): never { throw error; }`,
   } });
+  const checkedSource = createTargetSourceProgram(source);
   const { ast } = program.source;
   const declaration = program.source.sourceFiles.flatMap(file => ast.statements(file))
     .find(node => ast.text(ast.name(node)) === "fail");
@@ -115,9 +116,9 @@ test("native callback throwing requires exact operand, carrier and registration"
           throwCompletion: { get: subject => subject === statement ? undefined : program.records.throwCompletion.get(subject) },
         }, program.records);
         const createWalk = providerErrorCarriers => ({
-          context: { ast, source: program.source, typeDefinitions: program.typeDefinitions,
+          context: { ast, source: checkedSource, typeDefinitions: program.typeDefinitions,
             records: createRustProgramRecordBuilder(program.typeDefinitions, inherited),
-            diagnostics: [], requiredRecords: [], semanticsFor: node => program.source.semantics.forNode(node) },
+            diagnostics: [], requiredRecords: [], semanticsFor: node => checkedSource.semantics.forNode(node) },
           providerErrorCarriers, resolving: new Set(), rejectedExpressions: new WeakSet(),
         });
         const registered = createWalk(program.providerErrorCarriers);
