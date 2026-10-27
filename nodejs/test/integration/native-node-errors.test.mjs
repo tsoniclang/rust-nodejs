@@ -11,10 +11,10 @@ import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnion
 import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/statement-try.js";
-import { createRustPlanningContext } from "../../../../tsonic-rust/dist/backend/planner/context.js";
-import { rustPackageFallibleBoundary } from "../../../../tsonic-rust/dist/backend/planner/program/fallible-boundaries.js";
-import { planRustSourcePackageErrors } from "../../../../tsonic-rust/dist/backend/planner/program/source-package-errors.js";
-import { rustCurrentErrorBoundary } from "../../../../tsonic-rust/dist/backend/planner/program/plan-context.js";
+import { admitRustThrowCompletion } from "../../../../tsonic-rust/dist/analysis/errors/throw-admission.js";
+import { rustProgramErrorConversionMatches, rustProgramErrorRuntimeRouteMatches } from "../../../../tsonic-rust/dist/policy/conversions/program-error.js";
+import { rustSourceFilePlanContext } from "../../../../tsonic-rust/test/helpers/plan-context.mjs";
+import { planRustErrorRegion } from "../../../../tsonic-rust/dist/backend/planner/program/error-regions.js";
 import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
 
 test("Node callbacks retain native errors and exact optional error storage", { timeout: 300_000 }, () => {
@@ -56,37 +56,52 @@ test("native callback throwing requires exact operand, carrier and registration"
   } });
   assert.deepEqual(program.providerErrorCarriers, [fact.error.conversion.source]);
   assert.ok(Object.isFrozen(fact.error));
-  const planning = createRustPlanningContext(program);
-  const components = program.sourcePackageComponents.components.map(component => ({
-    ...component, sourceFileNames: new Set(component.sourceFileNames), programModuleName: "program",
-  }));
-  const errors = planRustSourcePackageErrors(planning, components);
-  assert.equal(errors.diagnostics.length, 0, "checked source-package error plans are complete");
-  assert.equal(errors.plan !== undefined, true, "checked source-package errors are admitted");
-  for (const [mutation, message] of [
-    [{ error: { ...fact.error, expression: declaration } }, "Finalized throw fact conflicts with its exact source operand or native Error carrier."],
-    [{ error: { ...fact.error, conversion: { ...fact.error.conversion, source: { kind: "target-named", id: "example.UnregisteredError" } } } }, "Finalized throw fact conflicts with its exact source operand or native Error carrier."],
-    [{ error: { ...fact.error, conversion: { ...fact.error.conversion, route: { kind: "runtime", boundary: "target-runtime" } } } }, "Program error construction requires an exact carrier and error domain."],
-    [{ error: fact.error, providerErrorCarriers: [] }, "Runtime error construction has no exact registered native error carrier."],
+  const completion = program.records.throwCompletion.get(statement);
+  const region = program.errorRegions.get(declaration);
+  assert.equal(completion?.operation === fact, true, "the admitted throw retains its original selected operation");
+  const selected = rustSourceFilePlanContext(program, statement);
+  assert.equal(selected.sourcePackageErrors !== undefined, true, "checked source-package errors are admitted");
+  const renderedRegion = planRustErrorRegion(declaration, selected);
+  assert.equal(renderedRegion !== undefined, true, "the throw has its actual checked package error owner");
+  const rendered = planThrowStatement(statement, { ...selected, callableDeclaration: declaration,
+    fallibleBoundary: renderedRegion.boundary });
+  assert.equal(rendered.length, 1, "one admitted throw produces one native throw");
+  assert.equal(rendered[0].kind, "throw");
+  assertNoTargetDiagnostics(selected.diagnostics);
+  for (const [label, mutation, message] of [
+    ["wrong source operand", { error: { ...fact.error, expression: declaration } }, /exact selected source operation/u],
+    ["wrong native carrier", { error: { ...fact.error, conversion: { ...fact.error.conversion, source: { kind: "target-named", id: "example.UnregisteredError" } } } }, /exact selected native operand carrier/u],
+    ["wrong native error domain", { error: { ...fact.error, conversion: { ...fact.error.conversion, route: { kind: "runtime", boundary: "target-runtime" } } } }, undefined],
+    ["unregistered native error", { error: fact.error, providerErrorCarriers: [] }, undefined],
   ]) {
-    const diagnostics = [];
     const records = createRustRecordFixture({
       targetOperation: { get: subject => subject === statement
         ? { ...fact, error: mutation.error } : program.records.targetOperation.get(subject) },
     }, program.records);
-    const changed = { ...program, records, providerErrorCarriers: mutation.providerErrorCarriers ?? program.providerErrorCarriers };
-    const context = {
-      input: { ...planning, program: changed }, sourceFile: ast.getSourceFile(statement), diagnostics,
-      sourcePackageErrors: errors.plan,
-      sourcePackageComponentId: program.sourcePackageComponents.rootComponentId,
-      usedAliases: new Set(),
-    };
-    const owner = rustCurrentErrorBoundary(context);
-    assert.equal(owner !== undefined, true, "the throw has its actual checked package error owner");
-    context.fallibleBoundary = rustPackageFallibleBoundary(owner);
-    assert.equal(planThrowStatement(statement, context) === undefined, true, message);
-    assert.equal(diagnostics.length, 1);
-    assert.equal(diagnostics[0].message, `${message} Node kind: KindIdentifier.`);
+    if (message !== undefined) {
+      let admitted;
+      let failure;
+      try {
+        admitted = admitRustThrowCompletion({ ast, records, region,
+          componentId: selected.sourcePackageComponentId }, statement);
+      } catch (error) {
+        failure = error;
+      }
+      assert.equal(failure?.diagnostic?.code, "TSONIC_INTERNAL_ANALYSIS_INVARIANT", label);
+      assert.equal(message.test(failure?.diagnostic?.message ?? ""), true, label);
+      assert.equal(admitted === undefined, true, label + ": malformed evidence is never published");
+    } else {
+      if (mutation.providerErrorCarriers === undefined) {
+        assert.equal(rustProgramErrorConversionMatches(mutation.error.conversion, fact.error.conversion.source,
+          fact.error.conversion.target, program.typeDefinitions), false, label);
+      }
+      assert.equal(rustProgramErrorRuntimeRouteMatches(mutation.error.conversion.route, mutation.error.conversion.source,
+        mutation.providerErrorCarriers ?? program.providerErrorCarriers), false, label);
+      assert.equal(rustProgramErrorRuntimeRouteMatches(fact.error.conversion.route, fact.error.conversion.source,
+        program.providerErrorCarriers), true, label + ": the original native error remains registered");
+    }
+    assert.equal(program.records.targetOperation.get(statement) === fact, true, label + ": the original operation is unchanged");
+    assert.equal(program.records.throwCompletion.get(statement) === completion, true, label + ": the original completion is unchanged");
   }
 });
 
