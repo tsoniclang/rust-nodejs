@@ -16,6 +16,7 @@ import { admitRustConversionEmission } from "../../../../tsonic-rust/dist/analys
 import { recordThrowFacts } from "../../../../tsonic-rust/dist/analysis/errors/thrown-values.js";
 import { createRustConversionEmissionProducer } from "../../../../tsonic-rust/dist/analysis/program/records/operations/conversion-emission.js";
 import { createRustProgramRecordBuilder } from "../../../../tsonic-rust/dist/analysis/program/records/create.js";
+import { createRustSourceTypeRegistry } from "../../../../tsonic-rust/dist/analysis/project-types/source-type-registry.js";
 import { rustSourceFilePlanContext } from "../../../../tsonic-rust/test/helpers/plan-context.mjs";
 import { planRustErrorRegion } from "../../../../tsonic-rust/dist/backend/planner/program/error-regions.js";
 import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
@@ -119,7 +120,8 @@ test("native callback throwing requires exact operand, carrier and registration"
           context: { ast, source: checkedSource, typeDefinitions: program.typeDefinitions,
             records: createRustProgramRecordBuilder(program.typeDefinitions, inherited),
             diagnostics: [], requiredRecords: [], semanticsFor: node => checkedSource.semantics.forNode(node) },
-          providerErrorCarriers, resolving: new Set(), rejectedExpressions: new WeakSet(),
+          providerErrorCarriers, sourceTypes: createRustSourceTypeRegistry(undefined, program.typeDefinitions),
+          resolving: new Set(), rejectedExpressions: new WeakSet(),
         });
         const registered = createWalk(program.providerErrorCarriers);
         recordThrowFacts(registered, statement, ast.getSourceFile(statement));
