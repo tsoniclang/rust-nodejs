@@ -39,8 +39,13 @@ mod retained_source_failure {
         let result = super::${names[0]}.with(|tasks| {
             tsonic_rust_node::run_entry_with_contexts(
                 || expected = Some(crate::schedule().expect("callback registration")),
-                tsonic_rust_runtime::dispatch::prepend(tasks,
-                    tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))
+                tsonic_rust_runtime::dispatch::prepend(
+                    tasks,
+                    tsonic_rust_runtime::dispatch::DispatchEnd::<
+                        tsonic_rust_runtime::TsonicError,
+                    >::new(),
+                ),
+            )
         });
         let returned = result.expect_err("source callback must fail");
         let expected = expected.expect("the source registration completed before dispatch");
