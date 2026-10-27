@@ -23,13 +23,13 @@ test("plugin exposes source, target-policy, and runtime contributions", () => {
     declarations: [{
       fileName: "provider-globals.d.ts",
       text: [
+        'declare var process: typeof import("node:process")["default"];',
         'declare var performance: typeof import("node:perf_hooks")["performance"];',
         'declare var crypto: typeof import("node:crypto")["webcrypto"];',
       ].join("\n"),
     }, {
       fileName: "node-globals.d.ts",
       text: [
-        'declare var process: typeof import("node:process").default;',
         'declare namespace NodeJS {',
         '  type ProcessEnv = import("node:process").ProcessEnv;',
         '  type Signals = import("node:process").Signals;',
