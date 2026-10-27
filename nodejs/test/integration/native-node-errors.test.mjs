@@ -46,7 +46,7 @@ test("native callback throwing requires exact operand, carrier and registration"
   assert.equal(fact.kind, "throw-op");
   assert.equal(fact.error.kind, "conversion");
   assert.deepEqual(fact.error.conversion.route, { kind: "runtime", boundary: "provider-native" });
-  assert.equal(fact.error.expression, Node_Expression(ast, statement));
+  assert.equal(fact.error.expression === Node_Expression(ast, statement), true, "exact checked throw operand");
   assert.deepEqual(fact.error.conversion.source, { kind: "target-specific", target: "rust", name: "named-type", value: {
     id: "rust.node.NodeError", path: "tsonic_rust_node::NodeError",
     traits: { implementations: [
