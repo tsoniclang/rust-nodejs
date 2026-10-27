@@ -12,7 +12,10 @@ import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
 import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/statement-try.js";
 import { admitRustThrowCompletion } from "../../../../tsonic-rust/dist/analysis/errors/throw-admission.js";
-import { rustProgramErrorConversionMatches, rustProgramErrorRuntimeRouteMatches } from "../../../../tsonic-rust/dist/policy/conversions/program-error.js";
+import { admitRustConversionEmission } from "../../../../tsonic-rust/dist/analysis/conversions/emission.js";
+import { recordThrowFacts } from "../../../../tsonic-rust/dist/analysis/errors/thrown-values.js";
+import { createRustConversionEmissionProducer } from "../../../../tsonic-rust/dist/analysis/program/records/operations/conversion-emission.js";
+import { createRustProgramRecordBuilder } from "../../../../tsonic-rust/dist/analysis/program/records/create.js";
 import { rustSourceFilePlanContext } from "../../../../tsonic-rust/test/helpers/plan-context.mjs";
 import { planRustErrorRegion } from "../../../../tsonic-rust/dist/backend/planner/program/error-regions.js";
 import { rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
@@ -92,13 +95,56 @@ test("native callback throwing requires exact operand, carrier and registration"
       assert.equal(admitted === undefined, true, label + ": malformed evidence is never published");
     } else {
       if (mutation.providerErrorCarriers === undefined) {
-        assert.equal(rustProgramErrorConversionMatches(mutation.error.conversion, fact.error.conversion.source,
-          fact.error.conversion.target, program.typeDefinitions), false, label);
+        const conversions = createRustConversionEmissionProducer(() => {});
+        let admitted;
+        assert.throws(() => {
+          admitRustConversionEmission(conversions, mutation.error.conversion, program.typeDefinitions);
+          admitted = admitRustThrowCompletion({ ast, records, region,
+            componentId: selected.sourcePackageComponentId }, statement);
+        }, failure => failure?.diagnostic?.code === "TSONIC_INTERNAL_ANALYSIS_INVARIANT" &&
+          failure.diagnostic.message === "An admitted native conversion requires its exact physical conversion contract.", label);
+        assert.equal(conversions.records.conversionContract.get(mutation.error.conversion) === undefined, true,
+          label + ": the malformed conversion has no published emission contract");
+        assert.equal(admitted === undefined, true, label + ": the malformed conversion cannot reach throw completion");
+        const original = admitRustConversionEmission(conversions, fact.error.conversion, program.typeDefinitions);
+        assert.equal(conversions.records.conversionContract.get(fact.error.conversion) === original, true,
+          label + ": the same admission owner publishes the original native conversion");
+      } else {
+        const inherited = createRustRecordFixture({
+          targetOperation: { get: subject => subject === statement ? undefined : program.records.targetOperation.get(subject) },
+          throwCompletion: { get: subject => subject === statement ? undefined : program.records.throwCompletion.get(subject) },
+        }, program.records);
+        const createWalk = providerErrorCarriers => ({
+          context: { ast, source: program.source, typeDefinitions: program.typeDefinitions,
+            records: createRustProgramRecordBuilder(program.typeDefinitions, inherited),
+            diagnostics: [], requiredRecords: [], semanticsFor: node => program.source.semantics.forNode(node) },
+          providerErrorCarriers, resolving: new Set(), rejectedExpressions: new WeakSet(),
+        });
+        const registered = createWalk(program.providerErrorCarriers);
+        recordThrowFacts(registered, statement, ast.getSourceFile(statement));
+        assertNoTargetDiagnostics(registered.context.diagnostics);
+        assert.equal(registered.context.records.targetOperation.get(statement)?.kind, "throw-op",
+          label + ": the same recording boundary publishes the registered native throw");
+        const original = admitRustThrowCompletion({ ast, records: registered.context.records, region,
+          componentId: selected.sourcePackageComponentId }, statement);
+        assert.equal(original.kind, "resolved", label + ": the registered throw reaches completion admission");
+        const unregistered = createWalk(mutation.providerErrorCarriers);
+        recordThrowFacts(unregistered, statement, ast.getSourceFile(statement));
+        assert.equal(unregistered.context.diagnostics.length, 1, label);
+        const diagnostic = unregistered.context.diagnostics[0];
+        assert.equal(diagnostic?.code, "RUST_MISSING_TARGET_FACT", label);
+        assert.equal(diagnostic?.category, "error", label);
+        assert.equal(diagnostic?.source, "tsonic-rust", label);
+        assert.equal(diagnostic?.message, "Runtime error construction has no exact registered native error carrier.", label);
+        assert.equal(diagnostic?.sourceNode === statement, true, label + ": refusal belongs to the original throw");
+        assert.deepEqual(diagnostic?.evidence, ["target.capability=rust.backend.throw-runtime-error-route"], label);
+        assert.equal(unregistered.rejectedExpressions.has(statement), true, label + ": the throw is recorded as rejected");
+        assert.equal(unregistered.context.records.targetOperation.get(statement) === undefined, true,
+          label + ": the unregistered native throw has no published operation");
+        assert.equal(unregistered.context.records.throwCompletion.get(statement) === undefined, true,
+          label + ": the unregistered native throw has no published completion");
+        assert.equal(unregistered.context.requiredRecords.length, 0, label + ": no rejected operation enters the required-record domain");
       }
-      assert.equal(rustProgramErrorRuntimeRouteMatches(mutation.error.conversion.route, mutation.error.conversion.source,
-        mutation.providerErrorCarriers ?? program.providerErrorCarriers), false, label);
-      assert.equal(rustProgramErrorRuntimeRouteMatches(fact.error.conversion.route, fact.error.conversion.source,
-        program.providerErrorCarriers), true, label + ": the original native error remains registered");
     }
     assert.equal(program.records.targetOperation.get(statement) === fact, true, label + ": the original operation is unchanged");
     assert.equal(program.records.throwCompletion.get(statement) === completion, true, label + ": the original completion is unchanged");
