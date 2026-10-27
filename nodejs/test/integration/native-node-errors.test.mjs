@@ -10,7 +10,7 @@ import { createRustRecordFixture } from "../../../../tsonic-rust/test/helpers/re
 import { nativeNodeErrorSource, nativeNodeErrorUnionSource, nativeNodeErrorUnionProofSource } from "../../../../tsonic/test/fixtures/native-node-errors.mjs";
 import { createTsonicPlugin } from "../../../dist/index.js";
 import { Node_Expression } from "@tsonic/target-api/source";
-import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/errors.js";
+import { planThrowStatement } from "../../../../tsonic-rust/dist/backend/planner/statements/statement-try.js";
 import { createRustPlanningContext } from "../../../../tsonic-rust/dist/backend/planner/context.js";
 import { rustPackageFallibleBoundary } from "../../../../tsonic-rust/dist/backend/planner/program/fallible-boundaries.js";
 import { planRustSourcePackageErrors } from "../../../../tsonic-rust/dist/backend/planner/program/source-package-errors.js";
