@@ -26,6 +26,6 @@ test("Node optional arguments preserve omitted and explicit absence at native ca
   ` } });
   assertNoTargetDiagnostics(result.diagnostics);
   const output = artifactText(result, "src/index.rs");
-  assert.equal(output.match(/destroy_chain\(Option::<tsonic_rust_runtime::RetainedError>::None\)/gu)?.length, 2);
+  assert.equal(output.match(/destroy_chain\((?:core::option::)?Option::<tsonic_rust_runtime::RetainedError>::None\)/gu)?.length, 2);
   validateGeneratedProject("native-optional-arguments", result.artifacts, { run: true });
 });
