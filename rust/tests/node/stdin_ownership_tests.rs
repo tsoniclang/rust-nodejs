@@ -177,7 +177,7 @@ fn native_stdin_child() {
 
 fn child(mode: &str, input: Stdio) -> std::process::Child {
     Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "native_stdin_child", "--nocapture"])
+        .args(["--exact", "native_stdin_child", "--nocapture", "--quiet"])
         .env("TSONIC_STDIN_PROOF", mode)
         .stdin(input)
         .stdout(Stdio::piped())
