@@ -15,7 +15,15 @@ export function pathModule(): RustProviderModuleDefinition {
       fnExport(m, "resolve", [{ name: "paths", type: stringArrayType, rest: true }], stringType),
       fnExport(m, "normalize", [{ name: "path", type: stringType }], stringType),
       fnExport(m, "dirname", [{ name: "path", type: stringType }], stringType),
-      fnExport(m, "basename", [{ name: "path", type: stringType }], stringType),
+      {
+        id: `${m}::basename`,
+        name: "basename",
+        kind: "function",
+        signatures: [
+          { id: `${m}::basename(path)`, name: "basename", parameters: [{ name: "path", type: stringType }], returnType: stringType },
+          { id: `${m}::basename(path,suffix)`, name: "basename", parameters: [{ name: "path", type: stringType }, { name: "suffix", type: stringType }], returnType: stringType },
+        ],
+      },
       fnExport(m, "extname", [{ name: "path", type: stringType }], stringType),
       fnExport(m, "isAbsolute", [{ name: "path", type: stringType }], booleanType),
       fnExport(m, "relative", [{ name: "from", type: stringType }, { name: "to", type: stringType }], stringType),
@@ -55,10 +63,19 @@ export function pathRows(): readonly RustProviderOperationDefinition[] {
     },
     {
       exportId: "node:path::basename",
+      signatureId: "node:path::basename(path)",
       operationKind: "method",
       target: { form: "call", path: "node_path::basename", argModes: ["ref"], trailingArguments: [noneArgument] },
       resultCarrier: stringCarrier,
       parameterCarriers: [stringCarrier],
+    },
+    {
+      exportId: "node:path::basename",
+      signatureId: "node:path::basename(path,suffix)",
+      operationKind: "method",
+      target: { form: "call", path: "node_path::basename", argModes: ["ref", "ref"] },
+      resultCarrier: stringCarrier,
+      parameterCarriers: [stringCarrier, stringCarrier],
     },
   ];
 }

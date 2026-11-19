@@ -1,4 +1,4 @@
-import { rustCallableTargetType, rustJsArrayTargetType, rustSourcePrimitiveTargetType, rustStringTargetType } from "@tsonic/target-rust/provider";
+import { rustProgramErrorTargetType, rustCallableTargetType, rustJsArrayTargetType, rustSourcePrimitiveTargetType, rustStringTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 export const stringCarrier = rustStringTargetType();
@@ -16,6 +16,8 @@ export const uint32Carrier = rustSourcePrimitiveTargetType("uint32");
 export const uint64Carrier = rustSourcePrimitiveTargetType("uint64");
 
 export const nativeUintCarrier = rustSourcePrimitiveTargetType("native-uint");
+
+export const nativeIntCarrier = rustSourcePrimitiveTargetType("native-int");
 
 export const float64Carrier = rustSourcePrimitiveTargetType("float64");
 
@@ -42,3 +44,5 @@ export const threeValueCallbackCarrier = rustCallableTargetType(
   [jsValueCarrier, jsValueCarrier, jsValueCarrier],
   unitCarrier,
 );
+
+export const nodeProgramErrorArguments = [{ kind: "type", type: rustProgramErrorTargetType() }] as const;

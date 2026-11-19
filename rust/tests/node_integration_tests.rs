@@ -28,6 +28,10 @@ mod http2_tests;
 mod http_runtime_tests;
 #[path = "node/misc_module_tests.rs"]
 mod misc_module_tests;
+#[path = "node/native_stream_inheritance_tests.rs"]
+mod native_stream_inheritance_tests;
+#[path = "node/native_stream_lifecycle_tests.rs"]
+mod native_stream_lifecycle_tests;
 #[path = "node/network_process_tests.rs"]
 mod network_process_tests;
 #[path = "node/os_tests.rs"]
@@ -44,6 +48,8 @@ mod process_signal_tests;
 mod process_tests;
 #[path = "node/readline_worker_tests.rs"]
 mod readline_worker_tests;
+#[path = "node/requested_exit_tests.rs"]
+mod requested_exit_tests;
 #[path = "node/timers_stream_dns_tests.rs"]
 mod timers_stream_dns_tests;
 #[path = "node/url_tests.rs"]

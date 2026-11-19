@@ -1,97 +1,385 @@
-const MAX_PENDING_RUNTIME_TASKS: usize = 1 << 20;
+use std::future::Future;
+use std::sync::Arc;
+use std::task::{Wake, Waker};
 
-thread_local! {
-    static RUNTIME_TASKS: std::cell::RefCell<std::collections::VecDeque<RuntimeTask>> =
-        std::cell::RefCell::new(std::collections::VecDeque::new());
-}
-
-type RuntimeTask = Box<dyn FnOnce() -> tsonic_rust_runtime::TsonicResult<()>>;
-
-pub(crate) fn enqueue_runtime_task(
-    task: impl FnOnce() -> tsonic_rust_runtime::TsonicResult<()> + 'static,
-) -> crate::NodeResult<()> {
-    RUNTIME_TASKS.with(|tasks| {
-        let mut tasks = tasks.borrow_mut();
-        if tasks.len() >= MAX_PENDING_RUNTIME_TASKS {
-            return Err(crate::NodeError::new(
-                "ERR_NODE_RUNTIME_TASK_LIMIT",
-                "pending Node runtime tasks exceed the finite queue limit",
-            ));
-        }
-        tasks.push_back(Box::new(task));
-        Ok(())
-    })
-}
-
-fn poll_runtime_tasks() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let tasks = RUNTIME_TASKS.with(|tasks| {
-        let mut tasks = tasks.borrow_mut();
-        let count = tasks.len();
-        tasks.drain(..count).collect::<Vec<_>>()
-    });
-    let did_work = !tasks.is_empty();
-    for task in tasks {
-        task()?;
-    }
-    Ok(did_work)
-}
+use tsonic_rust_js::event_loop::{
+    EventLoopDriver, LoopExitStatus, LoopLifecycle, STOPPED_BEFORE_COMPLETION,
+    STOPPED_ON_REQUESTED_EXIT,
+};
+use tsonic_rust_runtime::dispatch::{DispatchContexts, DispatchEnd, DispatchPhase};
+use tsonic_rust_runtime::TsonicResult;
 
 fn has_runtime_tasks() -> bool {
-    RUNTIME_TASKS.with(|tasks| !tasks.borrow().is_empty())
+    crate::runtime_tasks::with_default(crate::runtime_tasks::RuntimeTasks::has_pending_work)
 }
 
 fn has_runtime_work() -> bool {
     crate::background::has_pending_work()
         || has_runtime_tasks()
-        || tsonic_rust_js::timers::has_timers()
-        || crate::http::has_active_runtime_servers()
-        || crate::net::has_refed_runtime_servers()
-        || crate::tls::has_refed_runtime_servers()
+        || crate::http::with_default_http(DispatchContexts::has_work)
+        || crate::net::with_default(DispatchContexts::has_work)
+        || crate::tls::with_default_tls(DispatchContexts::has_work)
         || crate::timers::has_refed_runtime_timers()
-        || crate::fs::has_refed_runtime_watchers()
-        || crate::worker_threads::has_refed_runtime_workers()
-        || crate::worker_threads::has_refed_runtime_ports()
+        || crate::fs::with_default_watchers(DispatchContexts::has_work)
+        || crate::worker_threads::resources::with_default(DispatchContexts::has_work)
 }
 
 pub fn run_event_loop() -> tsonic_rust_runtime::TsonicResult<()> {
-    loop {
-        let can_dispatch_signals = has_runtime_work();
-        let background_work = crate::background::poll()?;
-        let task_work = poll_runtime_tasks()?;
-        let signal_work = can_dispatch_signals && crate::process::poll_signals()?;
-        let js_timer_work = tsonic_rust_js::timers::poll_timers()?;
-        let timer_work = crate::timers::poll_runtime_timers()?;
-        let server_work = crate::http::poll_runtime_servers()?;
-        let net_work = crate::net::poll_runtime_servers()?;
-        let tls_work = crate::tls::poll_runtime_servers()?;
-        let watcher_work = crate::fs::poll_runtime_watchers()?;
-        let worker_work = crate::worker_threads::poll_runtime_workers()?;
-        let port_work = crate::worker_threads::poll_runtime_ports()?;
-        if !has_runtime_work() {
-            return Ok(());
+    let status = run_with_contexts(DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())?;
+    if status.exit_requested() {
+        return Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into());
+    }
+    Ok(())
+}
+
+pub fn block_on<Output>(future: impl Future<Output = Output>) -> TsonicResult<Output> {
+    let (output, status) = block_on_with_contexts(
+        future,
+        DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+    )?;
+    match output {
+        Some(_) if status.exit_requested() => {
+            Err(tsonic_rust_runtime::JsError::error(STOPPED_ON_REQUESTED_EXIT).into())
         }
-        if !background_work
-            && !task_work
-            && !signal_work
-            && !js_timer_work
-            && !timer_work
-            && !server_work
-            && !net_work
-            && !tls_work
-            && !watcher_work
-            && !worker_work
-            && !port_work
-        {
-            let timer_delay = [
-                crate::timers::next_runtime_timer_delay(),
-                tsonic_rust_js::timers::next_timer_delay(),
-                crate::fs::next_runtime_watcher_delay(),
-                crate::worker_threads::next_runtime_reap_delay(),
-            ]
-            .into_iter()
-            .flatten()
-            .min();
-            crate::readiness::wait(timer_delay)?;
+        Some(output) => Ok(output),
+        None => Err(tsonic_rust_runtime::JsError::error(STOPPED_BEFORE_COMPLETION).into()),
+    }
+}
+
+pub fn run_with_contexts<TContexts: DispatchContexts>(
+    contexts: TContexts,
+) -> Result<LoopExitStatus, TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::run_with_driver(&mut NodeDriver { contexts })
+}
+
+pub fn block_on_with_contexts<TOutput, TContexts: DispatchContexts>(
+    future: impl Future<Output = TOutput>,
+    contexts: TContexts,
+) -> Result<(Option<TOutput>, LoopExitStatus), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::block_on_with_driver(future, &mut NodeDriver { contexts })
+}
+
+pub fn run_entry_with_contexts<TOutput, TContexts: DispatchContexts>(
+    entry: impl FnOnce() -> TOutput,
+    contexts: TContexts,
+) -> Result<(TOutput, LoopExitStatus), TContexts::Error>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    tsonic_rust_js::event_loop::run_entry_with_driver(entry, &mut NodeDriver { contexts })
+}
+
+struct NodeDriver<TContexts> {
+    contexts: TContexts,
+}
+
+impl<TContexts: DispatchContexts> NodeDriver<TContexts> {
+    fn poll_context<TNative: DispatchContexts>(
+        &self,
+        native: &TNative,
+        phase: DispatchPhase,
+    ) -> Result<bool, TContexts::Error>
+    where
+        TContexts::Error: From<TNative::Error>,
+    {
+        tsonic_rust_js::event_loop::poll_phase_with_jobs(
+            &tsonic_rust_runtime::dispatch::prepend(native, &self.contexts),
+            phase,
+        )
+    }
+}
+
+struct NodeWake(Arc<mio::Waker>);
+
+impl Wake for NodeWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.wake().expect("live Node readiness wakeup");
+    }
+}
+
+impl<TContexts: DispatchContexts> EventLoopDriver for NodeDriver<TContexts>
+where
+    TContexts::Error: From<tsonic_rust_runtime::TsonicError>,
+{
+    type Error = TContexts::Error;
+
+    fn admission_error(error: tsonic_rust_runtime::JsError) -> Self::Error {
+        tsonic_rust_runtime::TsonicError::from(error).into()
+    }
+
+    fn lifecycle(&mut self, transition: LoopLifecycle) -> Result<(), Self::Error> {
+        match transition {
+            LoopLifecycle::Enter(owner) => {
+                let entered = tsonic_rust_js::timers::with_default(|context| context.enter(owner))
+                    && crate::timers::with_default(|context| context.enter(owner))
+                    && self.contexts.enter(owner)
+                    && crate::background::with_default(|context| context.enter(owner))
+                    && crate::runtime_tasks::with_default(|context| context.enter(owner))
+                    && crate::http::with_default_http(|context| context.enter(owner))
+                    && crate::net::with_default(|context| context.enter(owner))
+                    && crate::tls::with_default_tls(|context| context.enter(owner))
+                    && crate::fs::with_default_watchers(|context| context.enter(owner))
+                    && crate::worker_threads::resources::with_default(|context| {
+                        context.enter(owner)
+                    })
+                    && crate::process::with_default_signals(|context| context.enter(owner));
+                if !entered {
+                    return Err(Self::admission_error(tsonic_rust_runtime::JsError::error("native dispatch context belongs to another event loop or has exhausted its generations")));
+                }
+            }
+            LoopLifecycle::Shutdown(owner) => {
+                crate::runtime_tasks::with_default(|context| context.close(owner));
+                crate::background::with_default(|context| context.close(owner));
+                self.contexts.close(owner);
+                crate::worker_threads::resources::with_default(|context| context.close(owner));
+                crate::fs::with_default_watchers(|context| context.close(owner));
+                crate::tls::with_default_tls(|context| context.close(owner));
+                crate::net::with_default(|context| context.close(owner));
+                crate::http::with_default_http(|context| context.close(owner));
+                crate::process::with_default_signals(|context| context.close(owner));
+                crate::timers::with_default(|context| context.close(owner));
+                tsonic_rust_js::timers::with_default(|context| context.close(owner));
+            }
         }
+        Ok(())
+    }
+
+    fn poll(&mut self) -> Result<bool, Self::Error> {
+        let mut did_work = tsonic_rust_js::timers::with_default(|native| {
+            self.poll_context(native, tsonic_rust_js::timers::PHASE)
+        })?;
+        let can_dispatch_signals = has_runtime_work() || self.contexts.has_work();
+        for domain in crate::phases::ORDER {
+            use crate::phases::Phase;
+            let phase = domain.registration();
+            let work = match domain {
+                Phase::Background => {
+                    crate::background::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::RuntimeTasks => {
+                    crate::runtime_tasks::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::Signals if can_dispatch_signals => {
+                    crate::process::with_default_signals(|native| self.poll_context(native, phase))?
+                }
+                Phase::Signals => false,
+                Phase::Timers => {
+                    crate::timers::with_default(|native| self.poll_context(native, phase))?
+                }
+                Phase::Http => {
+                    crate::http::with_default_http(|native| self.poll_context(native, phase))?
+                }
+                Phase::Net => crate::net::with_default(|native| self.poll_context(native, phase))?,
+                Phase::Tls => {
+                    crate::tls::with_default_tls(|native| self.poll_context(native, phase))?
+                }
+                Phase::Watchers => {
+                    crate::fs::with_default_watchers(|native| self.poll_context(native, phase))?
+                }
+                Phase::Workers | Phase::Ports => {
+                    crate::worker_threads::resources::with_default(|native| {
+                        self.poll_context(native, phase)
+                    })?
+                }
+            };
+            did_work |= work;
+        }
+        Ok(did_work)
+    }
+
+    fn has_work(&self) -> bool {
+        has_runtime_work() || tsonic_rust_js::timers::has_timers() || self.contexts.has_work()
+    }
+
+    fn wait(&mut self) -> Result<(), Self::Error> {
+        let timer_delay = [
+            crate::timers::next_runtime_timer_delay(),
+            tsonic_rust_js::timers::next_timer_delay(),
+            crate::fs::with_default_watchers(DispatchContexts::next_delay),
+            crate::worker_threads::resources::with_default(DispatchContexts::next_delay),
+            self.contexts.next_delay(),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        crate::readiness::wait(timer_delay)
+            .map_err(tsonic_rust_runtime::TsonicError::from)
+            .map_err(Self::Error::from)?;
+        Ok(())
+    }
+
+    fn waker(&mut self) -> Result<Waker, Self::Error> {
+        let wake = crate::readiness::waker()
+            .map_err(tsonic_rust_runtime::TsonicError::from)
+            .map_err(Self::Error::from)?;
+        Ok(Waker::from(Arc::new(NodeWake(wake))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::future::poll_fn;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc};
+    use std::task::{Poll, Waker};
+    use tsonic_rust_js::promise::{JsPromise, PromiseReject, PromiseResolution, PromiseResolve};
+    use tsonic_rust_runtime::Callable;
+
+    #[test]
+    fn runtime_tasks_preserve_exact_failures_and_uninvoked_work() {
+        crate::block_on(async {
+            let original = tsonic_rust_runtime::JsError::error("original native failure");
+            let retained = original.clone();
+            let observed = std::rc::Rc::new(Cell::new(0));
+            let completed = std::rc::Rc::clone(&observed);
+            crate::runtime_tasks::with_default(|tasks| tasks.enqueue(move || Err(retained.into())))
+                .unwrap();
+            crate::runtime_tasks::with_default(|tasks| {
+                tasks.enqueue(move || {
+                    completed.set(7);
+                    Ok(())
+                })
+            })
+            .unwrap();
+            let failure = crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap_err();
+            assert!(matches!(failure, tsonic_rust_runtime::TsonicError::Js(_)));
+            assert!(failure.source_error().has_same_identity(&original));
+            assert_eq!(observed.get(), 0);
+            assert!(super::has_runtime_tasks());
+            assert!(crate::runtime_tasks::with_default(|tasks| tasks.poll()).unwrap());
+            assert_eq!(observed.get(), 7);
+            assert!(!super::has_runtime_tasks());
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn mio_driver_receives_native_future_wakes_without_a_polling_timer() {
+        let ready = Arc::new(AtomicBool::new(false));
+        let worker_ready = Arc::clone(&ready);
+        let (sender, receiver) = mpsc::sync_channel::<Waker>(1);
+        let worker = std::thread::spawn(move || {
+            let waker = receiver.recv().unwrap();
+            worker_ready.store(true, Ordering::Release);
+            waker.wake();
+        });
+        let polls = Cell::new(0);
+        super::block_on(poll_fn(|context| {
+            polls.set(polls.get() + 1);
+            if ready.load(Ordering::Acquire) {
+                Poll::Ready(())
+            } else {
+                sender.send(context.waker().clone()).unwrap();
+                Poll::Pending
+            }
+        }))
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(polls.get(), 2);
+    }
+
+    #[test]
+    fn node_driver_runs_js_timers_and_discarded_continuations() {
+        let completed = std::rc::Rc::new(Cell::new(0));
+        let observed = std::rc::Rc::clone(&completed);
+        let ((), status) = super::run_entry_with_contexts(
+            move || {
+                let source = JsPromise::create(Callable::new(
+                    |(resolve, _): (PromiseResolve<i32>, PromiseReject)| {
+                        tsonic_rust_js::timers::with_default(|timers| {
+                            tsonic_rust_js::timers::set_timeout_callable(
+                                timers,
+                                Callable::new(move |()| {
+                                    resolve
+                                        .call((PromiseResolution::Value(3),))
+                                        .expect("native Promise resolution is infallible");
+                                    Ok(())
+                                }),
+                                1.0,
+                            )
+                        })
+                        .unwrap();
+                        Ok(())
+                    },
+                ));
+                drop(source.then(
+                    Callable::new(move |(value,)| {
+                        observed.set(value);
+                        Ok(())
+                    }),
+                    None,
+                ));
+            },
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(!status.exit_requested());
+        assert_eq!(completed.get(), 3);
+    }
+
+    fn zero_delay_timer(ran: std::rc::Rc<Cell<bool>>) {
+        tsonic_rust_js::timers::with_default(|timers| {
+            tsonic_rust_js::timers::set_timeout_callable(
+                timers,
+                Callable::new(move |()| {
+                    ran.set(true);
+                    Ok(())
+                }),
+                0.0,
+            )
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_requested_exit_stops_the_node_loop_before_a_zero_delay_timer() {
+        let timer_ran = std::rc::Rc::new(Cell::new(false));
+        let observed = std::rc::Rc::clone(&timer_ran);
+        let ((), status) = super::run_entry_with_contexts(
+            move || {
+                zero_delay_timer(observed);
+                JsPromise::<i32>::from_fallible_factory(|| async {
+                    Err(tsonic_rust_js::JsValue::from_error(
+                        tsonic_rust_runtime::JsError::error("boom"),
+                    ))
+                })
+                .observe_discarded();
+            },
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(status.exit_requested());
+        assert_eq!(
+            std::process::ExitCode::from(status),
+            std::process::ExitCode::from(1)
+        );
+        assert!(
+            !timer_ran.get(),
+            "no loop work restarts after the exit request"
+        );
+    }
+
+    #[test]
+    fn without_a_discarded_rejection_the_node_loop_runs_the_zero_delay_timer() {
+        let timer_ran = std::rc::Rc::new(Cell::new(false));
+        let observed = std::rc::Rc::clone(&timer_ran);
+        let ((), status) = super::run_entry_with_contexts(
+            move || zero_delay_timer(observed),
+            super::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        )
+        .unwrap();
+        assert!(!status.exit_requested());
+        assert!(timer_ran.get());
     }
 }

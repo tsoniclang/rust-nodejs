@@ -7,6 +7,9 @@ use tsonic_rust_node::{
 
 #[test]
 fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
+    let readable_tasks = tsonic_rust_node::runtime_tasks::RuntimeTasks::new();
+    let background =
+        tsonic_rust_node::background::BackgroundTasks::<tsonic_rust_runtime::TsonicError>::new();
     let root = std::env::current_dir().unwrap().join(".temp").join(format!(
         "tsonic-rust-fs-promises-{}",
         SystemTime::now()
@@ -274,55 +277,118 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap();
     assert_eq!(readable_web_with_options.chunks().len(), 1);
     assert!(!handle.writable_web_stream().closed());
-    let mut read_stream = handle.create_read_stream().unwrap();
-    assert!(read_stream.read().unwrap().is_some());
-    let mut ranged_stream = handle
-        .create_read_stream_with_options(fs_promises::ReadStreamOptions {
-            start: Some(0),
-            end: Some(4),
-            ..fs_promises::ReadStreamOptions::default()
-        })
-        .unwrap();
-    assert_eq!(
-        ranged_stream
-            .read()
-            .unwrap()
-            .unwrap()
-            .to_string(Some("utf8"))
-            .unwrap(),
-        "hello"
-    );
-    let mut write_stream = handle
-        .create_write_stream_with_options(fs_promises::WriteStreamOptions {
-            start: Some(14),
-            ..fs_promises::WriteStreamOptions::default()
-        })
-        .unwrap();
-    assert!(write_stream
-        .write(Buffer::from_string("stream", Some("utf8")).unwrap())
-        .unwrap());
-    write_stream.close().unwrap();
-    let mut write_stream_with_options = handle
-        .create_write_stream_with_options(fs_promises::WriteStreamOptions::default())
-        .unwrap();
-    assert!(!write_stream_with_options.closed());
-    write_stream_with_options.close().unwrap();
-    assert_eq!(
-        handle.read_lines("utf8").unwrap(),
-        vec!["hello rust!!?#stream".to_string()]
-    );
-    let pulled = handle.pull(4).unwrap().to_vec();
-    assert!(pulled.len() >= 3);
-    let pulled_with_options = handle
-        .pull_with_options(fs_promises::PullOptions {
-            start: Some(6),
-            chunk_size: 2,
-            limit: Some(4),
-            ..fs_promises::PullOptions::default()
-        })
-        .unwrap()
-        .to_vec();
-    assert_eq!(pulled_with_options.len(), 2);
+    tsonic_rust_node::block_on_with_contexts(
+        async {
+            let read_stream = handle
+                .create_read_stream(&background, readable_tasks.handle())
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while background.has_pending_work() || readable_tasks.has_pending_work() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "native stream completion"
+                );
+                background.poll().unwrap();
+                readable_tasks.poll().unwrap();
+                std::thread::yield_now();
+            }
+            assert!(read_stream.read().unwrap().is_some());
+            let ranged_stream = handle
+                .create_read_stream_with_options(
+                    &background,
+                    readable_tasks.handle(),
+                    fs_promises::ReadStreamOptions {
+                        start: Some(0),
+                        end: Some(4),
+                        ..fs_promises::ReadStreamOptions::default()
+                    },
+                )
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while background.has_pending_work() || readable_tasks.has_pending_work() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "native stream completion"
+                );
+                background.poll().unwrap();
+                readable_tasks.poll().unwrap();
+                std::thread::yield_now();
+            }
+            assert_eq!(
+                ranged_stream
+                    .read()
+                    .unwrap()
+                    .unwrap()
+                    .to_string(Some("utf8"))
+                    .unwrap(),
+                "hello"
+            );
+            let write_stream = handle
+                .create_write_stream_with_options(
+                    &background,
+                    fs_promises::WriteStreamOptions {
+                        start: Some(14),
+                        ..fs_promises::WriteStreamOptions::default()
+                    },
+                )
+                .unwrap();
+            assert!(write_stream
+                .write(Buffer::from_string("stream", Some("utf8")).unwrap())
+                .unwrap());
+            write_stream.close().unwrap();
+            let write_stream_with_options = handle
+                .create_write_stream_with_options(
+                    &background,
+                    fs_promises::WriteStreamOptions::default(),
+                )
+                .unwrap();
+            assert!(!write_stream_with_options.closed());
+            write_stream_with_options.close().unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while background.has_pending_work() || readable_tasks.has_pending_work() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "native stream completion"
+                );
+                background.poll().unwrap();
+                readable_tasks.poll().unwrap();
+                std::thread::yield_now();
+            }
+            assert_eq!(
+                handle.read_lines("utf8").unwrap(),
+                vec!["hello rust!!?#stream".to_string()]
+            );
+            let pulled = handle
+                .pull(readable_tasks.handle(), 4)
+                .unwrap()
+                .to_vec()
+                .unwrap();
+            assert!(pulled.len() >= 3);
+            let pulled_with_options = handle
+                .pull_with_options(
+                    readable_tasks.handle(),
+                    fs_promises::PullOptions {
+                        start: Some(6),
+                        chunk_size: 2,
+                        limit: Some(4),
+                        ..fs_promises::PullOptions::default()
+                    },
+                )
+                .unwrap()
+                .to_vec()
+                .unwrap();
+            assert_eq!(pulled_with_options.len(), 2);
+        },
+        tsonic_rust_runtime::dispatch::prepend(
+            &background,
+            tsonic_rust_runtime::dispatch::prepend(
+                &readable_tasks,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(
+                ),
+            ),
+        ),
+    )
+    .unwrap();
     let mut writer = handle.writer();
     writer.seek(10);
     assert_eq!(writer.write_string("?#", "utf8").unwrap(), 2);
@@ -558,22 +624,36 @@ fn fs_promises_exposes_blocking_now_variants_with_node_shapes() {
         .unwrap()
         .iter()
         .any(|path| path.ends_with("a.txt")));
-    let mut watcher = fs_promises::watch_with_options(
-        &file_text,
-        fs_promises::WatchOptions {
-            persistent: false,
-            ..fs_promises::WatchOptions::default()
+    let watchers = fs_promises::Watchers::<tsonic_rust_runtime::TsonicError>::new();
+    tsonic_rust_node::run_entry_with_contexts(
+        || {
+            let watcher = fs_promises::watch_with_options(
+                &watchers,
+                &file_text,
+                fs_promises::WatchOptions {
+                    persistent: false,
+                    ..fs_promises::WatchOptions::default()
+                },
+            )
+            .unwrap();
+            assert!(!watcher.has_ref());
+            watcher.close();
+            assert!(watcher.closed());
+            let stat_watcher = fs_promises::watch_file_with_options(
+                &watchers,
+                &file_text,
+                fs_promises::WatchFileOptions::default(),
+            )
+            .unwrap();
+            assert!(stat_watcher.has_ref());
+            stat_watcher.close();
         },
+        tsonic_rust_runtime::dispatch::prepend(
+            &watchers,
+            tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new(),
+        ),
     )
     .unwrap();
-    assert!(!watcher.has_ref());
-    watcher.close();
-    assert!(watcher.closed());
-    let mut stat_watcher =
-        fs_promises::watch_file_with_options(&file_text, fs_promises::WatchFileOptions::default())
-            .unwrap();
-    assert!(stat_watcher.has_ref());
-    stat_watcher.close();
     let file_change = fs_promises::FileChangeInfo {
         event_type: "change".to_string(),
         filename: Some("a.txt".to_string()),

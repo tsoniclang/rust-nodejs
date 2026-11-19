@@ -764,7 +764,7 @@ NODE-HTTP-INCOMING-NEW	http	IncomingMessage.new	implemented	N64	tsonic_rust_node
 NODE-HTTP-INCOMING-METHOD	http	IncomingMessage.method	implemented	N64	tsonic_rust_node::http::IncomingMessage::method	NODE-HTTP-002	method field is explicit carrier data
 NODE-HTTP-INCOMING-URL	http	IncomingMessage.url	implemented	N64	tsonic_rust_node::http::IncomingMessage::url	NODE-HTTP-002	URL field is explicit carrier data
 NODE-HTTP-INCOMING-HEADERS	http	IncomingMessage.headers	implemented	N46	tsonic_rust_node::http::IncomingMessage::headers	NODE-HTTP-003	header map is explicit lowercase carrier data
-NODE-HTTP-INCOMING-RAW-HEADERS	http	IncomingMessage.rawHeaders	implemented	N46	tsonic_rust_node::http::IncomingMessage::raw_headers	NODE-HTTP-003	raw header vector preserves input spelling order
+NODE-HTTP-INCOMING-RAW-HEADERS	http	IncomingMessage.rawHeaders	later	N46	n/a	LATER-NODE-HTTP-RAW-HEADERS	Original cross-name wire order is not available from both native transports; grouped reconstruction is forbidden
 NODE-HTTP-INCOMING-TRAILERS	http	IncomingMessage.trailers	implemented	N64	tsonic_rust_node::http::IncomingMessage::trailers	NODE-HTTP-002	trailer map is explicit carrier data
 NODE-HTTP-INCOMING-RAW-TRAILERS	http	IncomingMessage.rawTrailers	implemented	N64	tsonic_rust_node::http::IncomingMessage::raw_trailers	NODE-HTTP-002	raw trailer vector is explicit carrier data
 NODE-HTTP-INCOMING-VERSION	http	IncomingMessage.httpVersion	implemented	N64	tsonic_rust_node::http::IncomingMessage::http_version	NODE-HTTP-002	HTTP version string is explicit carrier data

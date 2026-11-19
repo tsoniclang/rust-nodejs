@@ -1,34 +1,41 @@
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::{BTreeMap, VecDeque};
+use std::num::{NonZeroU64, NonZeroUsize};
+use std::rc::{Rc, Weak};
 use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::{Arc, Mutex, OnceLock};
 
-const BACKGROUND_WORKER_COUNT: usize = 4;
+use tsonic_rust_runtime::dispatch::{DispatchEpoch, DispatchOwner};
+use tsonic_rust_runtime::dispatch_queue::{TaskBudget, TaskReservation, TaskTicket};
+use tsonic_rust_runtime::TsonicError;
+
+mod worker;
+pub(crate) use worker::run;
+
 const MAX_PENDING_BACKGROUND_WORK: usize = 16 * 1024;
 
-type BackgroundWork = Box<dyn FnOnce() + Send>;
-
-trait BackgroundCompletion {
-    fn complete(self: Box<Self>) -> tsonic_rust_runtime::TsonicResult<()>;
+trait BackgroundCompletion<TError> {
+    fn complete(self: Box<Self>) -> Result<(), TError>;
 }
 
-struct TypedBackgroundCompletion<T, F> {
-    result_receiver: Receiver<crate::NodeResult<T>>,
-    callback: F,
+struct TypedBackgroundCompletion<TResult, TCallback> {
+    result_receiver: Receiver<crate::NodeResult<TResult>>,
+    callback: TCallback,
 }
 
-impl<T, F> BackgroundCompletion for TypedBackgroundCompletion<T, F>
+impl<TResult, TCallback, TError> BackgroundCompletion<TError>
+    for TypedBackgroundCompletion<TResult, TCallback>
 where
-    T: Send + 'static,
-    F: FnOnce(crate::NodeResult<T>) -> tsonic_rust_runtime::TsonicResult<()> + 'static,
+    TResult: Send + 'static,
+    TCallback: FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+    TError: From<crate::NodeError>,
 {
-    fn complete(self: Box<Self>) -> tsonic_rust_runtime::TsonicResult<()> {
+    fn complete(self: Box<Self>) -> Result<(), TError> {
         let Self {
             result_receiver,
             callback,
         } = *self;
         let result = result_receiver.recv().map_err(|_| {
-            tsonic_rust_runtime::TsonicError::from(crate::NodeError::new(
+            TError::from(crate::NodeError::new(
                 "ERR_NODE_BACKGROUND_RESULT",
                 "background work completed without its exact typed result",
             ))
@@ -37,345 +44,402 @@ where
     }
 }
 
-struct WorkRequest {
-    work: BackgroundWork,
-}
-
 struct WorkCompletion {
-    id: u64,
+    id: TaskTicket,
 }
 
-struct BackgroundRuntime {
-    work_sender: SyncSender<WorkRequest>,
+struct PendingCompletion<TError> {
+    reservation: TaskReservation,
+    callback: Box<dyn BackgroundCompletion<TError>>,
 }
 
-struct SourceThreadCompletions {
-    sender: SyncSender<WorkCompletion>,
-    receiver: Receiver<WorkCompletion>,
-    callbacks: BTreeMap<u64, Box<dyn BackgroundCompletion>>,
-    pending: usize,
+struct SourceThreadCompletions<TError> {
+    generation: DispatchEpoch,
+    channel: Option<(SyncSender<WorkCompletion>, Receiver<WorkCompletion>)>,
+    in_flight: BTreeMap<TaskTicket, PendingCompletion<TError>>,
+    ready: VecDeque<(u64, PendingCompletion<TError>)>,
 }
 
-impl SourceThreadCompletions {
+impl<TError> SourceThreadCompletions<TError> {
     fn new() -> Self {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(MAX_PENDING_BACKGROUND_WORK);
         Self {
-            sender,
-            receiver,
-            callbacks: BTreeMap::new(),
-            pending: 0,
+            generation: DispatchEpoch::new(),
+            channel: None,
+            in_flight: BTreeMap::new(),
+            ready: VecDeque::new(),
         }
     }
+
+    fn pending(&self) -> usize {
+        self.in_flight.len() + self.ready.len()
+    }
+
+    fn completion_sender(&mut self) -> SyncSender<WorkCompletion> {
+        self.channel
+            .get_or_insert_with(|| std::sync::mpsc::sync_channel(MAX_PENDING_BACKGROUND_WORK))
+            .0
+            .clone()
+    }
+}
+
+pub struct BackgroundTasks<TError> {
+    source: OnceCell<Rc<RefCell<SourceThreadCompletions<TError>>>>,
+    owner: Cell<Option<DispatchOwner>>,
+}
+
+pub struct BackgroundHandle<TError> {
+    source: Weak<RefCell<SourceThreadCompletions<TError>>>,
+    generation: Option<NonZeroU64>,
+}
+
+impl<TError> Clone for BackgroundHandle<TError> {
+    fn clone(&self) -> Self {
+        Self {
+            source: self.source.clone(),
+            generation: self.generation,
+        }
+    }
+}
+
+impl<TError> Default for BackgroundTasks<TError> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<TError> BackgroundTasks<TError> {
+    pub const fn new() -> Self {
+        Self {
+            source: OnceCell::new(),
+            owner: Cell::new(None),
+        }
+    }
+
+    pub fn has_pending_work(&self) -> bool {
+        self.source
+            .get()
+            .is_some_and(|source| source.borrow().pending() != 0)
+    }
+
+    pub fn handle(&self) -> BackgroundHandle<TError> {
+        let source = self.scheduling_source();
+        BackgroundHandle {
+            source: Rc::downgrade(source),
+            generation: source.borrow().generation.capture(),
+        }
+    }
+
+    fn scheduling_source(&self) -> &Rc<RefCell<SourceThreadCompletions<TError>>> {
+        self.source.get_or_init(|| {
+            let source = SourceThreadCompletions::new();
+            if let Some(owner) = self.owner.get() {
+                assert!(
+                    source.generation.enter(owner),
+                    "a fresh native completion source accepts its owner"
+                );
+            }
+            Rc::new(RefCell::new(source))
+        })
+    }
+}
+
+impl<TError: From<crate::NodeError>> BackgroundTasks<TError> {
+    pub fn spawn<TResult>(
+        &self,
+        work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
+        completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+    ) -> crate::NodeResult<()>
+    where
+        TResult: Send + 'static,
+    {
+        let reservation = reserve_background_task()?;
+        spawn_on_source(self.scheduling_source(), reservation, work, completion)
+    }
+
+    pub fn poll(&self) -> Result<bool, TError> {
+        self.source
+            .get()
+            .map_or(Ok(false), |source| poll_completions(source))
+    }
+}
+
+impl<TError: From<crate::NodeError>> BackgroundHandle<TError> {
+    pub fn spawn<TResult>(
+        &self,
+        work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
+        completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+    ) -> crate::NodeResult<()>
+    where
+        TResult: Send + 'static,
+    {
+        let source = self.source.upgrade().ok_or_else(|| {
+            crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            )
+        })?;
+        let admitted = {
+            let source = source.borrow();
+            source.generation.is_bound() && source.generation.matches_epoch(self.generation)
+        };
+        if !admitted {
+            return Err(crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            ));
+        }
+        let reservation = reserve_background_task()?;
+        spawn_on_source(&source, reservation, work, completion)
+    }
+}
+
+fn reserve_background_task() -> crate::NodeResult<TaskReservation> {
+    tsonic_rust_js::event_loop::require_dispatch_owner();
+    background_task_budget()
+        .reserve()
+        .map_err(|error| crate::NodeError::new("ERR_NODE_BACKGROUND_WORK_LIMIT", error.to_string()))
+}
+
+fn spawn_on_source<TResult, TError: From<crate::NodeError>>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+    reservation: TaskReservation,
+    work: impl FnOnce() -> crate::NodeResult<TResult> + Send + 'static,
+    completion: impl FnOnce(crate::NodeResult<TResult>) -> Result<(), TError> + 'static,
+) -> crate::NodeResult<()>
+where
+    TResult: Send + 'static,
+{
+    let owner = tsonic_rust_js::event_loop::require_dispatch_owner();
+    let wake = tsonic_rust_js::event_loop::dispatch_handle().map_err(crate::NodeError::from)?;
+    let id = reservation.ticket();
+    let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
+    let completion_sender = {
+        let mut source = source.borrow_mut();
+        if !source.generation.owns(owner) {
+            return Err(crate::NodeError::new(
+                "ERR_NODE_BACKGROUND_CLOSED",
+                "background callback owner has been released",
+            ));
+        }
+        source.in_flight.insert(
+            id,
+            PendingCompletion {
+                reservation,
+                callback: Box::new(TypedBackgroundCompletion {
+                    result_receiver,
+                    callback: completion,
+                }),
+            },
+        );
+        source.completion_sender()
+    };
+    let submitted = worker::submit(move || {
+        let result = worker::execute(work);
+        let _ = result_sender.send(result);
+        let _ = completion_sender.send(WorkCompletion { id });
+        let _ = wake.wake();
+    });
+    if submitted.is_err() {
+        let removed = source.borrow_mut().in_flight.remove(&id);
+        drop(removed);
+    }
+    submitted
 }
 
 thread_local! {
-    static SOURCE_THREAD_COMPLETIONS: std::cell::RefCell<SourceThreadCompletions> =
-        std::cell::RefCell::new(SourceThreadCompletions::new());
+    static NEXT_COMPLETION_TICKET: Cell<u64> = const { Cell::new(0) };
+    static BACKGROUND_TASK_BUDGET: OnceCell<TaskBudget> = const { OnceCell::new() };
+    static SOURCE_THREAD_COMPLETIONS: BackgroundTasks<TsonicError> =
+        const { BackgroundTasks::new() };
 }
 
-static RUNTIME: OnceLock<BackgroundRuntime> = OnceLock::new();
-static RUNTIME_INITIALIZATION: Mutex<()> = Mutex::new(());
-static NEXT_WORK_ID: AtomicU64 = AtomicU64::new(1);
-
-pub(crate) fn spawn<T>(
-    work: impl FnOnce() -> crate::NodeResult<T> + Send + 'static,
-    completion: impl FnOnce(crate::NodeResult<T>) -> tsonic_rust_runtime::TsonicResult<()> + 'static,
-) -> crate::NodeResult<()>
-where
-    T: Send + 'static,
-{
-    let runtime = runtime()?;
-    let wake = crate::readiness::waker()?;
-    let id = NEXT_WORK_ID.fetch_add(1, Ordering::Relaxed);
-    if id == u64::MAX {
-        return Err(crate::NodeError::new(
-            "ERR_NODE_BACKGROUND_WORK_LIMIT",
-            "background work identity space is exhausted",
-        ));
-    }
-    let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(1);
-    let completion_sender = SOURCE_THREAD_COMPLETIONS.with(|source| {
-        let mut source = source.borrow_mut();
-        if source.callbacks.len() >= MAX_PENDING_BACKGROUND_WORK {
-            return Err(crate::NodeError::new(
-                "ERR_NODE_BACKGROUND_WORK_LIMIT",
-                "pending background work exceeds the finite limit",
-            ));
-        }
-        source.callbacks.insert(
-            id,
-            Box::new(TypedBackgroundCompletion {
-                result_receiver,
-                callback: completion,
-            }),
-        );
-        Ok(source.sender.clone())
-    })?;
-
-    let request = WorkRequest {
-        work: Box::new(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
-                .unwrap_or_else(|_| {
-                    Err(crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_PANIC",
-                        "background provider work panicked",
-                    ))
-                });
-            let _ = result_sender.send(result);
-            let _ = completion_sender.send(WorkCompletion { id });
-            let _ = wake.wake();
-        }),
-    };
-    match runtime.work_sender.try_send(request) {
-        Ok(()) => {
-            SOURCE_THREAD_COMPLETIONS.with(|source| {
-                source.borrow_mut().pending += 1;
-            });
-            Ok(())
-        }
-        Err(error) => {
-            SOURCE_THREAD_COMPLETIONS.with(|source| {
-                source.borrow_mut().callbacks.remove(&id);
-            });
-            Err(crate::NodeError::new(
-                "ERR_NODE_BACKGROUND_WORK_LIMIT",
-                match error {
-                    std::sync::mpsc::TrySendError::Full(_) => {
-                        "background work queue exceeds the finite limit"
-                    }
-                    std::sync::mpsc::TrySendError::Disconnected(_) => {
-                        "background worker pool is unavailable"
-                    }
-                },
-            ))
-        }
-    }
-}
-
-pub(crate) async fn run<T>(
-    work: impl FnOnce() -> crate::NodeResult<T> + Send + 'static,
-) -> crate::NodeResult<T>
-where
-    T: Send + 'static,
-{
-    struct Completion<T> {
-        result: Option<crate::NodeResult<T>>,
-        waker: Option<std::task::Waker>,
-    }
-    let completion = Arc::new(Mutex::new(Completion {
-        result: None,
-        waker: None,
-    }));
-    let worker_completion = Arc::clone(&completion);
-    let request = WorkRequest {
-        work: Box::new(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
-                .unwrap_or_else(|_| {
-                    Err(crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_PANIC",
-                        "background provider work panicked",
-                    ))
-                });
-            let waker = {
-                let mut completion = crate::sync::lock(&worker_completion);
-                completion.result = Some(result);
-                completion.waker.take()
-            };
-            if let Some(waker) = waker {
-                waker.wake();
-            }
-        }),
-    };
-    runtime()?.work_sender.try_send(request).map_err(|error| {
-        crate::NodeError::new(
-            "ERR_NODE_BACKGROUND_WORK_LIMIT",
-            match error {
-                std::sync::mpsc::TrySendError::Full(_) => {
-                    "background work queue exceeds the finite limit"
-                }
-                std::sync::mpsc::TrySendError::Disconnected(_) => {
-                    "background worker pool is unavailable"
-                }
-            },
-        )
-    })?;
-    std::future::poll_fn(|context| {
-        let mut completion = crate::sync::lock(&completion);
-        match completion.result.take() {
-            Some(result) => std::task::Poll::Ready(result),
-            None => {
-                if !completion
-                    .waker
-                    .as_ref()
-                    .is_some_and(|waker| waker.will_wake(context.waker()))
-                {
-                    completion.waker = Some(context.waker().clone());
-                }
-                std::task::Poll::Pending
-            }
-        }
-    })
-    .await
-}
-
-pub(crate) fn poll() -> tsonic_rust_runtime::TsonicResult<bool> {
-    let callbacks = SOURCE_THREAD_COMPLETIONS.with(|source| {
-        let mut source = source.borrow_mut();
-        let mut completed = Vec::new();
-        loop {
-            match source.receiver.try_recv() {
-                Ok(value) => completed.push(value),
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    return Err(tsonic_rust_runtime::TsonicError::from(
-                        crate::NodeError::new(
-                            "ERR_NODE_BACKGROUND_WORKER",
-                            "background completion channel is unavailable",
-                        ),
-                    ));
-                }
-            }
-        }
-        if completed
-            .iter()
-            .any(|completion| !source.callbacks.contains_key(&completion.id))
-            || source.pending < completed.len()
-        {
-            return Err(tsonic_rust_runtime::TsonicError::from(
-                crate::NodeError::new(
-                    "ERR_NODE_BACKGROUND_RESULT",
-                    "background work completed without its exact callback",
-                ),
-            ));
-        }
-        source.pending -= completed.len();
-        completed
-            .into_iter()
-            .map(|completion| {
-                source.callbacks.remove(&completion.id).ok_or_else(|| {
-                    tsonic_rust_runtime::TsonicError::from(crate::NodeError::new(
-                        "ERR_NODE_BACKGROUND_RESULT",
-                        "background work completed without its exact callback",
-                    ))
-                })
+fn background_task_budget() -> TaskBudget {
+    BACKGROUND_TASK_BUDGET.with(|budget| {
+        budget
+            .get_or_init(|| {
+                TaskBudget::new(
+                    NonZeroUsize::new(MAX_PENDING_BACKGROUND_WORK)
+                        .expect("finite native background task limit"),
+                )
             })
-            .collect::<tsonic_rust_runtime::TsonicResult<Vec<_>>>()
-    })?;
-    let did_work = !callbacks.is_empty();
-    for callback in callbacks {
-        callback.complete()?;
+            .clone()
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn poll() -> Result<bool, TsonicError> {
+    SOURCE_THREAD_COMPLETIONS.with(BackgroundTasks::poll)
+}
+
+pub(crate) fn has_pending_work() -> bool {
+    SOURCE_THREAD_COMPLETIONS.with(BackgroundTasks::has_pending_work)
+}
+
+fn poll_completions<TError: From<crate::NodeError>>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+) -> Result<bool, TError> {
+    let boundary = publish_completions(source).map_err(TError::from)?;
+    let Some(boundary) = boundary else {
+        return Ok(false);
+    };
+    let mut did_work = false;
+    loop {
+        if !poll_next_completion(source, boundary)? {
+            break;
+        }
+        did_work = true;
     }
     Ok(did_work)
 }
 
-pub(crate) fn has_pending_work() -> bool {
-    SOURCE_THREAD_COMPLETIONS.with(|source| source.borrow().pending != 0)
+fn poll_next_completion<TError: From<crate::NodeError>>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+    boundary: u64,
+) -> Result<bool, TError> {
+    let callback = {
+        let mut source = source.borrow_mut();
+        if source
+            .ready
+            .front()
+            .is_some_and(|(ticket, _)| *ticket <= boundary)
+        {
+            source.ready.pop_front().map(|(_, callback)| callback)
+        } else {
+            None
+        }
+    };
+    let Some(PendingCompletion {
+        reservation,
+        callback,
+    }) = callback
+    else {
+        return Ok(false);
+    };
+    drop(reservation);
+    callback.complete()?;
+    Ok(true)
 }
 
-fn runtime() -> crate::NodeResult<&'static BackgroundRuntime> {
-    if let Some(runtime) = RUNTIME.get() {
-        return Ok(runtime);
-    }
-    let _initialization = crate::sync::lock(&RUNTIME_INITIALIZATION);
-    if let Some(runtime) = RUNTIME.get() {
-        return Ok(runtime);
-    }
-    let (work_sender, work_receiver) =
-        std::sync::mpsc::sync_channel::<WorkRequest>(MAX_PENDING_BACKGROUND_WORK);
-    let shared_receiver = Arc::new(Mutex::new(work_receiver));
-    for worker_index in 0..BACKGROUND_WORKER_COUNT {
-        let work_receiver = Arc::clone(&shared_receiver);
-        std::thread::Builder::new()
-            .name(format!("tsonic-node-worker-{worker_index}"))
-            .spawn(move || worker_loop(work_receiver))
-            .map_err(|error| {
-                crate::NodeError::new("ERR_NODE_BACKGROUND_WORKER", error.to_string())
-            })?;
-    }
-    let created = BackgroundRuntime { work_sender };
-    let _ = RUNTIME.set(created);
-    RUNTIME.get().ok_or_else(|| {
-        crate::NodeError::new(
-            "ERR_NODE_BACKGROUND_WORKER",
-            "background worker pool initialization failed",
-        )
-    })
-}
-
-fn worker_loop(work_receiver: Arc<Mutex<std::sync::mpsc::Receiver<WorkRequest>>>) {
+fn publish_completions<TError>(
+    source: &RefCell<SourceThreadCompletions<TError>>,
+) -> crate::NodeResult<Option<u64>> {
+    let mut source = source.borrow_mut();
     loop {
-        let request = {
-            let receiver = crate::sync::lock(&work_receiver);
-            receiver.recv()
+        let Some((_, receiver)) = &source.channel else {
+            break;
         };
-        let Ok(request) = request else {
-            return;
-        };
-        (request.work)();
+        match receiver.try_recv() {
+            Ok(value) => {
+                let ticket = NEXT_COMPLETION_TICKET.with(|sequence| {
+                    let ticket = sequence.get();
+                    let next = ticket.checked_add(1).ok_or_else(|| {
+                        crate::NodeError::new(
+                            "ERR_NODE_BACKGROUND_WORK_LIMIT",
+                            "background ready ticket range is exhausted",
+                        )
+                    })?;
+                    sequence.set(next);
+                    Ok::<_, crate::NodeError>(ticket)
+                })?;
+                let callback = source.in_flight.remove(&value.id).ok_or_else(|| {
+                    crate::NodeError::new(
+                        "ERR_NODE_BACKGROUND_RESULT",
+                        "background work completed without its exact callback",
+                    )
+                })?;
+                source.ready.push_back((ticket, callback));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err(crate::NodeError::new(
+                    "ERR_NODE_BACKGROUND_WORKER",
+                    "background completion channel is unavailable",
+                ));
+            }
+        }
     }
+    Ok(source.ready.back().map(|(ticket, _)| *ticket))
+}
+
+impl<TError: From<crate::NodeError>> tsonic_rust_runtime::dispatch::DispatchContexts
+    for BackgroundTasks<TError>
+{
+    type Error = TError;
+    type Frontier = Option<u64>;
+
+    fn enter(&self, owner: DispatchOwner) -> bool {
+        if !owner.claim(&self.owner) {
+            return false;
+        }
+        self.source
+            .get()
+            .is_none_or(|source| source.borrow().generation.enter(owner))
+    }
+
+    fn close(&self, owner: DispatchOwner) {
+        if !owner.release(&self.owner) {
+            return;
+        }
+        if let Some(source) = self.source.get() {
+            let retired = {
+                let mut source = source.borrow_mut();
+                if !source.generation.close(owner) {
+                    return;
+                }
+                (
+                    source.channel.take(),
+                    std::mem::take(&mut source.in_flight),
+                    std::mem::take(&mut source.ready),
+                )
+            };
+            drop(retired);
+        }
+    }
+
+    fn prepare(
+        &self,
+        phase: tsonic_rust_runtime::dispatch::DispatchPhase,
+    ) -> Result<Self::Frontier, TError> {
+        if phase != crate::phases::BACKGROUND {
+            return Ok(None);
+        }
+        self.source.get().map_or(Ok(None), |source| {
+            publish_completions(source).map_err(TError::from)
+        })
+    }
+
+    fn next_ready(&self, frontier: &Self::Frontier) -> Option<u64> {
+        let boundary = (*frontier)?;
+        self.source.get().and_then(|source| {
+            source
+                .borrow()
+                .ready
+                .front()
+                .and_then(|(ticket, _)| (*ticket <= boundary).then_some(*ticket))
+        })
+    }
+
+    fn poll_next(&self, frontier: &Self::Frontier) -> Result<bool, TError> {
+        match (self.source.get(), frontier) {
+            (Some(source), Some(boundary)) => poll_next_completion(source, *boundary),
+            _ => Ok(false),
+        }
+    }
+
+    fn has_work(&self) -> bool {
+        self.has_pending_work()
+    }
+
+    fn next_delay(&self) -> Option<std::time::Duration> {
+        None
+    }
+}
+
+pub(crate) fn with_default<TValue>(
+    callback: impl FnOnce(&BackgroundTasks<TsonicError>) -> TValue,
+) -> TValue {
+    SOURCE_THREAD_COMPLETIONS.with(callback)
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn asynchronous_work_does_not_block_the_polling_thread() {
-        use std::future::Future;
-        use std::task::{Context, Poll, Wake, Waker};
-        struct Notification(std::sync::mpsc::SyncSender<()>);
-        impl Wake for Notification {
-            fn wake(self: std::sync::Arc<Self>) {
-                let _ = self.0.try_send(());
-            }
-        }
-        let (release, blocked) = std::sync::mpsc::sync_channel(1);
-        let (notify, notified) = std::sync::mpsc::sync_channel(1);
-        let wake = Waker::from(std::sync::Arc::new(Notification(notify)));
-        let mut context = Context::from_waker(&wake);
-        let mut future = std::pin::pin!(super::run(move || {
-            blocked.recv_timeout(Duration::from_secs(3)).unwrap();
-            Ok(42)
-        }));
-        assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
-        release.send(()).unwrap();
-        notified.recv_timeout(Duration::from_secs(3)).unwrap();
-        assert!(matches!(
-            future.as_mut().poll(&mut context),
-            Poll::Ready(Ok(42))
-        ));
-    }
-
-    #[test]
-    fn completions_return_to_the_exact_source_thread() {
-        let threads = [11_u32, 29_u32].map(|expected| {
-            std::thread::spawn(move || {
-                let observed = Rc::new(Cell::new(None));
-                let completion_observed = Rc::clone(&observed);
-                super::spawn(
-                    move || Ok(expected),
-                    move |result| {
-                        completion_observed.set(Some(
-                            result.map_err(tsonic_rust_runtime::TsonicError::from)?,
-                        ));
-                        Ok(())
-                    },
-                )
-                .unwrap();
-
-                let deadline = Instant::now() + Duration::from_secs(5);
-                while super::has_pending_work() && Instant::now() < deadline {
-                    super::poll().unwrap();
-                    std::thread::yield_now();
-                }
-                assert!(!super::has_pending_work());
-                assert_eq!(observed.get(), Some(expected));
-            })
-        });
-        for thread in threads {
-            thread.join().unwrap();
-        }
-    }
-}
+mod tests;

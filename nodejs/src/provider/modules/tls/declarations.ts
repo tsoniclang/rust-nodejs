@@ -3,6 +3,7 @@ import { rustSourcePrimitiveTargetType, rustOptionTargetType } from "@tsonic/tar
 import { booleanType, numberType, stringArrayType, stringType, undefinedType, voidType } from "../../model/source-types.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { nodeBackgroundInput, nodeTlsInput } from "../../model/dispatch.js";
 import { tlsConnectOptionsCarrier, tlsServerCarrier, tlsServerOptionsCarrier, tlsSocketCallbackCarrier, tlsSocketCarrier } from "./carriers.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
@@ -161,7 +162,7 @@ export function tlsModule(): RustProviderModuleDefinition {
 
 export function tlsRows(): readonly RustProviderOperationDefinition[] {
   const mutableSocket: RustTargetTypeRef = { kind: "reference", referent: tlsSocketCarrier, mutable: true };
-  const mutableServer: RustTargetTypeRef = { kind: "reference", referent: tlsServerCarrier, mutable: true };
+  const sharedServer: RustTargetTypeRef = { kind: "reference", referent: tlsServerCarrier, mutable: false };
   return [
     ...optionRows(connectOptionsId, tlsConnectOptionsCarrier, [
       ["host", "host", rustOptionTargetType(stringCarrier)],
@@ -187,6 +188,7 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_tls::connect", argModes: ["value"] },
       resultCarrier: tlsSocketCarrier,
       parameterCarriers: [tlsConnectOptionsCarrier],
+      dispatchInputs: [nodeBackgroundInput],
       ...providerNativeFallibility,
     },
     {
@@ -196,6 +198,7 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_tls::connect_callable", argModes: ["value", "value"] },
       resultCarrier: tlsSocketCarrier,
       parameterCarriers: [tlsConnectOptionsCarrier, emptyCallbackCarrier],
+      dispatchInputs: [nodeBackgroundInput],
       ...providerNativeFallibility,
     },
     {
@@ -204,6 +207,7 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_tls::create_server", argModes: ["value", "value"] },
       resultCarrier: tlsServerCarrier,
       parameterCarriers: [tlsServerOptionsCarrier, tlsSocketCallbackCarrier],
+      dispatchInputs: [nodeTlsInput, { ...nodeBackgroundInput, targetArgumentIndex: 1 }],
       ...providerNativeFallibility,
     },
     socketMethod("write", "buffer", "write_buffer", [
@@ -221,11 +225,11 @@ export function tlsRows(): readonly RustProviderOperationDefinition[] {
     socketProperty("alpnProtocol", "alpn_protocol", rustOptionTargetType(stringCarrier)),
     socketProperty("bytesRead", "bytes_read", uint64Carrier),
     socketProperty("bytesWritten", "bytes_written", uint64Carrier),
-    { ...serverMethod("listen", "port,callback", "listen_default_host_callable", [{ kind: "type-parameter", identity: "node:tls:numeric:Port", name: "Port" }, emptyCallbackCarrier], ["value", "value"], mutableServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:tls:numeric:Port", sourceName: "Port" }] },
-    { ...serverMethod("listen", "port,host,callback", "listen_callable", [{ kind: "type-parameter", identity: "node:tls:numeric:Port", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], mutableServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:tls:numeric:Port", sourceName: "Port" }] },
+    { ...serverMethod("listen", "port,callback", "listen_default_host_callable", [{ kind: "type-parameter", identity: "node:tls:numeric:Port", name: "Port" }, emptyCallbackCarrier], ["value", "value"], sharedServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:tls:numeric:Port", sourceName: "Port" }] },
+    { ...serverMethod("listen", "port,host,callback", "listen_callable", [{ kind: "type-parameter", identity: "node:tls:numeric:Port", name: "Port" }, stringCarrier, emptyCallbackCarrier], ["value", "ref", "value"], sharedServer, true), genericParameters: [{ kind: "type", targetIdentity: "node:tls:numeric:Port", sourceName: "Port" }] },
     serverMethod("close", undefined, "close", [], [], unitCarrier, false),
-    serverMethod("ref", undefined, "ref_chain", [], [], mutableServer, false),
-    serverMethod("unref", undefined, "unref_chain", [], [], mutableServer, false),
+    serverMethod("ref", undefined, "ref_chain", [], [], sharedServer, false),
+    serverMethod("unref", undefined, "unref_chain", [], [], sharedServer, false),
     {
       exportId: serverId,
       memberId: `${serverId}.listening`,
@@ -360,7 +364,6 @@ function serverMethod(
       form: "receiver-method",
       name,
       ...(argModes.length === 0 ? {} : { argModes }),
-      mutatesReceiver: true,
     },
     resultCarrier,
     receiverCarrier: tlsServerCarrier,

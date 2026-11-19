@@ -1,0 +1,79 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+import { compileRust } from "../../../../tsonic-rust/test/helpers/rust-session.mjs";
+import { runCargo, validateGeneratedProject, writeGeneratedProject } from "../../../../tsonic-rust/test/helpers/cargo-projects.mjs";
+import { nativeNetworkCompletionSource, nativeNetworkFailureSource, nativeNetworkNoDemandSource } from "../../../../tsonic/test/fixtures/native-network-contexts.mjs";
+import { createTsonicPlugin } from "../../../dist/index.js";
+
+function compile(source, outputType = "bin") {
+  const { result } = compileRust({ surfaces: ["js"], capabilities: [createTsonicPlugin()],
+    target: { id: "rust", options: { outputType, crateName: "native_network_context" } },
+    files: { "index.ts": source },
+  });
+  assert.equal(result.diagnostics.length, 0, result.diagnostics.slice(0, 6).map(row => row.message.slice(0, 256)).join("\n"));
+  return result;
+}
+
+test("generated native Node driver consumes the exact native network root", { timeout: 300_000 }, () => {
+  const result = compile(`${nativeNetworkCompletionSource}\nmain();\n`);
+  const output = validateGeneratedProject("native-network-context", result.artifacts, { run: true });
+  assert.match(output.stdout, /native network completion/u);
+});
+
+test("native network queries require no callback roots", { timeout: 300_000 }, () => {
+  const result = compile(`${nativeNetworkNoDemandSource}\nmain();\n`);
+  assert.equal(result.artifacts.some(row => /pub static dispatch_root_/u.test(row.text)), false,
+    "queries must not manufacture retained callback roots");
+  validateGeneratedProject("native-network-no-demand", result.artifacts, { run: true });
+});
+
+test("original source network failure preserves later native listening callbacks", { timeout: 300_000 }, () => {
+  const result = compile(nativeNetworkFailureSource, "lib");
+  const roots = result.artifacts.filter(row => row.path.endsWith(".rs") && /pub static dispatch_root_/u.test(row.text));
+  assert.equal(roots.length, 1, "one exact component root module");
+  const names = [...roots[0].text.matchAll(/pub static (dispatch_root_\d+):/gu)].map(match => match[1]);
+  assert.equal(names.length, 1, "only the demanded native network root");
+  const directory = writeGeneratedProject("native-network-original-error", result.artifacts);
+  appendFileSync(join(directory, roots[0].path), `
+#[cfg(test)]
+mod retained_source_failure {
+    use tsonic_rust_runtime::ErrorObject;
+    use tsonic_rust_runtime::dispatch::DispatchContexts;
+    #[test]
+    fn original_error_stops_and_preserves_pending_native_listeners() {
+        let mut expected = None;
+        let returned = super::${names[0]}.with(|root| tsonic_rust_node::run_entry_with_contexts(
+            || {
+                crate::initialize();
+                expected = Some(crate::schedule().expect("source registration"));
+            },
+            tsonic_rust_runtime::dispatch::prepend(root,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new())))
+            .expect_err("original source callback must fail");
+        let expected = expected.expect("the source registration completed before dispatch");
+        assert_eq!(returned.source_error().error_identity_key(), expected.error_identity_key());
+        assert_eq!(returned.source_error().error_message(), expected.error_message());
+        assert_eq!(crate::count(), 0.0);
+        super::${names[0]}.with(|root| assert!(!root.has_work()));
+        let fresh = tsonic_rust_node::runtime_tasks::RuntimeTasks::<tsonic_rust_runtime::TsonicError>::new();
+        let delivered = std::rc::Rc::new(std::cell::Cell::new(0));
+        let observed = std::rc::Rc::clone(&delivered);
+        super::${names[0]}.with(|root| tsonic_rust_node::run_entry_with_contexts(
+            || fresh.enqueue(move || { observed.set(observed.get() + 1); Ok(()) }).unwrap(),
+            tsonic_rust_runtime::dispatch::prepend(root, tsonic_rust_runtime::dispatch::prepend(&fresh,
+                tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))))
+            .unwrap();
+        assert_eq!(crate::count(), 0.0);
+        assert_eq!(delivered.get(), 1);
+        assert!(!fresh.has_pending_work());
+        super::${names[0]}.with(|root| assert!(!root.has_work()));
+        assert!(tsonic_rust_js::event_loop::dispatch_owner().is_err());
+    }
+}
+`);
+  for (const args of [["generate-lockfile", "--offline"], ["fmt", "--all"], ["fmt", "--all", "--check"],
+    ["check", "--all-targets", "--locked", "--offline"], ["clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
+    ["test", "--locked", "--offline"]]) runCargo(directory, args);
+});

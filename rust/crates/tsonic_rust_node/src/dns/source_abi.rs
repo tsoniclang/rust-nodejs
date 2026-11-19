@@ -21,89 +21,97 @@ pub async fn reverse_async(address: &str) -> NodeResult<tsonic_rust_js::JsArray<
 }
 
 pub fn lookup_callable<E>(
+    root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, String, u8),
         Result<(), E>,
     >,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
     let hostname = hostname.to_string();
-    crate::background::spawn(
+    root.spawn(
         move || lookup(&hostname),
         move |result| {
-        let arguments = match result {
-            Ok(result) => (None, result.address, result.family),
-            Err(error) => (Some(error), String::new(), 0),
-        };
-        callback
-            .call(arguments)
-            .map_err(crate::error::callback_runtime_error)
-    })
+            let arguments = match result {
+                Ok(result) => (None, result.address, result.family),
+                Err(error) => (Some(error), String::new(), 0),
+            };
+            callback.call(arguments)
+        },
+    )
 }
 
 pub fn resolve4_callable<E>(
+    root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    resolve_addresses_callable(hostname, callback, resolve4)
+    resolve_addresses_callable(root, hostname, callback, resolve4)
 }
 
 pub fn resolve6_callable<E>(
+    root: &crate::background::BackgroundTasks<E>,
     hostname: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    resolve_addresses_callable(hostname, callback, resolve6)
+    resolve_addresses_callable(root, hostname, callback, resolve6)
 }
 
 pub fn reverse_callable<E>(
+    root: &crate::background::BackgroundTasks<E>,
     address: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    resolve_addresses_callable(address, callback, reverse)
+    resolve_addresses_callable(root, address, callback, reverse)
 }
 
 fn resolve_addresses_callable<E>(
+    root: &crate::background::BackgroundTasks<E>,
     input: &str,
     callback: tsonic_rust_runtime::Callable<
+        'static,
         (Option<NodeError>, tsonic_rust_js::JsArray<String>),
         Result<(), E>,
     >,
     resolve: fn(&str) -> NodeResult<Vec<String>>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.to_string();
-    crate::background::spawn(
+    root.spawn(
         move || resolve(&input),
         move |result| {
-        let arguments = match result {
-            Ok(result) => (None, tsonic_rust_js::JsArray::from_dense(result)),
-            Err(error) => (Some(error), tsonic_rust_js::JsArray::new()),
-        };
-        callback
-            .call(arguments)
-            .map_err(crate::error::callback_runtime_error)
-    })
+            let arguments = match result {
+                Ok(result) => (None, tsonic_rust_js::JsArray::from_dense(result)),
+                Err(error) => (Some(error), tsonic_rust_js::JsArray::new()),
+            };
+            callback.call(arguments)
+        },
+    )
 }

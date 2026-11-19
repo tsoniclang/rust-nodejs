@@ -115,20 +115,25 @@ pub fn finalization_unregister() {
         .ok();
 }
 
-pub fn stdout() -> crate::stream::Writable {
+pub fn stdout<E: From<crate::NodeError> + 'static>() -> crate::stream::Writable<E> {
     crate::stream::Writable::stdout()
 }
 
-pub fn stderr() -> crate::stream::Writable {
+pub fn stderr<E: From<crate::NodeError> + 'static>() -> crate::stream::Writable<E> {
     crate::stream::Writable::stderr()
 }
 
-pub fn stdin() -> crate::stream::Readable {
-    crate::stream::Readable::stdin()
+pub fn stdin<E: From<crate::NodeError> + 'static>(
+    roots: &StdinResources<E>,
+    background: &crate::background::BackgroundTasks<E>,
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+) -> crate::NodeResult<crate::stream::Readable<E>> {
+    roots.stream(background, tasks)
 }
 
 pub fn stdin_is_tty() -> bool {
-    false
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal()
 }
 
 pub fn umask(mask: Option<u32>) -> u32 {

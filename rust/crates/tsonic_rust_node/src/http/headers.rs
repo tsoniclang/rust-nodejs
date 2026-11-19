@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
@@ -89,38 +91,237 @@ pub fn validate_header_value(name: &str, value: &str) -> NodeResult<()> {
     Ok(())
 }
 
-pub type IncomingHttpHeaders = BTreeMap<String, String>;
-pub type OutgoingHttpHeaders = BTreeMap<String, String>;
-type HttpListenerMap = BTreeMap<String, Vec<String>>;
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct HeaderStore {
+    names: Vec<String>,
+    values: BTreeMap<String, Vec<String>>,
+}
 
-fn http_add_listener(listeners: &mut HttpListenerMap, event: &str, prepend: bool) {
-    let entry = listeners.entry(event.to_string()).or_default();
-    if prepend {
-        entry.insert(0, event.to_string());
+fn header_lookup_name(name: &str) -> Cow<'_, str> {
+    if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(name.to_ascii_lowercase())
     } else {
-        entry.push(event.to_string());
+        Cow::Borrowed(name)
     }
 }
 
-fn http_remove_listener(listeners: &mut HttpListenerMap, event: &str) {
-    if let Some(values) = listeners.get_mut(event) {
-        values.pop();
+impl HeaderStore {
+    fn append(&mut self, name: &str, values: impl IntoIterator<Item = String>) -> NodeResult<()> {
+        validate_header_name(name)?;
+        let key = name.to_ascii_lowercase();
+        let values = values.into_iter().collect::<Vec<_>>();
+        for value in &values {
+            validate_header_value(name, value)?;
+        }
+        if !self.values.contains_key(&key) {
+            self.names.push(key.clone());
+        }
+        self.values.entry(key).or_default().extend(values);
+        Ok(())
+    }
+
+    fn set(&mut self, name: &str, values: impl IntoIterator<Item = String>) -> NodeResult<()> {
+        validate_header_name(name)?;
+        let key = name.to_ascii_lowercase();
+        let values = values.into_iter().collect::<Vec<_>>();
         if values.is_empty() {
-            listeners.remove(event);
+            return Err(NodeError::new(
+                "ERR_HTTP_INVALID_HEADER_VALUE",
+                "a response header must contain at least one value",
+            ));
+        }
+        for value in &values {
+            validate_header_value(name, value)?;
+        }
+        if !self.values.contains_key(&key) {
+            self.names.push(key.clone());
+        }
+        self.values.insert(key, values);
+        Ok(())
+    }
+
+    fn get(&self, name: &str) -> NodeResult<Option<String>> {
+        validate_header_name(name)?;
+        Ok(self
+            .values
+            .get(header_lookup_name(name).as_ref())
+            .and_then(|values| values.first())
+            .cloned())
+    }
+
+    fn get_all(&self, name: &str) -> NodeResult<Vec<String>> {
+        validate_header_name(name)?;
+        Ok(self
+            .values
+            .get(header_lookup_name(name).as_ref())
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn contains(&self, name: &str) -> NodeResult<bool> {
+        validate_header_name(name)?;
+        Ok(self.values.contains_key(header_lookup_name(name).as_ref()))
+    }
+
+    fn remove(&mut self, name: &str) -> NodeResult<()> {
+        validate_header_name(name)?;
+        let key = header_lookup_name(name);
+        self.values.remove(key.as_ref());
+        self.names.retain(|current| current != key.as_ref());
+        Ok(())
+    }
+
+    pub(crate) fn entries(&self) -> Vec<(String, Vec<String>)> {
+        self.names
+            .iter()
+            .filter_map(|name| {
+                self.values
+                    .get(name)
+                    .map(|values| (name.clone(), values.clone()))
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct IncomingHttpHeaders {
+    store: Rc<HeaderStore>,
+}
+
+impl IncomingHttpHeaders {
+    pub(crate) fn from_pairs(
+        pairs: impl IntoIterator<Item = (String, String)>,
+    ) -> NodeResult<Self> {
+        let mut store = HeaderStore::default();
+        for (name, value) in pairs {
+            store.append(&name, [value])?;
+        }
+        Ok(Self {
+            store: Rc::new(store),
+        })
+    }
+
+    pub fn get(&self, name: &str) -> NodeResult<Option<String>> {
+        self.store.get(name)
+    }
+
+    pub fn get_all(&self, name: &str) -> NodeResult<tsonic_rust_js::JsArray<String>> {
+        self.store
+            .get_all(name)
+            .map(tsonic_rust_js::JsArray::from_dense)
+    }
+
+    pub fn get_values(&self, name: &str) -> NodeResult<Option<&[String]>> {
+        validate_header_name(name)?;
+        Ok(self
+            .store
+            .values
+            .get(header_lookup_name(name).as_ref())
+            .filter(|values| !values.is_empty())
+            .map(Vec::as_slice))
+    }
+
+    pub fn names(&self) -> tsonic_rust_js::JsArray<String> {
+        tsonic_rust_js::JsArray::from_dense(self.store.names.clone())
+    }
+
+    pub fn entries(&self) -> Vec<(String, Vec<String>)> {
+        self.store.entries()
+    }
+}
+
+#[cfg(test)]
+mod borrowed_header_tests {
+    use super::{header_lookup_name, HeaderStore, IncomingHttpHeaders};
+    use std::borrow::Cow;
+
+    #[test]
+    fn normalized_lookup_borrows_exact_input_and_only_changed_case_owns_a_key() {
+        let name = String::from("content-type");
+        let key = header_lookup_name(&name);
+        assert!(matches!(key, Cow::Borrowed(_)));
+        assert_eq!(key.as_ptr(), name.as_ptr());
+        let mixed = header_lookup_name("Content-Type");
+        assert!(matches!(mixed, Cow::Owned(_)));
+        assert_eq!(mixed, "content-type");
+    }
+
+    #[test]
+    fn native_lookup_and_removal_preserve_case_validation_and_owned_snapshot_order() {
+        let mut store = HeaderStore::default();
+        store
+            .append("X-Item", ["one".to_owned(), "two".to_owned()])
+            .unwrap();
+        store.append("Other", ["three".to_owned()]).unwrap();
+        assert!(store.contains("x-item").unwrap());
+        assert!(store.contains("X-ITEM").unwrap());
+        assert_eq!(store.get("x-item").unwrap().as_deref(), Some("one"));
+        assert_eq!(store.get_all("X-ITEM").unwrap(), ["one", "two"]);
+        let snapshot = store.get_all("x-item").unwrap();
+        store.remove("X-ITEM").unwrap();
+        assert!(!store.contains("x-item").unwrap());
+        assert_eq!(store.names, ["other"]);
+        assert_eq!(snapshot, ["one", "two"]);
+        assert!(store.get("bad header").is_err());
+        assert!(store.get_all("bad header").is_err());
+        assert!(store.contains("bad header").is_err());
+        assert!(store.remove("bad header").is_err());
+        assert!(store.get("missing").unwrap().is_none());
+        assert!(store.get_all("missing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn indexer_borrows_exact_backing_and_snapshot_is_independent() {
+        let headers = IncomingHttpHeaders::from_pairs([
+            ("x-item".to_owned(), "one".to_owned()),
+            ("x-item".to_owned(), "two".to_owned()),
+        ])
+        .unwrap();
+        let view = headers.get_values("X-ITEM").unwrap().unwrap();
+        let backing = headers.store.values.get("x-item").unwrap();
+        assert_eq!(view.as_ptr(), backing.as_ptr());
+        assert_eq!(view, ["one", "two"]);
+        let snapshot = headers.get_all("x-item").unwrap();
+        snapshot.with_values(|values| assert_ne!(values.as_ptr(), view.as_ptr()));
+        assert!(headers.get_values("missing").unwrap().is_none());
+        assert!(headers.get_values("bad header").is_err());
+        let cloned_owner = headers.clone();
+        assert_eq!(
+            cloned_owner.get_values("x-item").unwrap().unwrap().as_ptr(),
+            view.as_ptr()
+        );
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OutgoingHttpHeaders {
+    store: HeaderStore,
+}
+
+impl OutgoingHttpHeaders {
+    fn snapshot(store: &HeaderStore) -> Self {
+        Self {
+            store: store.clone(),
         }
     }
-}
 
-fn http_remove_all_listeners(listeners: &mut HttpListenerMap, event: Option<&str>) {
-    if let Some(event) = event {
-        listeners.remove(event);
-    } else {
-        listeners.clear();
+    pub fn get(&self, name: &str) -> NodeResult<Option<String>> {
+        self.store.get(name)
     }
-}
 
-fn http_listeners(listeners: &HttpListenerMap, event: &str) -> Vec<String> {
-    listeners.get(event).cloned().unwrap_or_default()
+    pub fn get_all(&self, name: &str) -> NodeResult<tsonic_rust_js::JsArray<String>> {
+        self.store
+            .get_all(name)
+            .map(tsonic_rust_js::JsArray::from_dense)
+    }
+
+    pub fn names(&self) -> tsonic_rust_js::JsArray<String> {
+        tsonic_rust_js::JsArray::from_dense(self.store.names.clone())
+    }
+
+    pub fn entries(&self) -> Vec<(String, Vec<String>)> {
+        self.store.entries()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

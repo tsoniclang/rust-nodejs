@@ -1,3 +1,5 @@
+use crate::NodeError;
+
 impl FileHandle {
     pub fn fd(&self) -> i32 {
         self.fd
@@ -154,30 +156,43 @@ impl FileHandle {
         crate::stream::web::WritableStream::new()
     }
 
-    pub fn create_read_stream(&self) -> NodeResult<fs::ReadStream> {
-        self.create_read_stream_with_options(ReadStreamOptions::default())
+    pub fn create_read_stream<E: From<NodeError> + 'static>(
+        &self,
+        background: &crate::background::BackgroundTasks<E>,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    ) -> NodeResult<fs::ReadStream<E>> {
+        self.create_read_stream_with_options(background, tasks, ReadStreamOptions::default())
     }
 
-    pub fn create_read_stream_with_options(
+    pub fn create_read_stream_with_options<E: From<NodeError> + 'static>(
         &self,
+        background: &crate::background::BackgroundTasks<E>,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
         options: ReadStreamOptions,
-    ) -> NodeResult<fs::ReadStream> {
+    ) -> NodeResult<fs::ReadStream<E>> {
         fs::ReadStream::from_file(
+            background,
+            tasks,
             format!("fd:{}", self.fd),
             fs::clone_file_descriptor(self.fd)?,
             &options,
         )
     }
 
-    pub fn create_write_stream(&self) -> NodeResult<fs::WriteStream> {
-        self.create_write_stream_with_options(WriteStreamOptions::default())
+    pub fn create_write_stream<E: From<NodeError> + 'static>(
+        &self,
+        background: &crate::background::BackgroundTasks<E>,
+    ) -> NodeResult<fs::WriteStream<E>> {
+        self.create_write_stream_with_options(background, WriteStreamOptions::default())
     }
 
-    pub fn create_write_stream_with_options(
+    pub fn create_write_stream_with_options<E: From<NodeError> + 'static>(
         &self,
+        background: &crate::background::BackgroundTasks<E>,
         options: WriteStreamOptions,
-    ) -> NodeResult<fs::WriteStream> {
+    ) -> NodeResult<fs::WriteStream<E>> {
         fs::WriteStream::from_file(
+            background,
             format!("fd:{}", self.fd),
             fs::clone_file_descriptor(self.fd)?,
             &options,
@@ -192,20 +207,28 @@ impl FileHandle {
             .collect())
     }
 
-    pub fn pull(&self, chunk_size: usize) -> NodeResult<crate::stream::Readable> {
+    pub fn pull<E: From<NodeError> + 'static>(
+        &self,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        chunk_size: usize,
+    ) -> NodeResult<crate::stream::Readable<E>> {
         let buffer = self.read_file_buffer()?;
         if chunk_size == 0 || buffer.len() <= chunk_size {
-            return Ok(crate::stream::Readable::from_chunks(vec![buffer]));
+            return Ok(crate::stream::Readable::from_chunks(tasks, vec![buffer]));
         }
         let chunks = buffer
             .as_bytes()
             .chunks(chunk_size)
             .map(|chunk| Buffer::from_bytes(chunk.to_vec()))
             .collect();
-        Ok(crate::stream::Readable::from_chunks(chunks))
+        Ok(crate::stream::Readable::from_chunks(tasks, chunks))
     }
 
-    pub fn pull_with_options(&self, options: PullOptions) -> NodeResult<crate::stream::Readable> {
+    pub fn pull_with_options<E: From<NodeError> + 'static>(
+        &self,
+        tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+        options: PullOptions,
+    ) -> NodeResult<crate::stream::Readable<E>> {
         let mut buffer = self.read_file_buffer()?;
         if let Some(start) = options.start {
             let start = start as usize;
@@ -219,14 +242,14 @@ impl FileHandle {
             buffer = Buffer::from_bytes(buffer.as_bytes()[..buffer.len().min(limit)].to_vec());
         }
         if options.chunk_size == 0 || buffer.len() <= options.chunk_size {
-            return Ok(crate::stream::Readable::from_chunks(vec![buffer]));
+            return Ok(crate::stream::Readable::from_chunks(tasks, vec![buffer]));
         }
         let chunks = buffer
             .as_bytes()
             .chunks(options.chunk_size)
             .map(|chunk| Buffer::from_bytes(chunk.to_vec()))
             .collect();
-        Ok(crate::stream::Readable::from_chunks(chunks))
+        Ok(crate::stream::Readable::from_chunks(tasks, chunks))
     }
 
     pub fn writer(&self) -> FileHandleWriter {

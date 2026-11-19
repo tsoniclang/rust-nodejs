@@ -95,11 +95,13 @@ pub fn timing_safe_equal(left: &Buffer, right: &Buffer) -> NodeResult<bool> {
             "inputs must have equal byte length",
         ));
     }
-    let mut diff = 0_u8;
-    for (left, right) in left.as_bytes().iter().zip(right.as_bytes().iter()) {
-        diff |= left ^ right;
-    }
-    Ok(diff == 0)
+    Ok(left.with_pair(right, |left, right| {
+        let mut diff = 0_u8;
+        for (&left, &right) in left.iter().zip(right) {
+            diff |= left ^ right;
+        }
+        diff == 0
+    }))
 }
 
 pub fn get_hashes() -> Vec<&'static str> {

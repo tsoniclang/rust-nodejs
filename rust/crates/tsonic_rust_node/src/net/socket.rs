@@ -5,12 +5,14 @@ pub struct Socket {
     timeout: Option<u64>,
     encoding: Option<String>,
     refed: bool,
-    destroyed: bool,
+    destroyed: std::cell::Cell<bool>,
     paused: bool,
     allow_half_open: bool,
     keep_alive: bool,
     keep_alive_initial_delay: Option<u64>,
     type_of_service: Option<u32>,
+    local_endpoint: Option<std::net::SocketAddr>,
+    remote_endpoint: Option<std::net::SocketAddr>,
 }
 
 impl Socket {
@@ -27,12 +29,14 @@ impl Socket {
             timeout: None,
             encoding: None,
             refed: true,
-            destroyed: false,
+            destroyed: std::cell::Cell::new(false),
             paused: false,
             allow_half_open: false,
             keep_alive: false,
             keep_alive_initial_delay: None,
             type_of_service: None,
+            local_endpoint: None,
+            remote_endpoint: None,
         }
     }
 
@@ -50,13 +54,37 @@ impl Socket {
             timeout: None,
             encoding: None,
             refed: true,
-            destroyed: false,
+            destroyed: std::cell::Cell::new(false),
             paused: false,
             allow_half_open: options.allow_half_open,
             keep_alive: false,
             keep_alive_initial_delay: None,
             type_of_service: None,
+            local_endpoint: None,
+            remote_endpoint: None,
         })
+    }
+
+    pub(crate) fn from_http_endpoints(
+        local_endpoint: Option<std::net::SocketAddr>,
+        remote_endpoint: Option<std::net::SocketAddr>,
+    ) -> Self {
+        Self {
+            stream: None,
+            bytes_read: 0,
+            bytes_written: 0,
+            timeout: None,
+            encoding: None,
+            refed: true,
+            destroyed: std::cell::Cell::new(false),
+            paused: false,
+            allow_half_open: false,
+            keep_alive: false,
+            keep_alive_initial_delay: None,
+            type_of_service: None,
+            local_endpoint,
+            remote_endpoint,
+        }
     }
 
     pub fn write_all(&mut self, data: &[u8]) -> NodeResult<()> {
@@ -123,8 +151,12 @@ impl Socket {
     }
 
     pub fn destroy(&mut self) -> NodeResult<()> {
-        self.destroyed = true;
-        self.shutdown()
+        self.destroyed.set(true);
+        if self.stream.is_some() {
+            self.shutdown()
+        } else {
+            Ok(())
+        }
     }
 
     pub fn destroy_soon(&mut self) -> NodeResult<()> {
@@ -136,56 +168,65 @@ impl Socket {
     }
 
     pub fn destroyed(&self) -> bool {
-        self.destroyed
+        self.destroyed.get()
     }
 
     pub fn address(&self) -> NodeResult<AddressInfo> {
-        self.stream()?
-            .local_addr()
+        self.local_endpoint()
             .map(address_info)
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no local endpoint"))
     }
 
     pub fn local_address(&self) -> NodeResult<String> {
-        self.stream()?
-            .local_addr()
+        self.local_endpoint()
             .map(|addr| addr.ip().to_string())
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no local endpoint"))
+    }
+
+    pub fn local_address_optional(&self) -> Option<String> {
+        self.local_endpoint().map(|address| address.ip().to_string())
     }
 
     pub fn local_port(&self) -> NodeResult<u16> {
-        self.stream()?
-            .local_addr()
+        self.local_endpoint()
             .map(|addr| addr.port())
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no local endpoint"))
+    }
+
+    pub fn local_port_optional(&self) -> Option<i32> {
+        self.local_endpoint().map(|address| i32::from(address.port()))
     }
 
     pub fn local_family(&self) -> NodeResult<String> {
-        self.stream()?
-            .local_addr()
+        self.local_endpoint()
             .map(|addr| family_string(addr.ip()))
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no local endpoint"))
     }
 
     pub fn remote_address(&self) -> NodeResult<String> {
-        self.stream()?
-            .peer_addr()
+        self.remote_endpoint()
             .map(|addr| addr.ip().to_string())
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no remote endpoint"))
+    }
+
+    pub fn remote_address_optional(&self) -> Option<String> {
+        self.remote_endpoint().map(|address| address.ip().to_string())
     }
 
     pub fn remote_port(&self) -> NodeResult<u16> {
-        self.stream()?
-            .peer_addr()
+        self.remote_endpoint()
             .map(|addr| addr.port())
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no remote endpoint"))
+    }
+
+    pub fn remote_port_optional(&self) -> Option<i32> {
+        self.remote_endpoint().map(|address| i32::from(address.port()))
     }
 
     pub fn remote_family(&self) -> NodeResult<String> {
-        self.stream()?
-            .peer_addr()
+        self.remote_endpoint()
             .map(|addr| family_string(addr.ip()))
-            .map_err(map_net_error)
+            .ok_or_else(|| NodeError::new("ENOTCONN", "socket has no remote endpoint"))
     }
 
     pub fn bytes_read(&self) -> u64 {
@@ -201,7 +242,7 @@ impl Socket {
     }
 
     pub fn pending(&self) -> bool {
-        self.stream.is_none() && !self.destroyed
+        self.stream.is_none() && !self.destroyed.get()
     }
 
     pub fn connecting(&self) -> bool {
@@ -209,7 +250,7 @@ impl Socket {
     }
 
     pub fn ready_state(&self) -> &'static str {
-        if self.destroyed {
+        if self.destroyed.get() {
             "closed"
         } else if self.paused {
             "readOnly"
@@ -337,6 +378,20 @@ impl Socket {
 
     pub fn allow_half_open(&self) -> bool {
         self.allow_half_open
+    }
+
+    pub(crate) fn mark_destroyed(&self) {
+        self.destroyed.set(true);
+    }
+
+    fn local_endpoint(&self) -> Option<std::net::SocketAddr> {
+        self.local_endpoint
+            .or_else(|| self.stream.as_ref().and_then(|stream| stream.local_addr().ok()))
+    }
+
+    fn remote_endpoint(&self) -> Option<std::net::SocketAddr> {
+        self.remote_endpoint
+            .or_else(|| self.stream.as_ref().and_then(|stream| stream.peer_addr().ok()))
     }
 
     fn stream(&self) -> NodeResult<&TcpStream> {

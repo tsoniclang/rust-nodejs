@@ -2,6 +2,7 @@ import { boolCarrier, emptyCallbackCarrier, stringCarrier } from "../../model/ca
 import { numberType, stringType, voidType } from "../../model/source-types.js";
 import { providerNativeFallibility } from "../../model/operations.js";
 import { providerRef } from "../../declarations/builders.js";
+import { nodeSignalInput } from "../../model/dispatch.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
 export const processCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.Process" };
@@ -46,6 +47,7 @@ export function processSignalRows(): readonly RustProviderOperationDefinition[] 
       exportId: processId, memberId: `${processId}.${name}`, signatureId: `${processId}.${name}(signal,listener)`, operationKind: "method" as const,
       target: { form: "call" as const, path: `node_process::${name === "once" ? "once" : "remove_listener"}`, argModes: ["ref" as const, "ref" as const] },
       parameterCarriers: [stringCarrier, emptyCallbackCarrier], resultCarrier: processCarrier, ...providerNativeFallibility,
+      dispatchInputs: [nodeSignalInput],
     })),
   ];
 }

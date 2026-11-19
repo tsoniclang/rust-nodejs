@@ -1,7 +1,9 @@
-import { emptyCallbackCarrier, int32Carrier } from "../../model/carriers.js";
+import { int32Carrier, unitCarrier } from "../../model/carriers.js";
 import { fnExport, providerRef } from "../../declarations/builders.js";
 import { int32Type, voidType } from "../../model/source-types.js";
 import { timeoutCarrier } from "./carriers.js";
+import { nodeTimerCallbackCarrier, nodeTimerInput } from "../../model/dispatch.js";
+import { providerNativeFallibility } from "../../model/operations.js";
 
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 export function timersModule(): RustProviderModuleDefinition {
@@ -40,6 +42,8 @@ export function timersModule(): RustProviderModuleDefinition {
         },
         { name: "delay", type: int32Type },
       ], providerRef(m, "Timeout")),
+      ...["clearTimeout", "clearInterval"].map(name =>
+        fnExport(m, name, [{ name: "timeout", type: providerRef(m, "Timeout") }], voidType)),
     ],
   };
 }
@@ -50,15 +54,26 @@ export function timersRows(): readonly RustProviderOperationDefinition[] {
       exportId: "node:timers::setTimeout",
       operationKind: "method",
       target: { form: "call", path: "node_timers::set_timeout_callable" },
+      dispatchInputs: [nodeTimerInput],
+      ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
-      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+      parameterCarriers: [nodeTimerCallbackCarrier, int32Carrier],
     },
     {
       exportId: "node:timers::setInterval",
       operationKind: "method",
       target: { form: "call", path: "node_timers::set_interval_callable" },
+      dispatchInputs: [nodeTimerInput],
+      ...providerNativeFallibility,
       resultCarrier: timeoutCarrier,
-      parameterCarriers: [emptyCallbackCarrier, int32Carrier],
+      parameterCarriers: [nodeTimerCallbackCarrier, int32Carrier],
     },
+    ...(["clearTimeout", "clearInterval"] as const).map((name): RustProviderOperationDefinition => ({
+      exportId: `node:timers::${name}`,
+      operationKind: "method",
+      target: { form: "call", path: `node_timers::${name === "clearTimeout" ? "clear_timeout" : "clear_interval"}`, argModes: ["mut-ref"] },
+      resultCarrier: unitCarrier,
+      parameterCarriers: [timeoutCarrier],
+    })),
   ];
 }

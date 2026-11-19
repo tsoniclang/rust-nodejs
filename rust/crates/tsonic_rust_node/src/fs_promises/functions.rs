@@ -361,20 +361,34 @@ pub fn glob(pattern: &str) -> NodeResult<Vec<String>> {
     fs::glob_sync(pattern)
 }
 
-pub fn watch(path: &str) -> NodeResult<FsWatcher> {
-    fs::watch(path)
+pub fn watch<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<FsWatcher<E>> {
+    fs::watch(roots, path)
 }
 
-pub fn watch_with_options(path: &str, options: WatchOptions) -> NodeResult<FsWatcher> {
-    fs::watch_with_options(path, options)
+pub fn watch_with_options<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchOptions,
+) -> NodeResult<FsWatcher<E>> {
+    fs::watch_with_options(roots, path, options)
 }
 
-pub fn watch_file(path: &str) -> NodeResult<StatWatcher> {
-    fs::watch_file(path)
+pub fn watch_file<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+) -> NodeResult<StatWatcher<E>> {
+    fs::watch_file(roots, path)
 }
 
-pub fn watch_file_with_options(path: &str, options: WatchFileOptions) -> NodeResult<StatWatcher> {
-    fs::watch_file_with_options(path, options)
+pub fn watch_file_with_options<E: From<crate::NodeError> + 'static>(
+    roots: &Watchers<E>,
+    path: &str,
+    options: WatchFileOptions,
+) -> NodeResult<StatWatcher<E>> {
+    fs::watch_file_with_options(roots, path, options)
 }
 
 pub async fn read_file_string_async(path: &str, encoding: &str) -> NodeResult<String> {
@@ -383,11 +397,23 @@ pub async fn read_file_string_async(path: &str, encoding: &str) -> NodeResult<St
     crate::background::run(move || read_file_string(&path, &encoding)).await
 }
 
+pub async fn read_file_buffer_async(path: &str) -> NodeResult<Buffer> {
+    let path = path.to_owned();
+    let bytes = crate::background::run(move || fs::read_file_bytes(&path)).await?;
+    Ok(Buffer::from_bytes(bytes))
+}
+
 pub async fn write_file_string_async(path: &str, value: &str, encoding: &str) -> NodeResult<()> {
     let path = path.to_owned();
     let value = value.to_owned();
     let encoding = encoding.to_owned();
     crate::background::run(move || write_file_string(&path, &value, &encoding)).await
+}
+
+pub async fn write_file_buffer_async(path: &str, value: &Buffer) -> NodeResult<()> {
+    let path = path.to_owned();
+    let value = value.as_bytes();
+    crate::background::run(move || fs::write_file_bytes(&path, &value)).await
 }
 
 pub async fn readdir_async(path: &str) -> NodeResult<JsArray<String>> {
@@ -400,6 +426,16 @@ pub async fn readdir_async(path: &str) -> NodeResult<JsArray<String>> {
 pub async fn stat_async(path: &str) -> NodeResult<Stats> {
     let path = path.to_owned();
     crate::background::run(move || stat(&path)).await
+}
+
+pub async fn lstat_async(path: &str) -> NodeResult<Stats> {
+    let path = path.to_owned();
+    crate::background::run(move || lstat(&path)).await
+}
+
+pub async fn realpath_async(path: &str) -> NodeResult<String> {
+    let path = path.to_owned();
+    crate::background::run(move || realpath(&path)).await
 }
 
 pub async fn mkdir_async(path: &str) -> NodeResult<()> {

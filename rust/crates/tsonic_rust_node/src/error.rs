@@ -36,7 +36,74 @@ impl fmt::Display for NodeError {
 
 impl std::error::Error for NodeError {}
 
+impl tsonic_rust_runtime::ErrorObject for NodeError {
+    fn error_name(&self) -> tsonic_rust_runtime::ErrorField<'_> {
+        self.source.error_name()
+    }
+
+    fn error_message(&self) -> tsonic_rust_runtime::ErrorField<'_> {
+        self.source.error_message()
+    }
+
+    fn error_stack(&self) -> Option<tsonic_rust_runtime::ErrorField<'_>> {
+        self.source.error_stack()
+    }
+
+    fn error_kind(&self) -> JsErrorKind {
+        self.source.error_kind()
+    }
+
+    fn error_identity_key(&self) -> usize {
+        self.source.error_identity_key()
+    }
+}
+
+impl tsonic_rust_runtime::ErrorStack for NodeError {
+    fn set_stack(&self, value: Option<String>) {
+        tsonic_rust_runtime::ErrorStack::set_stack(&self.source, value);
+    }
+}
+
+impl tsonic_rust_runtime::ToSourceString for NodeError {
+    fn to_source_string(&self) -> String {
+        self.to_string()
+    }
+}
+
 pub type NodeResult<T> = Result<T, NodeError>;
+
+impl From<JsError> for NodeError {
+    fn from(source: JsError) -> Self {
+        Self {
+            code: "ERR_NODE_EVENT_LOOP".to_owned(),
+            source,
+        }
+    }
+}
+
+impl From<tsonic_rust_runtime::timer_queue::TimerQueueError> for NodeError {
+    fn from(value: tsonic_rust_runtime::timer_queue::TimerQueueError) -> Self {
+        use tsonic_rust_runtime::timer_queue::TimerQueueError;
+        let code = match value {
+            TimerQueueError::Capacity => "ERR_NODE_TIMER_LIMIT",
+            TimerQueueError::IdentityExhausted => "ERR_NODE_TIMER_IDENTITY_LIMIT",
+            TimerQueueError::DeadlineOutOfRange => "ERR_OUT_OF_RANGE",
+        };
+        Self::new(code, value.to_string())
+    }
+}
+
+impl From<tsonic_rust_runtime::dispatch_queue::TaskQueueError> for NodeError {
+    fn from(value: tsonic_rust_runtime::dispatch_queue::TaskQueueError) -> Self {
+        use tsonic_rust_runtime::dispatch_queue::TaskQueueError;
+        let code = match value {
+            TaskQueueError::Capacity => "ERR_NODE_RUNTIME_TASK_LIMIT",
+            TaskQueueError::TicketExhausted => "ERR_NODE_RUNTIME_TASK_TICKET_LIMIT",
+            TaskQueueError::Closed => "ERR_NODE_RUNTIME_TASK_CLOSED",
+        };
+        Self::new(code, value.to_string())
+    }
+}
 
 impl From<NodeError> for tsonic_rust_runtime::TsonicError {
     fn from(value: NodeError) -> Self {
@@ -47,10 +114,8 @@ impl From<NodeError> for tsonic_rust_runtime::TsonicError {
     }
 }
 
-pub(crate) fn callback_runtime_error(error: impl fmt::Display) -> tsonic_rust_runtime::TsonicError {
-    NodeError::new("ERR_TSONIC_CALLBACK", error.to_string()).into()
-}
-
-pub(crate) fn callback_node_error(error: impl fmt::Display) -> NodeError {
-    NodeError::new("ERR_TSONIC_CALLBACK", error.to_string())
+impl From<NodeError> for tsonic_rust_runtime::RetainedError {
+    fn from(value: NodeError) -> Self {
+        Self::from(tsonic_rust_runtime::TsonicError::from(value))
+    }
 }

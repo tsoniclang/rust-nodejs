@@ -4,24 +4,25 @@ import { bufferCarrier } from "../buffer/carriers.js";
 import { fnExport, propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { noneArgument, providerNativeFallibility } from "../../model/operations.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
-import { zlibCallbackCarrier, zlibOptionsCarrier, zlibTransformCarrier } from "./carriers.js";
+import { brotliOptionsCarrier, zlibCallbackCarrier, zlibOptionsCarrier, zlibTransformCarrier } from "./carriers.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 import { rustJsTypedArrayTargetType } from "@tsonic/target-rust/provider";
+import { nodeErrorType } from "../util/node-error.js";
+import { nodeBackgroundInput, nodeRuntimeTaskHandleInput } from "../../model/dispatch.js";
 
 const moduleSpecifier = "node:zlib";
 const optionsId = `${moduleSpecifier}::ZlibOptions`;
-const transformId = `${moduleSpecifier}::Zlib`;
+const brotliOptionsId = `${moduleSpecifier}::BrotliOptions`;
+const transformId = `${moduleSpecifier}::ZlibTransform`;
 const bufferType = providerRef("node:buffer", "Buffer");
 const optionsType = providerRef(moduleSpecifier, "ZlibOptions");
-const optionalBufferType = {
-  kind: "union",
-  types: [bufferType, undefinedType],
-} as const;
+const brotliOptionsType = providerRef(moduleSpecifier, "BrotliOptions");
+const errorType = nodeErrorType;
 const callbackType = (signatureId: string): ProviderTypeExpr =>
   providerCallbackType(signatureId, "callback", [
-    { name: "error", type: { kind: "any" } },
-    { name: "result", type: bufferType },
+    { name: "error", type: { kind: "union", types: [errorType, undefinedType] } },
+    { name: "result", type: { kind: "union", types: [bufferType, undefinedType] } },
   ]);
 
 const syncOperations = [
@@ -49,15 +50,27 @@ const factories = [
   ["createInflateRaw", "create_inflate_raw", "create_inflate_raw_source"],
 ] as const;
 
+const brotliFactories = [
+  ["createBrotliCompress", "create_brotli_compress", "create_brotli_compress_source"],
+  ["createBrotliDecompress", "create_brotli_decompress", "create_brotli_decompress_source"],
+] as const;
+
 export function zlibModule(typedArrays: boolean): RustProviderModuleDefinition {
   const byteInputType: ProviderTypeExpr = typedArrays ? { kind: "source-global", name: "Uint8Array" } : bufferType;
   return {
     moduleSpecifier,
     providerModuleId: "tsonic.rust.node.zlib",
-    imports: [{
-      moduleSpecifier: "node:buffer",
-      namedImports: [{ exportedName: "Buffer" }],
-    }],
+    imports: [
+      { moduleSpecifier: "node:util", namedImports: [{ exportedName: "NodeError" }] },
+      {
+        moduleSpecifier: "node:buffer",
+        namedImports: [{ exportedName: "Buffer" }],
+      },
+      {
+        moduleSpecifier: "node:stream",
+        namedImports: [{ exportedName: "Transform" }],
+      },
+    ],
     exports: [
       {
         id: optionsId,
@@ -81,39 +94,18 @@ export function zlibModule(typedArrays: boolean): RustProviderModuleDefinition {
       },
       {
         id: transformId,
-        name: "Zlib",
+        name: "ZlibTransform",
         kind: "class",
+        heritage: [{ kind: "extends", type: providerRef("node:stream", "Transform") }],
+        members: [],
+      },
+      {
+        id: brotliOptionsId,
+        name: "BrotliOptions",
+        kind: "interface",
         members: [
-          {
-            id: `${transformId}.write`,
-            name: "write",
-            kind: "method",
-            signatures: [{
-              id: `${transformId}.write(input)`,
-              parameters: [{ name: "input", type: bufferType }],
-              returnType: booleanType,
-            }],
-          },
-          {
-            id: `${transformId}.read`,
-            name: "read",
-            kind: "method",
-            signatures: [{
-              id: `${transformId}.read()`,
-              parameters: [],
-              returnType: optionalBufferType,
-            }],
-          },
-          {
-            id: `${transformId}.end`,
-            name: "end",
-            kind: "method",
-            signatures: [{
-              id: `${transformId}.end()`,
-              parameters: [],
-              returnType: voidType,
-            }],
-          },
+          propertyMember(brotliOptionsId, "chunkSize", numberType, { readonly: false, optional: true }),
+          propertyMember(brotliOptionsId, "maxOutputLength", numberType, { readonly: false, optional: true }),
         ],
       },
       ...syncOperations.map(([name]) => ({
@@ -173,13 +165,32 @@ export function zlibModule(typedArrays: boolean): RustProviderModuleDefinition {
             id: `${moduleSpecifier}::${name}()`,
             name,
             parameters: [],
-            returnType: providerRef(moduleSpecifier, "Zlib"),
+            returnType: providerRef(moduleSpecifier, "ZlibTransform"),
           },
           {
             id: `${moduleSpecifier}::${name}(options)`,
             name,
             parameters: [{ name: "options", type: optionsType }],
-            returnType: providerRef(moduleSpecifier, "Zlib"),
+            returnType: providerRef(moduleSpecifier, "ZlibTransform"),
+          },
+        ],
+      })),
+      ...brotliFactories.map(([name]) => ({
+        id: `${moduleSpecifier}::${name}`,
+        name,
+        kind: "function" as const,
+        signatures: [
+          {
+            id: `${moduleSpecifier}::${name}()`,
+            name,
+            parameters: [],
+            returnType: providerRef(moduleSpecifier, "ZlibTransform"),
+          },
+          {
+            id: `${moduleSpecifier}::${name}(options)`,
+            name,
+            parameters: [{ name: "options", type: brotliOptionsType }],
+            returnType: providerRef(moduleSpecifier, "ZlibTransform"),
           },
         ],
       })),
@@ -223,6 +234,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         target: { form: "call", path: `node_zlib::${basePath}`, argModes: ["ref", "value"] },
         resultCarrier: unitCarrier,
         parameterCarriers: [bufferCarrier, zlibCallbackCarrier],
+        dispatchInputs: [nodeBackgroundInput],
         ...providerNativeFallibility,
       },
       {
@@ -232,6 +244,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["ref", "value", "value"] },
         resultCarrier: unitCarrier,
         parameterCarriers: [bufferCarrier, zlibOptionsCarrier, zlibCallbackCarrier],
+        dispatchInputs: [nodeBackgroundInput],
         ...providerNativeFallibility,
       },
     );
@@ -244,6 +257,7 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${basePath}`, trailingArguments: [noneArgument] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [],
       },
       {
@@ -252,7 +266,31 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         operationKind: "method",
         target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["value"] },
         resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
         parameterCarriers: [zlibOptionsCarrier],
+        ...providerNativeFallibility,
+      },
+    );
+  }
+  for (const [name, basePath, optionsPath] of brotliFactories) {
+    rows.push(
+      {
+        exportId: `${moduleSpecifier}::${name}`,
+        signatureId: `${moduleSpecifier}::${name}()`,
+        operationKind: "method",
+        target: { form: "call", path: `node_zlib::${basePath}`, trailingArguments: [noneArgument] },
+        resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
+        parameterCarriers: [],
+      },
+      {
+        exportId: `${moduleSpecifier}::${name}`,
+        signatureId: `${moduleSpecifier}::${name}(options)`,
+        operationKind: "method",
+        target: { form: "call", path: `node_zlib::${optionsPath}`, argModes: ["value"] },
+        resultCarrier: zlibTransformCarrier,
+        dispatchInputs: [nodeRuntimeTaskHandleInput()],
+        parameterCarriers: [brotliOptionsCarrier],
         ...providerNativeFallibility,
       },
     );
@@ -272,35 +310,6 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
       target: { form: "call", path: "node_zlib::brotli_decompress_sync", argModes: ["ref"] },
       resultCarrier: bufferCarrier,
       parameterCarriers: [inputCarrier],
-      ...providerNativeFallibility,
-    },
-    {
-      exportId: transformId,
-      memberId: `${transformId}.write`,
-      operationKind: "method",
-      target: { form: "receiver-method", name: "write", argModes: ["value"], mutatesReceiver: true },
-      resultCarrier: boolCarrier,
-      receiverCarrier: zlibTransformCarrier,
-      parameterCarriers: [bufferCarrier],
-      ...providerNativeFallibility,
-    },
-    {
-      exportId: transformId,
-      memberId: `${transformId}.read`,
-      operationKind: "method",
-      target: { form: "receiver-method", name: "read", mutatesReceiver: true },
-      resultCarrier: rustOptionTargetType(bufferCarrier),
-      receiverCarrier: zlibTransformCarrier,
-      parameterCarriers: [],
-    },
-    {
-      exportId: transformId,
-      memberId: `${transformId}.end`,
-      operationKind: "method",
-      target: { form: "receiver-method", name: "end", mutatesReceiver: true },
-      resultCarrier: unitCarrier,
-      receiverCarrier: zlibTransformCarrier,
-      parameterCarriers: [],
       ...providerNativeFallibility,
     },
   );
@@ -362,6 +371,30 @@ export function zlibRows(typedArrays: boolean): readonly RustProviderOperationDe
         : {}),
       receiverCarrier: zlibOptionsCarrier,
     });
+  }
+  for (const [memberName, fieldName] of [
+    ["chunkSize", "chunk_size"],
+    ["maxOutputLength", "max_output_length"],
+  ] as const) {
+    rows.push(
+      {
+        exportId: brotliOptionsId,
+        memberId: `${brotliOptionsId}.${memberName}`,
+        operationKind: "property",
+        target: { form: "field", name: fieldName },
+        resultCarrier: rustOptionTargetType(nativeUintCarrier),
+        receiverCarrier: brotliOptionsCarrier,
+      },
+      {
+        exportId: brotliOptionsId,
+        memberId: `${brotliOptionsId}.${memberName}`,
+        operationKind: "property-set",
+        target: { form: "field", name: fieldName },
+        resultCarrier: unitCarrier,
+        parameterCarriers: [rustOptionTargetType(nativeUintCarrier)],
+        receiverCarrier: brotliOptionsCarrier,
+      },
+    );
   }
   return rows;
 }

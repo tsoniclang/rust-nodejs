@@ -15,9 +15,15 @@ include!("metadata.rs");
 include!("constants_errors.rs");
 
 #[cfg(test)]
+mod native_stream_tests;
+
+#[cfg(test)]
 mod numeric_bounds {
     #[test]
     fn stream_integer_bounds_do_not_saturate() {
+        let readable_tasks = crate::runtime_tasks::RuntimeTasks::new();
+        let background = crate::background::BackgroundTasks::<crate::NodeError>::new();
+        crate::run_entry_with_contexts(|| {
         let source = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
         for options in [
             super::ReadStreamOptions {
@@ -36,14 +42,17 @@ mod numeric_bounds {
             },
         ] {
             let result = super::ReadStream::from_file(
+                &background,
+                readable_tasks.handle(),
                 source.to_owned(),
                 std::fs::File::open(source).unwrap(),
                 &options,
             );
-            assert_eq!(
-                result.err().expect("invalid range was accepted").code,
-                "ERR_OUT_OF_RANGE"
-            );
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("invalid range was accepted"),
+            };
+            assert_eq!(error.code, "ERR_OUT_OF_RANGE");
         }
         let options = super::ReadStreamOptions {
             end: Some(u64::MAX - 1),
@@ -51,13 +60,17 @@ mod numeric_bounds {
             ..Default::default()
         };
         let result = super::ReadStream::from_file(
+            &background,
+            readable_tasks.handle(),
             source.to_owned(),
             std::fs::File::open(source).unwrap(),
             &options,
         )
         .unwrap();
-        assert_eq!(result.remaining, Some(u64::MAX));
-        assert_eq!(result.chunk_size, usize::MAX);
+        let state = result.state.borrow();
+        assert_eq!(state.remaining, Some(u64::MAX));
+        assert_eq!(state.chunk_size, usize::MAX);
+        }, tsonic_rust_runtime::dispatch::prepend(&background, tsonic_rust_runtime::dispatch::prepend(&readable_tasks, tsonic_rust_runtime::dispatch::DispatchEnd::<tsonic_rust_runtime::TsonicError>::new()))).unwrap();
     }
 
     #[test]

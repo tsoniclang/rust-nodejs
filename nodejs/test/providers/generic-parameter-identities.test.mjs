@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createTsonicPlugin } from "../../../dist/index.js";
+
+test("Buffer range and search parameters retain exact native generic bindings", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const operations = contribution.definition.operations;
+  for (const [signature, parameters] of [
+    ["toString(encoding,start)", ["Start"]],
+    ["toString(encoding,start,end)", ["Start", "End"]],
+    ["indexOf(byte)", ["Value"]],
+    ["indexOf(byte,byteOffset)", ["Value", "ByteOffset"]],
+    ["indexOf(buffer,byteOffset)", ["ByteOffset"]],
+  ]) {
+    const row = operations.find(operation => operation.signatureId === `node:buffer::Buffer.${signature}`);
+    assert.ok(row, signature);
+    assert.deepEqual(row.genericParameters, parameters.map(name => ({
+      kind: "type", targetIdentity: `node:buffer:numeric:${name}`, sourceName: name,
+    })), signature);
+    assert.deepEqual(row.parameterCarriers.filter(carrier => carrier.kind === "type-parameter"),
+      parameters.map(name => ({ kind: "type-parameter", identity: `node:buffer:numeric:${name}`, name })), signature);
+    assert.equal(row.isFallible, true, signature);
+  }
+});
+
+test("Readable pipe preserves its destination binding through parameters, result and requirements", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const row = contribution.definition.operations.find(operation =>
+    operation.signatureId === "node:stream::Readable.pipe(destination)");
+  assert.ok(row);
+  const identity = "node:stream:Readable:pipe:TDestination";
+  const carrier = { kind: "type-parameter", identity, name: "TDestination" };
+  assert.deepEqual(row.genericParameters, [{ kind: "type", targetIdentity: identity, sourceName: "TDestination" }]);
+  assert.deepEqual(row.parameterCarriers, [carrier]);
+  assert.deepEqual(row.resultCarrier, carrier);
+  assert.deepEqual(row.typeRequirements, [{ identity, name: "TDestination", requirements: [
+    "clone", { kind: "trait", path: "tsonic_rust_node::stream::WritableTarget",
+      genericArguments: [{ kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } } }],
+      associatedConstraints: [] },
+  ] }]);
+});
+
+test("Zlib native equality traits agree at the binding and operation producers", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const traits = { implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
+    .map(path => ({ trait: { kind: "trait-ref", id: path, path, genericArguments: [], associatedConstraints: [] }, requirements: [] })) };
+  assert.deepEqual(contribution.definition.carrierTraits["rust.node.ZlibTransform"], traits);
+  const binding = contribution.definition.types.find(row => row.exportId === "node:zlib::ZlibTransform");
+  assert.ok(binding);
+  assert.deepEqual(binding.targetCarrier.value.traits, traits);
+  for (const signature of ["node:zlib::createGzip()", "node:zlib::createGzip(options)"]) {
+    const operation = contribution.definition.operations.find(row => row.signatureId === signature);
+    assert.ok(operation, signature);
+    assert.deepEqual(operation.resultCarrier.value.traits, traits, signature);
+  }
+});
+
+test("Readable native construction does not invent a callback failure", () => {
+  const [contribution] = createTsonicPlugin().createTargetContributions({});
+  const row = contribution.definition.operations.find(operation =>
+    operation.signatureId === "node:stream::Readable.from(chunks)");
+  assert.ok(row);
+  assert.equal(row.isFallible === undefined, true);
+  assert.equal(row.errorBoundary === undefined, true);
+  assert.equal(row.errorCarrier === undefined, true);
+  assert.deepEqual(row.resultCarrier.value.genericArguments, [{
+    kind: "type", type: { kind: "target-named", id: "rust.program.TsonicError", errorOwner: { kind: "logical" } },
+  }]);
+});

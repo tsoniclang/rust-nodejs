@@ -19,3 +19,4 @@ export const nullType = { kind: "literal", value: null } as const;
 export const undefinedType = { kind: "undefined" } as const;
 
 export type ProviderTypeExpr = NonNullable<RustProviderModuleDefinition["exports"][number]["type"]>;
+export const errorType = { kind: "source-global", name: "Error" } as const;

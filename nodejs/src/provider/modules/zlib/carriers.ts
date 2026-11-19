@@ -1,13 +1,35 @@
-import { rustCallableTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
-import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
+import { rustCallableTargetType, rustNamedTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
+import type { RustTargetTypeRef, RustNamedTypeTraitContract } from "@tsonic/target-rust/provider";
 import { bufferCarrier } from "../buffer/carriers.js";
-import { nodeErrorCarrier, unitCarrier } from "../../model/carriers.js";
+import { nodeErrorCarrier, unitCarrier, nodeProgramErrorArguments } from "../../model/carriers.js";
+import { nativeTrait } from "../../model/operations.js";
+import { duplexCarrier, readableCarrier, streamCarrier, transformCarrier, writableCarrier } from "../stream/carriers.js";
 
 export const zlibOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ZlibOptions" };
 
-export const zlibTransformCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.ZlibTransform" };
+export const brotliOptionsCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.BrotliOptions" };
+
+export const zlibTransformTraits: RustNamedTypeTraitContract = {
+  implementations: ["core::clone::Clone", "core::cmp::Eq", "core::cmp::PartialEq"]
+    .map(path => ({ trait: nativeTrait(path), requirements: [] })),
+};
+
+export const zlibTransformCarrier: RustTargetTypeRef = rustNamedTargetType(
+  "rust.node.ZlibTransform",
+  "tsonic_rust_node::zlib::Zlib",
+  nodeProgramErrorArguments,
+  [],
+  zlibTransformTraits,
+  [
+    { target: streamCarrier, path: "tsonic_rust_node::zlib::zlib_as_stream" },
+    { target: readableCarrier, path: "tsonic_rust_node::zlib::zlib_as_readable" },
+    { target: writableCarrier, path: "tsonic_rust_node::zlib::zlib_as_writable" },
+    { target: duplexCarrier, path: "tsonic_rust_node::zlib::zlib_as_duplex" },
+    { target: transformCarrier, path: "tsonic_rust_node::zlib::zlib_as_transform" },
+  ],
+);
 
 export const zlibCallbackCarrier = rustCallableTargetType(
-  [rustOptionTargetType(nodeErrorCarrier), bufferCarrier],
+  [rustOptionTargetType(nodeErrorCarrier), rustOptionTargetType(bufferCarrier)],
   unitCarrier,
 );

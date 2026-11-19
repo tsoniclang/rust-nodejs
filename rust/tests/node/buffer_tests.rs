@@ -3,6 +3,17 @@ use tsonic_rust_node::buffer::Buffer;
 use tsonic_rust_node::buffer::BufferValue;
 
 #[test]
+fn closed_string_conversion_reads_the_native_buffer_without_inspecting_or_copying_bytes() {
+    use tsonic_rust_js::{abi, JsValue};
+    let buffer = Buffer::from_string("left:text😀:right", None).unwrap();
+    let view = buffer.subarray(5, Some(13));
+    let value = JsValue::closed(view);
+    assert_eq!(abi::closed_value_string(&value).unwrap(), "text😀");
+    let invalid = JsValue::closed(Buffer::from_bytes(vec![0xff]));
+    assert!(abi::closed_value_string(&invalid).is_err());
+}
+
+#[test]
 fn encoding_labels_preserve_case_insensitive_aliases_and_exact_rejections() {
     use tsonic_rust_node::buffer::{decode_bytes, is_encoding};
 
@@ -95,6 +106,14 @@ fn buffer_compare_equals_concat_and_json() {
     assert_eq!(concat.as_bytes(), vec![1, 2, 3]);
     let padded = Buffer::concat_with_total_length(&buffers, 5).unwrap();
     assert_eq!(padded.as_bytes(), vec![1, 2, 3, 0, 0]);
+    let empty = JsArray::from_dense(Vec::new());
+    assert_eq!(Buffer::concat(&empty).unwrap().len(), 0);
+    assert_eq!(
+        Buffer::concat_with_total_length(&empty, usize::MAX)
+            .unwrap()
+            .len(),
+        0
+    );
     let dense = JsArray::from_dense(vec![one.clone()]);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dense.set(2, two.clone())))

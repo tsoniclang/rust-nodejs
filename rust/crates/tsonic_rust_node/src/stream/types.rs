@@ -1,51 +1,5 @@
-use std::collections::BTreeMap;
-
 use crate::buffer::Buffer;
 use crate::error::NodeResult;
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StreamEventState {
-    listeners: BTreeMap<String, usize>,
-}
-
-impl StreamEventState {
-    pub fn add_listener(&mut self, event: &str) {
-        *self.listeners.entry(event.to_string()).or_default() += 1;
-    }
-
-    pub fn remove_listener(&mut self, event: &str) {
-        if let Some(count) = self.listeners.get_mut(event) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.listeners.remove(event);
-            }
-        }
-    }
-
-    pub fn remove_all_listeners(&mut self, event: Option<&str>) {
-        if let Some(event) = event {
-            self.listeners.remove(event);
-        } else {
-            self.listeners.clear();
-        }
-    }
-
-    pub fn listener_count(&self, event: &str) -> usize {
-        self.listeners.get(event).copied().unwrap_or(0)
-    }
-
-    pub fn listeners(&self, event: &str) -> Vec<String> {
-        vec![event.to_string(); self.listener_count(event)]
-    }
-
-    pub fn event_names(&self) -> Vec<String> {
-        self.listeners.keys().cloned().collect()
-    }
-
-    pub fn emit(&self, event: &str) -> bool {
-        self.listener_count(event) > 0
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamOptions {
@@ -153,3 +107,42 @@ impl Default for FinishedOptions {
         }
     }
 }
+pub enum Stream<E: 'static = NodeError> {
+    Readable(Readable<E>),
+    Writable(Writable<E>),
+}
+
+pub fn readable_as_stream<E: 'static>(value: &Readable<E>) -> Stream<E> {
+    Stream::<E>::Readable(value.clone())
+}
+
+pub fn writable_as_stream<E: 'static>(value: &Writable<E>) -> Stream<E> {
+    Stream::<E>::Writable(value.clone())
+}
+
+impl<E: 'static> Clone for Stream<E> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Readable(readable) => Self::Readable(readable.clone()),
+            Self::Writable(writable) => Self::Writable(writable.clone()),
+        }
+    }
+}
+impl<E: 'static> std::fmt::Debug for Stream<E> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Readable(value) => formatter.debug_tuple("Readable").field(value).finish(),
+            Self::Writable(value) => formatter.debug_tuple("Writable").field(value).finish(),
+        }
+    }
+}
+impl<E: 'static> PartialEq for Stream<E> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Readable(left), Self::Readable(right)) => left == right,
+            (Self::Writable(left), Self::Writable(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+impl<E: 'static> Eq for Stream<E> {}

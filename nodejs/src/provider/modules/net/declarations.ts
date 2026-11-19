@@ -1,9 +1,11 @@
-import { uint8Carrier, uint64Carrier, boolCarrier, emptyCallbackCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
+import { boolCarrier, emptyCallbackCarrier, int32Carrier, stringCarrier, uint8Carrier, uint64Carrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, numberType, stringType, voidType } from "../../model/source-types.js";
 import { bufferCarrier } from "../buffer/carriers.js";
 import { netConnectionCallbackCarrier, netServerCarrier, netSocketCarrier } from "./carriers.js";
 import { propertyMember, providerCallbackType, providerRef } from "../../declarations/builders.js";
 import { providerNativeFallibility } from "../../model/operations.js";
+import { nodeNetInput, nodeRuntimeTaskInput } from "../../model/dispatch.js";
+import { rustOptionTargetType } from "@tsonic/target-rust/provider";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
 
 const moduleSpecifier = "node:net";
@@ -80,6 +82,10 @@ export function netModule(): RustProviderModuleDefinition {
           propertyMember(socketId, "bytesWritten", numberType),
           propertyMember(socketId, "destroyed", booleanType),
           propertyMember(socketId, "pending", booleanType),
+          propertyMember(socketId, "localAddress", { kind: "union", types: [stringType, { kind: "undefined" }] }),
+          propertyMember(socketId, "localPort", { kind: "union", types: [numberType, { kind: "undefined" }] }),
+          propertyMember(socketId, "remoteAddress", { kind: "union", types: [stringType, { kind: "undefined" }] }),
+          propertyMember(socketId, "remotePort", { kind: "union", types: [numberType, { kind: "undefined" }] }),
         ],
       },
       {
@@ -150,7 +156,7 @@ export function netModule(): RustProviderModuleDefinition {
 
 export function netRows(): readonly RustProviderOperationDefinition[] {
   const mutableSocket = { kind: "reference", referent: netSocketCarrier, mutable: true } as const;
-  const mutableServer = { kind: "reference", referent: netServerCarrier, mutable: true } as const;
+  const serverReference = { kind: "reference", referent: netServerCarrier, mutable: false } as const;
   const rows: RustProviderOperationDefinition[] = [
     ...connectionRows(),
     {
@@ -160,6 +166,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_net::create_server" },
       resultCarrier: netServerCarrier,
       parameterCarriers: [],
+      dispatchInputs: [nodeNetInput],
+      ...providerNativeFallibility,
     },
     {
       exportId: `${moduleSpecifier}::createServer`,
@@ -168,6 +176,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
       target: { form: "call", path: "node_net::create_server_callable", argModes: ["value"] },
       resultCarrier: netServerCarrier,
       parameterCarriers: [netConnectionCallbackCarrier],
+      dispatchInputs: [nodeNetInput],
+      ...providerNativeFallibility,
     },
     ...(["isIPv4", "isIPv6"] as const).map((name): RustProviderOperationDefinition => ({
       exportId: `${moduleSpecifier}::${name}`,
@@ -213,9 +223,9 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     { exportId: socketId, memberId: `${socketId}.resume`, operationKind: "method", target: { form: "receiver-method", name: "resume_chain", mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [] },
     { exportId: socketId, memberId: `${socketId}.setNoDelay`, operationKind: "method", target: { form: "receiver-method", name: "set_no_delay_chain", argModes: ["value"], mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [boolCarrier], ...providerNativeFallibility },
     { exportId: socketId, memberId: `${socketId}.setTimeout`, operationKind: "method", target: { form: "receiver-method", name: "set_timeout_number", argModes: ["value"], mutatesReceiver: true }, resultCarrier: mutableSocket, receiverCarrier: netSocketCarrier, parameterCarriers: [{ kind: "type-parameter", identity: "node:net:numeric:Timeout", name: "Timeout" }], genericParameters: [{ kind: "type", targetIdentity: "node:net:numeric:Timeout", sourceName: "Timeout" }], ...providerNativeFallibility },
-    { exportId: serverId, memberId: `${serverId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close", mutatesReceiver: true }, resultCarrier: unitCarrier, receiverCarrier: netServerCarrier, parameterCarriers: [] },
-    { exportId: serverId, memberId: `${serverId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_chain", mutatesReceiver: true }, resultCarrier: mutableServer, receiverCarrier: netServerCarrier, parameterCarriers: [] },
-    { exportId: serverId, memberId: `${serverId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref_chain", mutatesReceiver: true }, resultCarrier: mutableServer, receiverCarrier: netServerCarrier, parameterCarriers: [] },
+    { exportId: serverId, memberId: `${serverId}.close`, operationKind: "method", target: { form: "receiver-method", name: "close" }, resultCarrier: unitCarrier, receiverCarrier: netServerCarrier, parameterCarriers: [] },
+    { exportId: serverId, memberId: `${serverId}.ref`, operationKind: "method", target: { form: "receiver-method", name: "ref_chain" }, resultCarrier: serverReference, receiverCarrier: netServerCarrier, parameterCarriers: [] },
+    { exportId: serverId, memberId: `${serverId}.unref`, operationKind: "method", target: { form: "receiver-method", name: "unref_chain" }, resultCarrier: serverReference, receiverCarrier: netServerCarrier, parameterCarriers: [] },
   );
   const listenRows = [
     ["port", "listen_port", [{ kind: "type-parameter", identity: "node:net:numeric:Port", name: "Port" }], ["value"]],
@@ -229,8 +239,8 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
       memberId: `${serverId}.listen`,
       signatureId: `${serverId}.listen(${signature})`,
       operationKind: "method",
-      target: { form: "receiver-method", name: target, argModes, mutatesReceiver: true },
-      resultCarrier: mutableServer,
+      target: { form: "receiver-method", name: target, argModes },
+      resultCarrier: serverReference,
       receiverCarrier: netServerCarrier,
       parameterCarriers,
       genericParameters: [{ kind: "type", targetIdentity: "node:net:numeric:Port", sourceName: "Port" }],
@@ -242,6 +252,14 @@ export function netRows(): readonly RustProviderOperationDefinition[] {
     ["bytesWritten", "bytes_written", uint64Carrier],
     ["destroyed", "destroyed", boolCarrier],
     ["pending", "pending", boolCarrier],
+  ] as const) {
+    rows.push({ exportId: socketId, memberId: `${socketId}.${memberName}`, operationKind: "property", target: { form: "receiver-method", name: methodName }, resultCarrier, receiverCarrier: netSocketCarrier });
+  }
+  for (const [memberName, methodName, resultCarrier] of [
+    ["localAddress", "local_address_optional", rustOptionTargetType(stringCarrier)],
+    ["localPort", "local_port_optional", rustOptionTargetType(int32Carrier)],
+    ["remoteAddress", "remote_address_optional", rustOptionTargetType(stringCarrier)],
+    ["remotePort", "remote_port_optional", rustOptionTargetType(int32Carrier)],
   ] as const) {
     rows.push({ exportId: socketId, memberId: `${socketId}.${memberName}`, operationKind: "property", target: { form: "receiver-method", name: methodName }, resultCarrier, receiverCarrier: netSocketCarrier });
   }
@@ -263,6 +281,7 @@ function connectionRows(): readonly RustProviderOperationDefinition[] {
     target: { form: "call" as const, path: `node_net::${path}`, argModes },
     resultCarrier: netSocketCarrier,
     parameterCarriers,
+    ...(signature.includes("callback") ? { dispatchInputs: [nodeRuntimeTaskInput] } : {}),
     genericParameters: [{ kind: "type", targetIdentity: "node:net:numeric:Port", sourceName: "Port" }],
     ...providerNativeFallibility,
   }));

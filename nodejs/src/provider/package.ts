@@ -1,12 +1,23 @@
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRustProviderPackage } from "@tsonic/target-rust/provider";
+import { createRustProviderPackage, rustRetainedErrorTargetType } from "@tsonic/target-rust/provider";
+import { nodeBackgroundContext, nodeDispatchGroup, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext } from "./model/dispatch.js";
 import type { RustProviderPackageImplementation } from "@tsonic/target-rust/provider";
+import { nodejsProviderModules } from "./assembly/modules.js";
+import { nodejsProviderModuleSpecifiers } from "./declarations/specifiers.js";
 import { bufferCarrier } from "./modules/buffer/carriers.js";
-import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits } from "./model/operations.js";
+import { cloneOnlyCarrierTraits, closedJsValueCarrierTraits, cloneDefaultCarrierTraits, copyDefaultCarrierTraits, nativeTrait } from "./model/operations.js";
 import { hashCarrier, hmacCarrier, cryptoCarrier } from "./modules/crypto/carriers.js";
-import { httpIncomingMessageCarrier, httpServerCarrier, httpServerResponseCarrier } from "./modules/http/carriers.js";
+import {
+  httpAddressInfoCarrier,
+  httpIncomingMessageCarrier,
+  httpServerAddressCarrier,
+  httpServerCarrier,
+  httpServerResponseCarrier,
+  incomingHttpHeadersCarrier,
+  outgoingHttpHeadersCarrier,
+} from "./modules/http/carriers.js";
 import { makeDirectoryOptionsCarrier, rmOptionsCarrier, statsCarrier, readStreamCarrier, readStreamOptionsCarrier, writeStreamCarrier, writeStreamOptionsCarrier, fsWatcherCarrier } from "./modules/filesystem/carriers.js";
 import { nodeErrorCarrier } from "./model/carriers.js";
 import { processEnvCarrier, processMemoryUsageCarrier } from "./modules/process/carriers.js";
@@ -14,51 +25,53 @@ import { searchParamsCarrier, urlCarrier, urlObjectCarrier } from "./modules/url
 import { timeoutCarrier } from "./modules/timers/carriers.js";
 import { textDecoderCarrier, textEncoderCarrier } from "./modules/util/carriers.js";
 import { eventEmitterCarrier } from "./modules/events/carriers.js";
-import { readableCarrier, writableCarrier } from "./modules/stream/carriers.js";
+import {
+  duplexCarrier,
+  readableCarrier,
+  streamCarrier,
+  transformCarrier,
+  writableCarrier,
+} from "./modules/stream/carriers.js";
 import { dnsLookupAddressCarrier } from "./modules/dns/carriers.js";
-import { zlibOptionsCarrier, zlibTransformCarrier } from "./modules/zlib/carriers.js";
+import { brotliOptionsCarrier, zlibOptionsCarrier, zlibTransformCarrier, zlibTransformTraits } from "./modules/zlib/carriers.js";
 import { netSocketCarrier, netServerCarrier } from "./modules/net/carriers.js";
 import { tlsConnectOptionsCarrier, tlsServerOptionsCarrier, tlsSocketCarrier, tlsServerCarrier } from "./modules/tls/carriers.js";
 import { httpsServerCarrier, httpsClientRequestCarrier } from "./modules/https/carriers.js";
 import { readlineOptionsCarrier, readlineInterfaceCarrier } from "./modules/readline/carriers.js";
 import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./modules/worker-threads/carriers.js";
-import { assertModule, assertRows } from "./modules/assert.js";
-import { bufferModule, bufferRows } from "./modules/buffer/declarations.js";
-import { cryptoModule, cryptoRows } from "./modules/crypto/declarations.js";
-import { childProcessModule, childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
-import { fsModule, fsRows } from "./modules/filesystem/calls.js";
+import { assertRows } from "./modules/assert.js";
+import { bufferRows } from "./modules/buffer/declarations.js";
+import { cryptoRows } from "./modules/crypto/declarations.js";
+import { childProcessRows, spawnOptionsCarrier } from "./modules/child-process/declarations.js";
+import { fsRows } from "./modules/filesystem/calls.js";
 import { statOptionsCarrier, directoryOptionsCarrier, fsConstantsCarrier, direntCarrier, direntGenerics, direntNameParameter } from "./modules/filesystem/paths.js";
 import { bufferEncodingOptionsCarrier } from "./modules/filesystem/realpath.js";
 import {
-  fsPromisesModule,
   fsPromisesRows,
 } from "./modules/filesystem/promises.js";
-import { httpModule, httpRows } from "./modules/http/declarations.js";
-import { osModule, osRows } from "./modules/os.js";
-import { v8HeapInfoCarrier, v8Module, v8Rows } from "./modules/v8.js";
-import { pathModule, pathRows } from "./modules/path.js";
-import { processModule, processRows } from "./modules/process/declarations.js";
+import { httpRows } from "./modules/http/declarations.js";
+import { osRows } from "./modules/os.js";
+import { v8HeapInfoCarrier, v8Rows } from "./modules/v8.js";
+import { pathRows } from "./modules/path.js";
+import { processRows } from "./modules/process/declarations.js";
 import { processCarrier } from "./modules/process/signals.js";
 import { processCpuCarrier } from "./modules/process/metrics.js";
-import { performanceCarrier, performanceModule, performanceRows } from "./modules/performance.js";
-import { timersModule, timersRows } from "./modules/timers/declarations.js";
-import { eventsModule, eventsRows } from "./modules/events/declarations.js";
-import { streamModule, streamRows } from "./modules/stream/declarations.js";
-import { urlModule, urlRows } from "./modules/url/declarations.js";
-import { utilModule, utilRows } from "./modules/util/declarations.js";
+import { performanceCarrier, performanceRows } from "./modules/performance.js";
+import { timersRows } from "./modules/timers/declarations.js";
+import { eventsRows } from "./modules/events/declarations.js";
+import { streamRows } from "./modules/stream/declarations.js";
+import { urlRows } from "./modules/url/declarations.js";
+import { utilRows } from "./modules/util/declarations.js";
 import {
-  dnsModule,
-  dnsPromisesModule,
   dnsRows,
 } from "./modules/dns/declarations.js";
-import { zlibModule, zlibRows } from "./modules/zlib/declarations.js";
-import { netModule, netRows } from "./modules/net/declarations.js";
-import { tlsModule, tlsRows } from "./modules/tls/declarations.js";
-import { httpsModule, httpsRows } from "./modules/https/declarations.js";
-import { readlineModule, readlineRows } from "./modules/readline/declarations.js";
+import { zlibRows } from "./modules/zlib/declarations.js";
+import { netRows } from "./modules/net/declarations.js";
+import { tlsRows } from "./modules/tls/declarations.js";
+import { httpsRows } from "./modules/https/declarations.js";
+import { readlineRows } from "./modules/readline/declarations.js";
 import {
   workerThreadCarrierTraits,
-  workerThreadsModule,
   workerThreadsRows,
 } from "./modules/worker-threads/declarations.js";
 
@@ -72,68 +85,16 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
   const providerPackage = createRustProviderPackage({
     id: "@tsonic/rust-nodejs",
     sourceGlobals: {
+      process: "node:process::default",
       performance: "node:perf_hooks::performance",
       ...(typedArrays ? { crypto: "node:crypto::webcrypto" } : {}),
     },
     displayName: "Node.js for Rust",
     version: "0.0.1",
-    moduleAliases: [
-      { moduleSpecifier: "assert", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "assert/strict", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "node:assert/strict", canonicalModuleSpecifier: "node:assert" },
-      { moduleSpecifier: "buffer", canonicalModuleSpecifier: "node:buffer" },
-      { moduleSpecifier: "child_process", canonicalModuleSpecifier: "node:child_process" },
-      { moduleSpecifier: "crypto", canonicalModuleSpecifier: "node:crypto" },
-      { moduleSpecifier: "fs", canonicalModuleSpecifier: "node:fs" },
-      { moduleSpecifier: "fs/promises", canonicalModuleSpecifier: "node:fs/promises" },
-      { moduleSpecifier: "http", canonicalModuleSpecifier: "node:http" },
-      { moduleSpecifier: "os", canonicalModuleSpecifier: "node:os" },
-      { moduleSpecifier: "v8", canonicalModuleSpecifier: "node:v8" },
-      { moduleSpecifier: "path", canonicalModuleSpecifier: "node:path" },
-      { moduleSpecifier: "process", canonicalModuleSpecifier: "node:process" },
-      { moduleSpecifier: "perf_hooks", canonicalModuleSpecifier: "node:perf_hooks" },
-      { moduleSpecifier: "timers", canonicalModuleSpecifier: "node:timers" },
-      { moduleSpecifier: "events", canonicalModuleSpecifier: "node:events" },
-      { moduleSpecifier: "stream", canonicalModuleSpecifier: "node:stream" },
-      { moduleSpecifier: "dns", canonicalModuleSpecifier: "node:dns" },
-      { moduleSpecifier: "dns/promises", canonicalModuleSpecifier: "node:dns/promises" },
-      { moduleSpecifier: "zlib", canonicalModuleSpecifier: "node:zlib" },
-      { moduleSpecifier: "net", canonicalModuleSpecifier: "node:net" },
-      { moduleSpecifier: "tls", canonicalModuleSpecifier: "node:tls" },
-      { moduleSpecifier: "https", canonicalModuleSpecifier: "node:https" },
-      { moduleSpecifier: "readline", canonicalModuleSpecifier: "node:readline" },
-      { moduleSpecifier: "worker_threads", canonicalModuleSpecifier: "node:worker_threads" },
-      { moduleSpecifier: "util", canonicalModuleSpecifier: "node:util" },
-      { moduleSpecifier: "url", canonicalModuleSpecifier: "node:url" },
-    ],
-    modules: [
-      assertModule(),
-      pathModule(),
-      osModule(),
-      v8Module(),
-      fsModule(typedArrays),
-      fsPromisesModule(),
-      processModule(),
-      performanceModule(),
-      bufferModule(typedArrays),
-      childProcessModule(typedArrays),
-      urlModule(),
-      cryptoModule(typedArrays),
-      utilModule(typedArrays),
-      httpModule(),
-      timersModule(),
-      eventsModule(),
-      streamModule(),
-      dnsModule(),
-      dnsPromisesModule(),
-      zlibModule(typedArrays),
-      netModule(),
-      tlsModule(),
-      httpsModule(),
-      readlineModule(),
-      workerThreadsModule(),
-    ],
+    moduleAliases: nodejsProviderModuleSpecifiers(),
+    modules: nodejsProviderModules(typedArrays),
     types: [
+      { exportId: "node:util::NodeError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:process::Process", targetCarrier: processCarrier },
       { exportId: "node:child_process::SpawnSyncError", targetCarrier: nodeErrorCarrier },
       { exportId: "node:child_process::SpawnSyncOptionsWithBufferEncoding", targetCarrier: spawnOptionsCarrier, objectLiteralConstruction: { kind: "struct-default" } },
@@ -170,6 +131,11 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { exportId: "node:http::IncomingMessage", targetCarrier: httpIncomingMessageCarrier },
       { exportId: "node:http::ServerResponse", targetCarrier: httpServerResponseCarrier },
       { exportId: "node:http::Server", targetCarrier: httpServerCarrier },
+      { exportId: "node:http::IncomingHttpHeaders", targetCarrier: incomingHttpHeadersCarrier },
+      { exportId: "node:http::IncomingHttpHeaderValues", targetCarrier: incomingHttpHeadersCarrier },
+      { exportId: "node:http::OutgoingHttpHeaders", targetCarrier: outgoingHttpHeadersCarrier },
+      { exportId: "node:http::AddressInfo", targetCarrier: httpAddressInfoCarrier },
+      { exportId: "node:http::ServerAddress", targetCarrier: httpServerAddressCarrier },
       { exportId: "node:timers::Timeout", targetCarrier: timeoutCarrier },
       { exportId: "node:util::TextDecoder", targetCarrier: textDecoderCarrier },
       ...(typedArrays ? [
@@ -177,8 +143,11 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
         { exportId: "node:crypto::Crypto", targetCarrier: cryptoCarrier },
       ] : []),
       { exportId: "node:events::EventEmitter", targetCarrier: eventEmitterCarrier },
+      { exportId: "node:stream::Stream", targetCarrier: streamCarrier },
       { exportId: "node:stream::Readable", targetCarrier: readableCarrier },
       { exportId: "node:stream::Writable", targetCarrier: writableCarrier },
+      { exportId: "node:stream::Duplex", targetCarrier: duplexCarrier },
+      { exportId: "node:stream::Transform", targetCarrier: transformCarrier },
       { exportId: "node:fs::ReadStream", targetCarrier: readStreamCarrier },
       { exportId: "node:fs::WriteStream", targetCarrier: writeStreamCarrier },
       {
@@ -198,7 +167,12 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
         targetCarrier: zlibOptionsCarrier,
         objectLiteralConstruction: { kind: "struct-default" },
       },
-      { exportId: "node:zlib::Zlib", targetCarrier: zlibTransformCarrier },
+      {
+        exportId: "node:zlib::BrotliOptions",
+        targetCarrier: brotliOptionsCarrier,
+        objectLiteralConstruction: { kind: "struct-default" },
+      },
+      { exportId: "node:zlib::ZlibTransform", targetCarrier: zlibTransformCarrier },
       { exportId: "node:net::Socket", targetCarrier: netSocketCarrier },
       { exportId: "node:net::Server", targetCarrier: netServerCarrier },
       {
@@ -223,7 +197,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       {
         exportId: "node:readline::ReadLineOptions",
         targetCarrier: readlineOptionsCarrier,
-        objectLiteralConstruction: { kind: "struct-default" },
+        objectLiteralConstruction: { kind: "struct" },
       },
       { exportId: "node:readline::Interface", targetCarrier: readlineInterfaceCarrier },
       { exportId: "node:worker_threads::Worker", targetCarrier: workerCarrier },
@@ -286,6 +260,13 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       { alias: "node_worker_threads", path: "tsonic_rust_node::worker_threads" },
     ],
     carrierPaths: {
+      "rust.node.BackgroundTasks": "tsonic_rust_node::background::BackgroundTasks",
+      "rust.node.BackgroundHandle": "tsonic_rust_node::background::BackgroundHandle",
+      "rust.node.RuntimeTasks": "tsonic_rust_node::runtime_tasks::RuntimeTasks",
+      "rust.node.RuntimeTaskHandle": "tsonic_rust_runtime::dispatch_queue::TaskHandle",
+      "rust.node.StdinResources": "tsonic_rust_node::process::StdinResources",
+      "rust.node.Timers": "tsonic_rust_runtime::timer_queue::TimerContext",
+      "rust.node.DispatchEnd": "tsonic_rust_runtime::dispatch::DispatchEnd",
       "rust.node.Stats": "tsonic_rust_node::fs::Stats",
       "rust.node.StatOptions": "tsonic_rust_node::fs::StatOptions",
       "rust.node.BufferDirectoryOptions": "tsonic_rust_node::fs::BufferDirectoryOptions",
@@ -310,15 +291,22 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.CpuUsage": "tsonic_rust_node::process::CpuUsage",
       "rust.node.Performance": "tsonic_rust_node::perf_hooks::Performance",
       "rust.node.HttpIncomingMessage": "tsonic_rust_node::http::IncomingMessage",
-      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponseHandle",
+      "rust.node.HttpServerResponse": "tsonic_rust_node::http::ServerResponse",
       "rust.node.HttpServer": "tsonic_rust_node::http::ServerHandle",
+      "rust.node.IncomingHttpHeaders": "tsonic_rust_node::http::IncomingHttpHeaders",
+      "rust.node.OutgoingHttpHeaders": "tsonic_rust_node::http::OutgoingHttpHeaders",
+      "rust.node.HttpAddressInfo": "tsonic_rust_node::http::AddressInfo",
+      "rust.node.HttpServerAddress": "tsonic_rust_node::http::ServerAddress",
       "rust.node.Timeout": "tsonic_rust_node::timers::Timeout",
       "rust.node.TextDecoder": "tsonic_rust_node::util::TextDecoder",
       "rust.node.TextEncoder": "tsonic_rust_node::util::TextEncoder",
       "rust.node.Crypto": "tsonic_rust_node::crypto::webcrypto::Crypto",
       "rust.node.EventEmitter": "tsonic_rust_node::events::EventEmitter",
+      "rust.node.Stream": "tsonic_rust_node::stream::Stream",
       "rust.node.Readable": "tsonic_rust_node::stream::Readable",
       "rust.node.Writable": "tsonic_rust_node::stream::Writable",
+      "rust.node.Duplex": "tsonic_rust_node::stream::Duplex",
+      "rust.node.Transform": "tsonic_rust_node::stream::Transform",
       "rust.node.ReadStream": "tsonic_rust_node::fs::ReadStream",
       "rust.node.WriteStream": "tsonic_rust_node::fs::WriteStream",
       "rust.node.ReadStreamOptions": "tsonic_rust_node::fs::ReadStreamOptions",
@@ -326,6 +314,7 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.FsWatcher": "tsonic_rust_node::fs::FsWatcher",
       "rust.node.DnsLookupAddress": "tsonic_rust_node::dns::LookupAddress",
       "rust.node.ZlibOptions": "tsonic_rust_node::zlib::SourceZlibOptions",
+      "rust.node.BrotliOptions": "tsonic_rust_node::zlib::SourceBrotliOptions",
       "rust.node.ZlibTransform": "tsonic_rust_node::zlib::Zlib",
       "rust.node.NetSocket": "tsonic_rust_node::net::Socket",
       "rust.node.NetServer": "tsonic_rust_node::net::Server",
@@ -338,17 +327,25 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.ReadlineOptions": "tsonic_rust_node::readline::SourceInterfaceOptions",
       "rust.node.ReadlineInterface": "tsonic_rust_node::readline::Interface",
       "rust.node.Worker": "tsonic_rust_node::worker_threads::Worker",
+      "rust.node.WorkerCompletionError": "tsonic_rust_node::worker_threads::WorkerCompletionError",
       "rust.node.WorkerOptions": "tsonic_rust_node::worker_threads::WorkerOptions",
       "rust.node.MessagePort": "tsonic_rust_node::worker_threads::MessagePort",
       "rust.node.MessageChannel": "tsonic_rust_node::worker_threads::MessageChannel",
+      "rust.node.WorkerResources": "tsonic_rust_node::worker_threads::WorkerResources",
+      "rust.node.SignalTasks": "tsonic_rust_node::process::SignalTasks",
+      "rust.node.NetServers": "tsonic_rust_node::net::NetServers",
+      "rust.node.Watchers": "tsonic_rust_node::fs::Watchers",
+      "rust.node.TlsServers": "tsonic_rust_node::tls::TlsServers",
+      "rust.node.HttpServers": "tsonic_rust_node::http::HttpServers",
+      "rust.node.HttpHandle": "tsonic_rust_node::http::HttpHandle",
       "rust.node.NodeError": "tsonic_rust_node::NodeError",
     },
     carrierTraits: {
       "rust.node.Stats": cloneOnlyCarrierTraits,
       "rust.node.StatOptions": copyDefaultCarrierTraits,
       "rust.node.BufferDirectoryOptions": cloneDefaultCarrierTraits,
-      "rust.node.FsConstants": { implementations: [{ traitPath: "core::clone::Clone", requirements: [] }, { traitPath: "core::marker::Copy", requirements: [] }] },
-      "rust.node.Dirent": { implementations: [{ traitPath: "core::clone::Clone", requirements: [{ typeArgumentIndex: 0, traitPath: "core::clone::Clone" }] }] },
+      "rust.node.FsConstants": { implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [] }, { trait: nativeTrait("core::marker::Copy"), requirements: [] }] },
+      "rust.node.Dirent": { implementations: [{ trait: nativeTrait("core::clone::Clone"), requirements: [{ typeArgumentIndex: 0, trait: nativeTrait("core::clone::Clone") }] }] },
       "rust.node.MakeDirectoryOptions": copyDefaultCarrierTraits,
       "rust.node.RmOptions": copyDefaultCarrierTraits,
       "rust.node.Buffer": closedJsValueCarrierTraits,
@@ -370,33 +367,68 @@ export function createRustNodejsProviderPackage(typedArrays: boolean): RustProvi
       "rust.node.HttpIncomingMessage": cloneOnlyCarrierTraits,
       "rust.node.HttpServerResponse": cloneOnlyCarrierTraits,
       "rust.node.HttpServer": cloneOnlyCarrierTraits,
+      "rust.node.IncomingHttpHeaders": cloneOnlyCarrierTraits,
+      "rust.node.OutgoingHttpHeaders": cloneOnlyCarrierTraits,
+      "rust.node.HttpAddressInfo": cloneOnlyCarrierTraits,
+      "rust.node.HttpServerAddress": cloneOnlyCarrierTraits,
       "rust.node.Timeout": cloneOnlyCarrierTraits,
       "rust.node.TextDecoder": cloneOnlyCarrierTraits,
       "rust.node.TextEncoder": copyDefaultCarrierTraits,
       "rust.node.Crypto": copyDefaultCarrierTraits,
-      "rust.node.NodeError": cloneOnlyCarrierTraits,
+      "rust.node.NodeError": { implementations: [...cloneOnlyCarrierTraits.implementations,
+        { trait: nativeTrait("core::convert::Into", [{ kind: "type", type: rustRetainedErrorTargetType() }]), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ErrorObject"), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ErrorStack"), requirements: [] },
+        { trait: nativeTrait("tsonic_rust_runtime::ToSourceString"), requirements: [] },
+      ] },
+      "rust.node.Stream": cloneOnlyCarrierTraits,
+      "rust.node.Readable": cloneOnlyCarrierTraits,
+      "rust.node.Writable": cloneOnlyCarrierTraits,
+      "rust.node.Duplex": cloneOnlyCarrierTraits,
+      "rust.node.Transform": cloneOnlyCarrierTraits,
+      "rust.node.ReadStream": cloneOnlyCarrierTraits,
+      "rust.node.WriteStream": cloneOnlyCarrierTraits,
+      "rust.node.ZlibTransform": zlibTransformTraits,
+      "rust.node.NetSocket": cloneOnlyCarrierTraits,
+      "rust.node.NetServer": cloneOnlyCarrierTraits,
       "rust.node.FsWatcher": cloneOnlyCarrierTraits,
       "rust.node.DnsLookupAddress": cloneOnlyCarrierTraits,
       "rust.node.ZlibOptions": cloneOnlyCarrierTraits,
+      "rust.node.BrotliOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsConnectOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsServerOptions": cloneDefaultCarrierTraits,
       "rust.node.TlsServer": cloneOnlyCarrierTraits,
       "rust.node.HttpsServer": cloneOnlyCarrierTraits,
       "rust.node.HttpsClientRequest": cloneOnlyCarrierTraits,
-      "rust.node.ReadlineOptions": cloneDefaultCarrierTraits,
+      "rust.node.ReadlineOptions": cloneOnlyCarrierTraits,
       "rust.node.Worker": workerThreadCarrierTraits.worker,
+      "rust.node.WorkerCompletionError": { implementations: [...cloneOnlyCarrierTraits.implementations,
+        { trait: nativeTrait("core::convert::Into", [{ kind: "type", type: rustRetainedErrorTargetType() }]), requirements: [] },
+      ] },
       "rust.node.WorkerOptions": workerThreadCarrierTraits.options,
       "rust.node.MessagePort": workerThreadCarrierTraits.port,
+      "rust.node.MessageChannel": cloneOnlyCarrierTraits,
+      "rust.node.EventEmitter": cloneOnlyCarrierTraits,
     },
+    dispatchContexts: [nodeBackgroundContext, nodeRuntimeTaskContext, nodeStdinContext, nodeTimerContext, nodeWorkerContext, nodeSignalContext, nodeNetContext, nodeWatcherContext, nodeTlsContext, nodeHttpContext],
     binaryHooks: [{
       id: "node-performance-clock",
       phase: "before-initialization",
       path: "tsonic_rust_node::perf_hooks::initialize_clock",
       requiredCrate: "tsonic_rust_node",
     }, {
+      id: "node-async-executor",
+      phase: "async-entry-execution",
+      path: "tsonic_rust_node::block_on_with_contexts",
+      dispatchGroups: [nodeDispatchGroup(1, typedArrays)],
+      requiredCrate: "tsonic_rust_node",
+      isFallible: true,
+      errorBoundary: "source-program",
+    }, {
       id: "node-event-loop",
-      phase: "after-entry",
-      path: "tsonic_rust_node::run_event_loop",
+      phase: "entry-execution",
+      path: "tsonic_rust_node::run_entry_with_contexts",
+      dispatchGroups: [nodeDispatchGroup(1, typedArrays)],
       requiredCrate: "tsonic_rust_node",
       isFallible: true,
       errorBoundary: "source-program",

@@ -134,7 +134,8 @@ fn compiler_paths_preserve_names_kinds_options_and_metadata() {
         let link = path_buffer(&root.join("link"));
         assert!(fs::lstat_sync_buffer(&link).unwrap().is_symbolic_link());
         assert!(fs::stat_sync_buffer(&link).unwrap().is_file());
-        let socket = std::os::unix::net::UnixListener::bind(root.join("socket")).unwrap();
+        let relative_root = root.strip_prefix(std::env::current_dir().unwrap()).unwrap();
+        let socket = std::os::unix::net::UnixListener::bind(relative_root.join("socket")).unwrap();
         let entries = fs::readdir_sync_buffer_path_entries(
             &root_buffer,
             fs::BufferDirectoryOptions {

@@ -73,6 +73,10 @@ fn collect_reference_text(root: &Path) -> String {
         text.push_str(&source);
         text.push('\n');
     }
+    for file in typescript_files_under(&root.join("../nodejs/src/provider")) {
+        text.push_str(&fs::read_to_string(file).expect("provider source file"));
+        text.push('\n');
+    }
     text
 }
 
@@ -93,6 +97,14 @@ fn remove_function_definition_lines(source: &str, function_name: &str) -> String
 }
 
 fn rust_files_under(root: &Path) -> Vec<PathBuf> {
+    files_under(root, "rs")
+}
+
+fn typescript_files_under(root: &Path) -> Vec<PathBuf> {
+    files_under(root, "ts")
+}
+
+fn files_under(root: &Path, extension: &str) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(path) = stack.pop() {
@@ -103,7 +115,7 @@ fn rust_files_under(root: &Path) -> Vec<PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some(extension) {
                 files.push(path);
             }
         }

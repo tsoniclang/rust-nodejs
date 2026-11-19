@@ -1,7 +1,8 @@
 import { nativeUintCarrier, boolCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, stringType, voidType } from "../../model/source-types.js";
 import { propertyMember, providerRef } from "../../declarations/builders.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { sourceCallbackFallibility } from "../../model/operations.js";
+import { nodeRuntimeTaskInput } from "../../model/dispatch.js";
 import { readableCarrier, writableCarrier } from "../stream/carriers.js";
 import { readlineInterfaceCarrier, readlineOptionsCarrier, readlineQuestionCallbackCarrier } from "./carriers.js";
 import { rustOptionTargetType } from "@tsonic/target-rust/provider";
@@ -99,7 +100,8 @@ export function readlineRows(): readonly RustProviderOperationDefinition[] {
       resultCarrier: readlineInterfaceCarrier,
       parameterCarriers: [readlineOptionsCarrier],
     },
-    interfaceMethod("question", "question_callable", [stringCarrier, readlineQuestionCallbackCarrier], ["ref", "value"], unitCarrier, true),
+    { ...interfaceMethod("question", "question_callable", [stringCarrier, readlineQuestionCallbackCarrier], ["ref", "value"], unitCarrier, true),
+      dispatchInputs: [nodeRuntimeTaskInput] },
     interfaceMethod("write", "write", [stringCarrier], ["ref"], unitCarrier, true),
     interfaceMethod("pause", "pause_chain", [], [], mutableInterface, false),
     interfaceMethod("resume", "resume_chain", [], [], mutableInterface, false),
@@ -182,7 +184,7 @@ function interfaceMethod(
     parameterCarriers: parameters,
   } as const;
   return fallible
-    ? { ...operation, ...providerNativeFallibility }
+    ? { ...operation, ...sourceCallbackFallibility }
     : operation;
 }
 

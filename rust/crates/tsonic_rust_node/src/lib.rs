@@ -6,7 +6,7 @@
 pub mod abi;
 pub mod assert;
 pub mod async_hooks;
-mod background;
+pub mod background;
 pub mod buffer;
 pub mod child_process;
 pub mod cluster;
@@ -30,11 +30,15 @@ pub mod path;
 pub mod path_posix;
 pub mod path_win32;
 pub mod perf_hooks;
+pub mod phases;
 pub mod process;
 pub mod punycode;
 pub mod querystring;
 mod readiness;
 pub mod readline;
+mod retained_listener;
+mod runtime_resources;
+pub mod runtime_tasks;
 pub mod sqlite;
 pub mod stream;
 pub mod string_decoder;
@@ -49,4 +53,6 @@ pub mod worker_threads;
 pub mod zlib;
 
 pub use error::{NodeError, NodeResult};
-pub use event_loop::run_event_loop;
+pub use event_loop::{
+    block_on, block_on_with_contexts, run_entry_with_contexts, run_event_loop, run_with_contexts,
+};

@@ -1,8 +1,8 @@
 import { nativeUintCarrier, boolCarrier, emptyCallbackCarrier, jsValueCarrier, oneValueCallbackCarrier, threeValueCallbackCarrier, twoValueCallbackCarrier } from "../../model/carriers.js";
 import { booleanType, numberType, stringType, voidType } from "../../model/source-types.js";
 import { constructorMember, fnExport, methodMember, providerRef } from "../../declarations/builders.js";
-import { eventEmitterCarrier, mutableEventEmitterCarrier } from "./carriers.js";
-import { providerNativeFallibility } from "../../model/operations.js";
+import { eventEmitterCarrier, eventEmitterReferenceCarrier } from "./carriers.js";
+import { providerNativeFallibility, sourceCallbackFallibility } from "../../model/operations.js";
 import { rustJsArrayTargetType } from "@tsonic/target-rust/provider";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition } from "@tsonic/target-rust/provider";
@@ -149,9 +149,8 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
         form: "receiver-method",
         name: `${targetName}${arity === 0 ? "" : arity}`,
         argModes: ["ref", "ref"],
-        mutatesReceiver: true,
       },
-      resultCarrier: mutableEventEmitterCarrier,
+      resultCarrier: eventEmitterReferenceCarrier,
       receiverCarrier: eventEmitterCarrier,
       parameterCarriers: [jsValueCarrier, callbackCarrier],
       ...providerNativeFallibility,
@@ -161,7 +160,7 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
       exportId: emitterId,
       memberId: `${emitterId}.constructor`,
       operationKind: "constructor",
-      target: { form: "call", path: "node_events::EventEmitter::new" },
+      target: { form: "associated-call", owner: eventEmitterCarrier, method: "new" },
       resultCarrier: eventEmitterCarrier,
       parameterCarriers: [],
     },
@@ -181,7 +180,6 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
           form: "receiver-method",
           name: `emit_callable${arity === 0 ? "" : arity}`,
           argModes: ["ref", ...Array.from({ length: arity }, () => "value" as const)],
-          mutatesReceiver: true,
         },
         resultCarrier: boolCarrier,
         receiverCarrier: eventEmitterCarrier,
@@ -189,7 +187,7 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
           jsValueCarrier,
           ...Array.from({ length: arity }, () => jsValueCarrier),
         ],
-        ...providerNativeFallibility,
+        ...sourceCallbackFallibility,
       })),
     {
       exportId: emitterId,
@@ -206,8 +204,8 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
       memberId: `${emitterId}.removeAllListeners`,
       signatureId: `${emitterId}.removeAllListeners()`,
       operationKind: "method",
-      target: { form: "receiver-method", name: "remove_all_callable_listeners", mutatesReceiver: true },
-      resultCarrier: mutableEventEmitterCarrier,
+      target: { form: "receiver-method", name: "remove_all_callable_listeners" },
+      resultCarrier: eventEmitterReferenceCarrier,
       receiverCarrier: eventEmitterCarrier,
       parameterCarriers: [],
     },
@@ -220,9 +218,8 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
         form: "receiver-method",
         name: "remove_all_callable_listeners_for",
         argModes: ["ref"],
-        mutatesReceiver: true,
       },
-      resultCarrier: mutableEventEmitterCarrier,
+      resultCarrier: eventEmitterReferenceCarrier,
       receiverCarrier: eventEmitterCarrier,
       parameterCarriers: [jsValueCarrier],
       ...providerNativeFallibility,
@@ -249,8 +246,8 @@ export function eventsRows(): readonly RustProviderOperationDefinition[] {
       exportId: emitterId,
       memberId: `${emitterId}.setMaxListeners`,
       operationKind: "method",
-      target: { form: "receiver-method", name: "set_max_listeners", mutatesReceiver: true },
-      resultCarrier: mutableEventEmitterCarrier,
+      target: { form: "receiver-method", name: "set_max_listeners" },
+      resultCarrier: eventEmitterReferenceCarrier,
       receiverCarrier: eventEmitterCarrier,
       parameterCarriers: [nativeUintCarrier],
     },

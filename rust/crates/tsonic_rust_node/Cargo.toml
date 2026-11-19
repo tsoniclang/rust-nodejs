@@ -11,8 +11,9 @@ filetime = "0.2"
 get_if_addrs = "0.5"
 glob = "0.3"
 hmac = "0.12"
+httparse = "1"
 memchr = "=2.8.3"
-mio = { version = "=1.2.1", features = ["os-poll", "net"] }
+mio = { version = "=1.2.1", features = ["os-poll", "os-ext", "net"] }
 libc = "0.2"
 lazy_static = { version = "=1.4.0", default-features = false, features = ["spin_no_std"] }
 notify = "8"
@@ -25,6 +26,8 @@ rustls-pemfile = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 sha1 = "0.10"
+shared_child = { version = "=1.1.1", default-features = false }
+socket2 = "0.6"
 tsonic_rust_js = "=0.1.0"
 tsonic_rust_runtime = "=0.1.0"
 webpki-roots = "1"
@@ -32,7 +35,11 @@ webpki-roots = "1"
 [target.'cfg(unix)'.dependencies]
 command-fds = "=0.3.3"
 signal-hook = "=0.3.18"
-nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal", "user"] }
+nix = { version = "=0.31.3", default-features = false, features = ["resource", "signal", "user", "fs", "term"] }
+
+[dev-dependencies]
+syn = { version = "2.0.118", features = ["full", "visit"] }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
 
 [[test]]
 name = "no_forbidden_shortcuts"
@@ -55,8 +62,36 @@ name = "timer_ownership_tests"
 path = "../../tests/node/timer_ownership_tests.rs"
 
 [[test]]
+name = "http_metadata_ownership_tests"
+path = "../../tests/node/http_metadata_ownership_tests.rs"
+
+[[test]]
+name = "background_ownership_tests"
+path = "../../tests/node/background_ownership_tests.rs"
+
+[[test]]
+name = "runtime_task_ownership_tests"
+path = "../../tests/node/runtime_task_ownership_tests.rs"
+
+[[test]]
+name = "event_resource_ownership_tests"
+path = "../../tests/node/event_resource_ownership_tests.rs"
+
+[[test]]
 name = "native_numeric_results"
 path = "../../tests/node/native_numeric_results.rs"
+
+[[test]]
+name = "readable_ownership_tests"
+path = "../../tests/node/readable_ownership_tests.rs"
+
+[[test]]
+name = "stdin_ownership_tests"
+path = "../../tests/node/stdin_ownership_tests.rs"
+
+[[test]]
+name = "zlib_ownership_tests"
+path = "../../tests/node/zlib_ownership_tests.rs"
 
 [[test]]
 name = "abi_ledger_tests"
@@ -73,3 +108,8 @@ path = "../../tests/node_api_inventory_tests.rs"
 [[test]]
 name = "node_full_api_inventory_tests"
 path = "../../tests/node_full_api_inventory_tests.rs"
+
+[[test]]
+name = "worker_physical_lifecycle"
+path = "../../tests/node/worker_physical_lifecycle.rs"
+harness = false

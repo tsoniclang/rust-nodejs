@@ -125,7 +125,8 @@ fn native_integer_rows_and_worker_values_do_not_round() {
     ));
     assert!(matches!(rows[0]["minimum"], JsValue::Integer(i64::MIN)));
     for original in [JsValue::from(i64::MIN), JsValue::from(u64::MAX)] {
-        let channel = worker_threads::MessageChannel::new();
+        let channel =
+            worker_threads::resources::with_default(worker_threads::MessageChannel::new).unwrap();
         channel.port1.post_message(original.clone()).unwrap();
         let transported = worker_threads::receive_message_on_port(&channel.port2).unwrap();
         assert_eq!(transported, original);
@@ -139,18 +140,14 @@ fn byte_payloads_keep_integer_slots_in_closed_values() {
     let json = buffer::Buffer::from_bytes(vec![0, 127, 255]).to_json();
     let data = json.as_object().unwrap().borrow().get("data");
     let bytes = data.as_array().unwrap();
-    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
-        assert!(
-            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
-        );
+    for (index, value) in [0_u8, 127, 255].into_iter().enumerate() {
+        assert!(matches!(bytes.get(index), Some(JsValue::Uint8(actual)) if actual == value));
     }
     let database = tsonic_rust_node::sqlite::DatabaseSync::open(":memory:").unwrap();
     let rows = database.all("SELECT X'007FFF' AS bytes", &[]).unwrap();
     let bytes = rows[0]["bytes"].as_array().unwrap();
-    for (index, value) in [0_u64, 127, 255].into_iter().enumerate() {
-        assert!(
-            matches!(bytes.get(index), Some(JsValue::UnsignedInteger(actual)) if actual == value)
-        );
+    for (index, value) in [0_u8, 127, 255].into_iter().enumerate() {
+        assert!(matches!(bytes.get(index), Some(JsValue::Uint8(actual)) if actual == value));
     }
 }
 

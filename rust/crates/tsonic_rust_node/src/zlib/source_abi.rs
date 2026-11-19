@@ -1,12 +1,20 @@
 use super::{
-    create_deflate, create_deflate_raw, create_gunzip, create_gzip, create_inflate,
-    create_inflate_raw, deflate_raw_sync_with_options, deflate_sync, deflate_sync_with_options,
-    gunzip_sync, gunzip_sync_with_options, gzip_sync, gzip_sync_with_options,
-    inflate_raw_sync_with_options, inflate_sync, inflate_sync_with_options, BackgroundZlibOptions,
-    Deflate, DeflateRaw, Gunzip, Gzip, Inflate, InflateRaw, ZlibOptions,
+    create_brotli_compress, create_brotli_decompress, create_deflate, create_deflate_raw,
+    create_gunzip, create_gzip, create_inflate, create_inflate_raw, deflate_raw_sync_with_options,
+    deflate_sync, deflate_sync_with_options, gunzip_sync, gunzip_sync_with_options, gzip_sync,
+    gzip_sync_with_options, inflate_raw_sync_with_options, inflate_sync, inflate_sync_with_options,
+    BackgroundZlibOptions, BrotliCompress, BrotliDecompress, BrotliOptions, Deflate, DeflateRaw,
+    Gunzip, Gzip, Inflate, InflateRaw, ZlibOptions,
 };
+use crate::background::BackgroundTasks;
 use crate::buffer::Buffer;
 use crate::error::{NodeError, NodeResult};
+
+type CompressionCallback<'environment, Failure> = tsonic_rust_runtime::Callable<
+    'environment,
+    (Option<NodeError>, Option<Buffer>),
+    Result<(), Failure>,
+>;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceZlibOptions {
@@ -22,21 +30,71 @@ pub struct SourceZlibOptions {
     pub info: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SourceBrotliOptions {
+    pub chunk_size: Option<usize>,
+    pub max_output_length: Option<usize>,
+}
+
+impl SourceBrotliOptions {
+    fn into_runtime(self) -> NodeResult<BrotliOptions> {
+        let defaults = BrotliOptions::default();
+        let chunk_size = self.chunk_size.unwrap_or(defaults.chunk_size);
+        if chunk_size == 0 {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "chunkSize must be a positive native integer",
+            ));
+        }
+        if self.max_output_length == Some(0) {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "maxOutputLength must be a positive native integer",
+            ));
+        }
+        Ok(BrotliOptions {
+            chunk_size,
+            max_output_length: self.max_output_length,
+            ..defaults
+        })
+    }
+}
+
 impl SourceZlibOptions {
-    fn into_runtime(self) -> ZlibOptions {
+    fn into_runtime(self) -> NodeResult<ZlibOptions> {
         let defaults = ZlibOptions::default();
-        ZlibOptions {
+        let chunk_size = self.chunk_size.unwrap_or(defaults.chunk_size);
+        if chunk_size == 0 {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "chunkSize must be a positive native integer",
+            ));
+        }
+        let level = self.level.unwrap_or(defaults.level);
+        if !(-1..=9).contains(&level) {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "level must be between -1 and 9",
+            ));
+        }
+        if self.max_output_length == Some(0) {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "maxOutputLength must be a positive native integer",
+            ));
+        }
+        Ok(ZlibOptions {
             flush: self.flush,
             finish_flush: self.finish_flush,
-            chunk_size: self.chunk_size.unwrap_or(defaults.chunk_size),
+            chunk_size,
             window_bits: self.window_bits,
-            level: self.level.unwrap_or(defaults.level),
+            level,
             mem_level: self.mem_level,
             strategy: self.strategy.unwrap_or(defaults.strategy),
             max_output_length: self.max_output_length,
             dictionary: self.dictionary,
             info: self.info.unwrap_or(false),
-        }
+        })
     }
 }
 
@@ -44,218 +102,322 @@ pub fn gzip_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    gzip_sync_with_options(input, &options.into_runtime())
+    gzip_sync_with_options(input, &options.into_runtime()?)
 }
 
 pub fn gunzip_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    gunzip_sync_with_options(input, &options.into_runtime())
+    gunzip_sync_with_options(input, &options.into_runtime()?)
 }
 
 pub fn deflate_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    deflate_sync_with_options(input, &options.into_runtime())
+    deflate_sync_with_options(input, &options.into_runtime()?)
 }
 
 pub fn inflate_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    inflate_sync_with_options(input, &options.into_runtime())
+    inflate_sync_with_options(input, &options.into_runtime()?)
 }
 
 pub fn deflate_raw_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    deflate_raw_sync_with_options(input, &options.into_runtime())
+    deflate_raw_sync_with_options(input, &options.into_runtime()?)
 }
 
 pub fn inflate_raw_sync_source(
     input: &tsonic_rust_js::Uint8Array,
     options: SourceZlibOptions,
 ) -> NodeResult<Buffer> {
-    inflate_raw_sync_with_options(input, &options.into_runtime())
+    inflate_raw_sync_with_options(input, &options.into_runtime()?)
 }
 
-pub fn create_gzip_source(options: SourceZlibOptions) -> NodeResult<Gzip> {
-    Ok(create_gzip(Some(options.into_runtime())))
+pub fn create_gzip_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<Gzip<E>> {
+    Ok(create_gzip(tasks, Some(options.into_runtime()?)))
 }
 
-pub fn create_deflate_source(options: SourceZlibOptions) -> NodeResult<Deflate> {
-    Ok(create_deflate(Some(options.into_runtime())))
+pub fn create_deflate_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<Deflate<E>> {
+    Ok(create_deflate(tasks, Some(options.into_runtime()?)))
 }
 
-pub fn create_inflate_source(options: SourceZlibOptions) -> NodeResult<Inflate> {
-    Ok(create_inflate(Some(options.into_runtime())))
+pub fn create_inflate_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<Inflate<E>> {
+    Ok(create_inflate(tasks, Some(options.into_runtime()?)))
 }
 
-pub fn create_gunzip_source(options: SourceZlibOptions) -> NodeResult<Gunzip> {
-    Ok(create_gunzip(Some(options.into_runtime())))
+pub fn create_gunzip_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<Gunzip<E>> {
+    Ok(create_gunzip(tasks, Some(options.into_runtime()?)))
 }
 
-pub fn create_deflate_raw_source(options: SourceZlibOptions) -> NodeResult<DeflateRaw> {
-    Ok(create_deflate_raw(Some(options.into_runtime())))
+pub fn create_deflate_raw_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<DeflateRaw<E>> {
+    Ok(create_deflate_raw(tasks, Some(options.into_runtime()?)))
 }
 
-pub fn create_inflate_raw_source(options: SourceZlibOptions) -> NodeResult<InflateRaw> {
-    Ok(create_inflate_raw(Some(options.into_runtime())))
+pub fn create_inflate_raw_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceZlibOptions,
+) -> NodeResult<InflateRaw<E>> {
+    Ok(create_inflate_raw(tasks, Some(options.into_runtime()?)))
+}
+
+pub fn create_brotli_compress_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceBrotliOptions,
+) -> NodeResult<BrotliCompress<E>> {
+    Ok(create_brotli_compress(tasks, Some(options.into_runtime()?)))
+}
+
+pub fn create_brotli_decompress_source<E: From<NodeError> + 'static>(
+    tasks: tsonic_rust_runtime::dispatch_queue::TaskHandle<E>,
+    options: SourceBrotliOptions,
+) -> NodeResult<BrotliDecompress<E>> {
+    Ok(create_brotli_decompress(
+        tasks,
+        Some(options.into_runtime()?),
+    ))
 }
 
 pub fn gzip_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_callable(input, callback, gzip_sync)
+    compress_callable(root, input, callback, gzip_sync)
 }
 
 pub fn gunzip_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_callable(input, callback, gunzip_sync)
+    compress_callable(root, input, callback, gunzip_sync)
 }
 
 pub fn deflate_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_callable(input, callback, deflate_sync)
+    compress_callable(root, input, callback, deflate_sync)
 }
 
 pub fn inflate_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_callable(input, callback, inflate_sync)
+    compress_callable(root, input, callback, inflate_sync)
 }
 
 pub fn gzip_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_options_callable(input, options, callback, gzip_sync_with_options)
+    compress_options_callable(root, input, options, callback, gzip_sync_with_options)
 }
 
 pub fn gunzip_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_options_callable(input, options, callback, gunzip_sync_with_options)
+    compress_options_callable(root, input, options, callback, gunzip_sync_with_options)
 }
 
 pub fn deflate_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_options_callable(input, options, callback, deflate_sync_with_options)
+    compress_options_callable(root, input, options, callback, deflate_sync_with_options)
 }
 
 pub fn inflate_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
-    compress_options_callable(input, options, callback, inflate_sync_with_options)
+    compress_options_callable(root, input, options, callback, inflate_sync_with_options)
 }
 
 fn compress_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
     compress: fn(&tsonic_rust_js::Uint8Array) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.as_bytes();
-    crate::background::spawn(
+    root.spawn(
         move || {
             let input = Buffer::from_bytes(input);
             compress(&input).map(|output| output.as_bytes())
         },
-        move |result| {
-            let arguments = match result {
-                Ok(output) => (None, Buffer::from_bytes(output)),
-                Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
-            };
-            callback
-                .call(arguments)
-                .map_err(crate::error::callback_runtime_error)
-        },
+        move |result| complete_compression(result, callback),
     )
 }
 
 fn compress_options_callable<E>(
+    root: &BackgroundTasks<E>,
     input: &Buffer,
     options: SourceZlibOptions,
-    callback: tsonic_rust_runtime::Callable<(Option<NodeError>, Buffer), Result<(), E>>,
+    callback: CompressionCallback<'static, E>,
     compress: fn(&tsonic_rust_js::Uint8Array, &ZlibOptions) -> NodeResult<Buffer>,
 ) -> NodeResult<()>
 where
-    E: std::fmt::Display + 'static,
+    E: From<NodeError> + 'static,
 {
     let input = input.as_bytes();
-    let options = BackgroundZlibOptions::from(options.into_runtime());
-    crate::background::spawn(
+    let options = BackgroundZlibOptions::from(options.into_runtime()?);
+    root.spawn(
         move || {
             let input = Buffer::from_bytes(input);
             let options = options.into_runtime();
             compress(&input, &options).map(|output| output.as_bytes())
         },
-        move |result| {
-            let arguments = match result {
-                Ok(output) => (None, Buffer::from_bytes(output)),
-                Err(error) => (Some(error), Buffer::from_bytes(Vec::new())),
-            };
-            callback
-                .call(arguments)
-                .map_err(crate::error::callback_runtime_error)
-        },
+        move |result| complete_compression(result, callback),
     )
+}
+
+fn complete_compression<Failure>(
+    result: NodeResult<Vec<u8>>,
+    callback: CompressionCallback<'_, Failure>,
+) -> Result<(), Failure> {
+    let arguments = match result {
+        Ok(output) => (None, Some(Buffer::from_bytes(output))),
+        Err(error) => (Some(error), None),
+    };
+    callback.call(arguments)
+}
+
+#[cfg(test)]
+mod compression_completion {
+    use super::{complete_compression, Buffer, NodeError};
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use tsonic_rust_runtime::Callable;
+
+    #[test]
+    fn immediate_completion_preserves_borrowed_callback_and_failure() {
+        let calls = Cell::new(0);
+        let failure = String::from("scoped completion failure");
+        let callback = Callable::new(|(error, output): (Option<NodeError>, Option<Buffer>)| {
+            assert!(error.is_none());
+            assert_eq!(output.unwrap().as_bytes(), vec![3, 4]);
+            calls.set(calls.get() + 1);
+            Err(&failure)
+        });
+        let observed = complete_compression(Ok(vec![3, 4]), callback).unwrap_err();
+        assert_eq!(calls.get(), 1);
+        assert!(std::ptr::eq(observed, &failure));
+    }
+
+    #[test]
+    fn failure_moves_the_original_error_without_a_placeholder_buffer() {
+        let error = NodeError::new("compression-code", "native error message");
+        let code_address = error.code().as_ptr() as usize;
+        let source = error.source_error().clone();
+        let observed = Rc::new(Cell::new(false));
+        let callback_observed = Rc::clone(&observed);
+        let callback = Callable::new(
+            move |(error, output): (Option<NodeError>, Option<Buffer>)| {
+                let error = error.expect("original native error");
+                assert_eq!(error.code().as_ptr() as usize, code_address);
+                assert_eq!(error.source_error(), &source);
+                assert!(output.is_none());
+                callback_observed.set(true);
+                Ok::<(), String>(())
+            },
+        );
+
+        complete_compression(Err(error), callback).unwrap();
+        assert!(observed.get());
+    }
 }
 
 #[cfg(test)]
 mod numeric_bounds {
     #[test]
     fn size_retains_the_complete_native_domain() {
-        for value in [0, usize::MAX] {
-            let options = super::SourceZlibOptions {
-                max_output_length: Some(value),
+        let options = super::SourceZlibOptions {
+            max_output_length: Some(usize::MAX),
+            ..Default::default()
+        }
+        .into_runtime()
+        .unwrap();
+        assert_eq!(options.max_output_length, Some(usize::MAX));
+    }
+
+    #[test]
+    fn zero_sized_buffers_and_invalid_levels_are_rejected() {
+        for options in [
+            super::SourceZlibOptions {
+                chunk_size: Some(0),
                 ..Default::default()
-            }
-            .into_runtime();
-            assert_eq!(options.max_output_length, Some(value));
+            },
+            super::SourceZlibOptions {
+                max_output_length: Some(0),
+                ..Default::default()
+            },
+            super::SourceZlibOptions {
+                level: Some(10),
+                ..Default::default()
+            },
+        ] {
+            assert!(options.into_runtime().is_err());
         }
     }
 }

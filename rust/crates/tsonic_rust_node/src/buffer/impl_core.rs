@@ -54,8 +54,15 @@ impl Buffer {
         value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
     }
 
-    pub fn from_number_array<Value: tsonic_rust_js::Integer32 + Copy>(values: &JsArray<Value>) -> Self {
-        let bytes = values.with_values(|values| values.iter().map(|value| value.integer32() as u8).collect());
+    pub fn copy_from_buffer(value: &Buffer) -> Self {
+        value.with_bytes(|bytes| Self::from_bytes(bytes.to_vec()))
+    }
+
+    pub fn from_number_array<Value: tsonic_rust_js::Integer32 + Copy>(
+        values: &JsArray<Value>,
+    ) -> Self {
+        let bytes = values
+            .with_values(|values| values.iter().map(|value| value.integer32() as u8).collect());
         Self::from_bytes(bytes)
     }
 
@@ -101,6 +108,10 @@ impl Buffer {
 
     pub(crate) fn with_bytes<T>(&self, operation: impl FnOnce(&[u8]) -> T) -> T {
         self.view.with_bytes(operation)
+    }
+
+    pub(crate) fn into_owned_bytes(self) -> tsonic_rust_js::array_buffer::OwnedBufferBytes {
+        self.view.into_owned_bytes()
     }
 
     pub fn get(&self, index: usize) -> Option<u8> {
@@ -200,9 +211,9 @@ impl Buffer {
             ));
         }
         let count = (source_end - source_start).min(target.len() - target_start);
-        let source_offset = self.view.byte_offset() as usize + source_start;
+        let source_offset = self.view.byte_offset() + source_start;
         target.view.buffer().copy_bytes_from(
-            target.view.byte_offset() as usize + target_start,
+            target.view.byte_offset() + target_start,
             &self.view.buffer(),
             source_offset..source_offset + count,
         );
@@ -253,6 +264,22 @@ impl Buffer {
         self.to_string(Some(encoding))
     }
 
+    pub fn to_string_range(
+        &self,
+        encoding: Option<&str>,
+        start: usize,
+        end: Option<usize>,
+    ) -> NodeResult<String> {
+        let end = end.unwrap_or_else(|| self.len());
+        if start > end || end > self.len() {
+            return Err(NodeError::new(
+                "ERR_OUT_OF_RANGE",
+                "buffer string range is outside the buffer",
+            ));
+        }
+        self.with_bytes(|bytes| decode_bytes(&bytes[start..end], encoding))
+    }
+
     pub fn to_json(&self) -> JsValue {
         let values = self.with_bytes(|bytes| {
             bytes
@@ -266,13 +293,13 @@ impl Buffer {
         ]))
     }
 
-    fn with_pair<Result>(
+    pub(crate) fn with_pair<Result>(
         &self,
         other: &Buffer,
         operation: impl FnOnce(&[u8], &[u8]) -> Result,
     ) -> Result {
-        let left_start = self.view.byte_offset() as usize;
-        let right_start = other.view.byte_offset() as usize;
+        let left_start = self.view.byte_offset();
+        let right_start = other.view.byte_offset();
         self.view.buffer().with_byte_ranges(
             left_start..left_start + self.len(),
             &other.view.buffer(),
@@ -392,6 +419,9 @@ impl Buffer {
     }
 
     fn concat_dense_with_total_length(buffers: &[Buffer], total_length: usize) -> Buffer {
+        if buffers.is_empty() {
+            return Buffer::alloc(0);
+        }
         let mut out = Vec::with_capacity(total_length);
         for buffer in buffers {
             buffer.with_bytes(|bytes| {

@@ -1,4 +1,4 @@
-import { rustCallableTargetType } from "@tsonic/target-rust/provider";
+import { rustCallableTargetType, rustProgramErrorTargetType } from "@tsonic/target-rust/provider";
 import type { RustTargetTypeRef } from "@tsonic/target-rust/provider";
 import { unitCarrier } from "../../model/carriers.js";
 
@@ -8,7 +8,10 @@ export const tlsServerOptionsCarrier: RustTargetTypeRef = { kind: "target-named"
 
 export const tlsSocketCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TlsSocket" };
 
-export const tlsServerCarrier: RustTargetTypeRef = { kind: "target-named", id: "rust.node.TlsServer" };
+export const tlsServerCarrier: RustTargetTypeRef = {
+  kind: "target-named", id: "rust.node.TlsServer",
+  genericArguments: [{ kind: "type", type: rustProgramErrorTargetType() }],
+};
 
 export const tlsSocketCallbackCarrier = rustCallableTargetType(
   [tlsSocketCarrier],

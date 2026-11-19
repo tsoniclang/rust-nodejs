@@ -1,9 +1,10 @@
 import { boolCarrier, emptyCallbackCarrier, int32Carrier, jsValueCarrier, oneValueCallbackCarrier, stringArrayCarrier, stringCarrier, unitCarrier } from "../../model/carriers.js";
 import { booleanType, numberType, stringArrayType, stringType, undefinedType, voidType } from "../../model/source-types.js";
 import { cloneDefaultCarrierTraits, cloneOnlyCarrierTraits, providerNativeFallibility } from "../../model/operations.js";
-import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerOptionsCarrier } from "./carriers.js";
+import { messageChannelCarrier, messagePortCarrier, workerCarrier, workerCompletionErrorCarrier, workerOptionsCarrier } from "./carriers.js";
 import { propertyMember, providerRef, valueExport } from "../../declarations/builders.js";
-import { rustJsPromiseTargetType, rustOptionTargetType } from "@tsonic/target-rust/provider";
+import { rustOptionTargetType } from "@tsonic/target-rust/provider";
+import { nodeWorkerInput } from "../../model/dispatch.js";
 import type { ProviderTypeExpr } from "../../model/source-types.js";
 import type { RustProviderModuleDefinition, RustProviderOperationDefinition, RustTargetTypeRef } from "@tsonic/target-rust/provider";
 
@@ -156,6 +157,7 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       },
       resultCarrier: workerCarrier,
       parameterCarriers: [stringCarrier],
+      dispatchInputs: [nodeWorkerInput(1)],
       ...providerNativeFallibility,
     },
     {
@@ -173,6 +175,7 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       },
       resultCarrier: workerCarrier,
       parameterCarriers: [stringCarrier, workerOptionsCarrier],
+      dispatchInputs: [nodeWorkerInput(2)],
       ...providerNativeFallibility,
     },
     receiverMethod(workerId, "postMessage", "post_message", workerCarrier, [jsValueCarrier], unitCarrier, false, true),
@@ -183,13 +186,15 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
         "terminate",
         workerCarrier,
         [],
-        rustJsPromiseTargetType(int32Carrier),
-        true,
+        int32Carrier,
+        false,
       ),
+      isAsync: true,
       ...providerNativeFallibility,
+      errorCarrier: workerCompletionErrorCarrier,
     },
-    receiverMethod(workerId, "ref", "ref_chain", workerCarrier, [], mutableReference(workerCarrier), true),
-    receiverMethod(workerId, "unref", "unref", workerCarrier, [], mutableReference(workerCarrier), true),
+    receiverMethod(workerId, "ref", "ref_chain", workerCarrier, [], reference(workerCarrier)),
+    receiverMethod(workerId, "unref", "unref", workerCarrier, [], reference(workerCarrier)),
     ...eventRows(workerId, workerCarrier),
     {
       exportId: workerId,
@@ -206,6 +211,8 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       target: { form: "call", path: "node_worker_threads::MessageChannel::new" },
       resultCarrier: messageChannelCarrier,
       parameterCarriers: [],
+      dispatchInputs: [nodeWorkerInput(0)],
+      ...providerNativeFallibility,
     },
     ...(["port1", "port2"] as const).map((name): RustProviderOperationDefinition => ({
       exportId: messageChannelId,
@@ -216,13 +223,16 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
       receiverCarrier: messageChannelCarrier,
     })),
     receiverMethod(messagePortId, "postMessage", "post_message", messagePortCarrier, [jsValueCarrier], unitCarrier, false, true),
-    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier),
-    receiverMethod(messagePortId, "close", "close", messagePortCarrier, [], unitCarrier),
-    receiverMethod(messagePortId, "ref", "ref_chain", messagePortCarrier, [], mutableReference(messagePortCarrier), true),
-    receiverMethod(messagePortId, "unref", "unref", messagePortCarrier, [], mutableReference(messagePortCarrier), true),
+    receiverMethod(messagePortId, "start", "start", messagePortCarrier, [], unitCarrier, false, true),
+    receiverMethod(messagePortId, "close", "close", messagePortCarrier, [], unitCarrier, false, true),
+    receiverMethod(messagePortId, "ref", "ref_chain", messagePortCarrier, [], reference(messagePortCarrier)),
+    receiverMethod(messagePortId, "unref", "unref", messagePortCarrier, [], reference(messagePortCarrier)),
     receiverMethod(messagePortId, "hasRef", "has_ref", messagePortCarrier, [], boolCarrier),
     ...eventRows(messagePortId, messagePortCarrier),
-    moduleCall("receiveMessageOnPort", "receive_message_on_port", [messagePortCarrier], jsValueCarrier, ["ref"]),
+    {
+      ...moduleCall("receiveMessageOnPort", "receive_message_on_port", [messagePortCarrier], jsValueCarrier, ["ref"]),
+      ...providerNativeFallibility,
+    },
     moduleCall("getEnvironmentData", "get_environment_data", [stringCarrier], jsValueCarrier, ["ref"]),
     {
       ...moduleCall("setEnvironmentData", "set_environment_data", [stringCarrier, jsValueCarrier], unitCarrier, ["ref", "value"]),
@@ -239,7 +249,11 @@ export function workerThreadsRows(): readonly RustProviderOperationDefinition[] 
     moduleProperty("isMainThread", "is_main_thread", boolCarrier),
     moduleProperty("threadId", "thread_id", int32Carrier),
     moduleProperty("workerData", "worker_data", jsValueCarrier),
-    moduleProperty("parentPort", "parent_port", rustOptionTargetType(messagePortCarrier)),
+    {
+      ...moduleProperty("parentPort", "parent_port", rustOptionTargetType(messagePortCarrier)),
+      dispatchInputs: [nodeWorkerInput(0)],
+      ...providerNativeFallibility,
+    },
     ...optionRows(workerOptionsId, workerOptionsCarrier, [
       ["name", "name", rustOptionTargetType(stringCarrier)],
       ["argv", "argv", rustOptionTargetType(stringArrayCarrier)],
@@ -315,9 +329,8 @@ function eventRow(
       form: "receiver-method",
       name: `${name === "on" ? "on" : name === "once" ? "once" : "off"}_callable${arity === 0 ? "" : "1"}`,
       argModes: ["ref", "ref"],
-      mutatesReceiver: true,
     },
-    resultCarrier: mutableReference(receiverCarrier),
+    resultCarrier: reference(receiverCarrier),
     receiverCarrier,
     parameterCarriers: [jsValueCarrier, callbackCarrier],
     ...providerNativeFallibility,
@@ -423,6 +436,6 @@ function optionRows(
   }]);
 }
 
-function mutableReference(referent: RustTargetTypeRef): RustTargetTypeRef {
-  return { kind: "reference", referent, mutable: true };
+function reference(referent: RustTargetTypeRef): RustTargetTypeRef {
+  return { kind: "reference", referent, mutable: false };
 }

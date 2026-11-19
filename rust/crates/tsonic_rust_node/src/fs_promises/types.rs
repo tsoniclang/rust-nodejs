@@ -5,13 +5,13 @@ use tsonic_rust_js::JsArray;
 
 pub use crate::fs::{
     BigIntOptions, BufferEncoding, CopyFilter, CopyOptions, CopyOptionsBase, CopySyncOptions,
-    CreateReadStreamOptions, CreateWriteStreamOptions, Dirent, FsReadResult,
-    FsWatchEvent, FsWatcher, MakeDirectoryOptions, Mode, NoParamCallback, ObjectEncodingOptions,
-    OpenDirOptions, OpenMode, PathLike, PathOrFileDescriptor, ReadOptions, ReadPosition,
-    ReadResult, ReadStreamOptions, ReadVResult, RmOptions, StatFs, StatFsOptions, StatOptions,
-    StatWatcher, Stats, StatsBase, TimeLike, WatchFileOptions, WatchOptions,
-    WatchOptionsWithBufferEncoding, WatchOptionsWithStringEncoding, WriteOptions, WriteResult,
-    WriteStreamOptions, WriteVResult,
+    CreateReadStreamOptions, CreateWriteStreamOptions, Dirent, FsReadResult, FsWatchEvent,
+    FsWatcher, MakeDirectoryOptions, Mode, NoParamCallback, ObjectEncodingOptions, OpenDirOptions,
+    OpenMode, PathLike, PathOrFileDescriptor, ReadOptions, ReadPosition, ReadResult,
+    ReadStreamOptions, ReadVResult, RmOptions, StatFs, StatFsOptions, StatOptions, StatWatcher,
+    Stats, StatsBase, TimeLike, WatchFileOptions, WatchOptions, WatchOptionsWithBufferEncoding,
+    WatchOptionsWithStringEncoding, Watchers, WriteOptions, WriteResult, WriteStreamOptions,
+    WriteVResult,
 };
 
 pub type BigIntStats = Stats;
